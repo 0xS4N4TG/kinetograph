@@ -275,6 +275,16 @@ fn webgl2_attr_int_constant() {
 }
 
 #[test]
+fn webgl2_tex_levels() {
+    angle_only_reported("webgl2_tex_levels");
+}
+
+#[test]
+fn webgl2_tex_pictures() {
+    angle_only_reported("webgl2_tex_pictures");
+}
+
+#[test]
 fn webgl2_clear_masks() {
     angle_only_reported("webgl2_clear_masks");
 }

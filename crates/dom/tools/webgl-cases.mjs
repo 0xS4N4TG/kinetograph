@@ -15,7 +15,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createWebGLContext } from '../../../packages/scene/dist/index.js';
+import { createWebGLContext, ImageData } from '../../../packages/scene/dist/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = resolve(here, '../tests/webgl');
@@ -25,7 +25,7 @@ export function record(source, width, height) {
   const line = source.split('\n')[1] ?? '';
   const attributes = line.startsWith('// attributes: ') ? JSON.parse(line.slice('// attributes: '.length)) : {};
   const gl = createWebGLContext({ size: () => ({ width, height }), version: source.includes('#version 300 es') ? 2 : 1, attributes });
-  new Function('gl', 'W', 'H', source)(gl, width, height);
+  new Function('gl', 'W', 'H', 'ImageData', source)(gl, width, height, ImageData);
   return gl.content();
 }
 

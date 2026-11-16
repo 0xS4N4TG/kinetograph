@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_OPS_PER_TARGET } from '../src/webgl-carry.js';
-import { createWebGLContext, glslShader, GL, GL2, layerPicture, VideoFramePicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
+import { createWebGLContext, glslShader, GL, GL2, ImageData, layerPicture, VideoFramePicture, WebGLUnsupportedError, type WebGLContext } from '../src/index.js';
 
 const VERTEX = 'attribute vec2 p; varying vec2 v; void main() { v = p; gl_Position = vec4(p, 0.0, 1.0); }';
 const FRAGMENT = 'precision mediump float; varying vec2 v; uniform float t; uniform vec2 r[2]; uniform sampler2D tex; void main() { gl_FragColor = texture2D(tex, v) * t; }';
@@ -439,9 +439,11 @@ describe('the recording WebGL context', () => {
     gl.bindFramebuffer(GL.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_CUBE_MAP_NEGATIVE_Y, cube, 1);
     expect(gl.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
-    expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16))).toThrow(/levels above 0 with pixels/);
     // A level of the wrong size is refused as for a 2D texture.
     expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 3, 3, 0, GL.RGBA, GL.UNSIGNED_BYTE, null)).toThrow(/level 1 of 3 x 3/);
+    // Pixels in a level above 0 are a raw call, which only ANGLE replays.
+    gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16));
+    expect(gl.getError()).toBe(GL.NO_ERROR);
   });
 
   it('uploads an ImageBitmap as the bitmap is, whatever UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL say', () => {
@@ -1481,8 +1483,10 @@ describe('the recording WebGL context', () => {
       gl.bindTexture(GL.TEXTURE_CUBE_MAP, empty);
       for (let f = 0; f < 6; f += 1) gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
       expect(gl.getError()).toBe(GL.NO_ERROR);
-      expect(() => gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
-      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+      // Levels above 0 are raw calls, which only ANGLE replays: there is nothing to refuse here, and GL's own errors come from the replay.
+      gl.texImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4));
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
   });
 
@@ -1872,7 +1876,32 @@ describe('the recording WebGL context', () => {
       const texture = gl.content().textures[draw.units['0']!.texture]!;
       expect(texture).toMatchObject({ cube: true, width: 2, srgb: true, mipmaps: true });
       expect(Buffer.from(texture.faces![5]!.pixels!, 'base64')[0]).toBe(6);
-      expect(() => gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 1, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4))).toThrow(WebGLUnsupportedError);
+    });
+
+    it('carries a part of a cube map face as a raw call, after the storage and the whole faces it already has', () => {
+      const { gl, program } = setup();
+      const cube = gl.createTexture();
+      gl.bindTexture(GL.TEXTURE_CUBE_MAP, cube);
+      gl.texStorage2D(GL.TEXTURE_CUBE_MAP, 2, GL2.RGBA8, 2, 2);
+      for (let f = 0; f < 6; f += 1) gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, 0, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16).fill(f + 1));
+      gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0, 1, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([9, 9, 9, 255]));
+      gl.texSubImage2D(GL.TEXTURE_CUBE_MAP_NEGATIVE_Z, 1, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([7, 7, 7, 255]));
+      gl.bindFramebuffer(GL.FRAMEBUFFER, null);
+      gl.uniform1i(gl.getUniformLocation(program, 'env'), 0);
+      gl.drawArrays(GL.TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
+      const draw = gl.content().ops.at(-1)!;
+      if (draw.op !== 'draw') throw new Error('not a draw');
+      const texture = gl.content().textures[draw.units['0']!.texture]!;
+      expect(texture).toMatchObject({ cube: true, width: 2 });
+      // One storage call on the cube (its levels kept), the whole faces, then the two parts; no generateMipmap, as the page made none.
+      expect(texture.calls!.map((c) => [c.op, c.target, c.level ?? 0])).toEqual([
+        ['storage', GL.TEXTURE_CUBE_MAP, 0],
+        ...Array.from({ length: 6 }, (_, f) => ['sub', GL.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0]),
+        ['sub', GL.TEXTURE_CUBE_MAP_POSITIVE_X, 0],
+        ['sub', GL.TEXTURE_CUBE_MAP_NEGATIVE_Z, 1],
+      ]);
+      expect(texture.calls![0]).toMatchObject({ internal: GL2.RGBA8, levels: 2, width: 2, height: 2 });
     });
 
     it('refuses a cube map of uploaded and drawn faces', () => {
@@ -1958,7 +1987,7 @@ describe('the recording WebGL context', () => {
       expect(Array.from(pixels.subarray(16, 20))).toEqual([1, 1, 1, 1]);
     });
 
-    it('is zeros after texStorage3D, in 8-bit and float formats, and refuses more than one level', () => {
+    it('is zeros after texStorage3D, in 8-bit and float formats, and carries more than one level as a raw call', () => {
       const { gl } = arrayContext();
       const array = gl.createTexture();
       gl.bindTexture(GL2.TEXTURE_2D_ARRAY, array);
@@ -1976,7 +2005,9 @@ describe('the recording WebGL context', () => {
       expect(floats[48]).toBe(0.5);
       const other = gl.createTexture();
       gl.bindTexture(GL2.TEXTURE_2D_ARRAY, other);
-      expect(() => gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 3, GL2.RGBA8, 4, 4, 2)).toThrow(/^unsupported:.*more than one level/);
+      // More than one level is a raw storage call, which only ANGLE replays.
+      gl.texStorage3D(GL2.TEXTURE_2D_ARRAY, 3, GL2.RGBA8, 4, 4, 2);
+      expect(gl.getError()).toBe(GL.NO_ERROR);
     });
 
     it('gives the layers of an array the size of a 2D texture, not of a 3D one (three.js stores morph targets 3752 wide)', () => {
@@ -3285,6 +3316,102 @@ describe('what a renderer reads of a WebGL 2 context at start-up', () => {
       const fb = gl.createFramebuffer();
       gl.bindFramebuffer(GL.FRAMEBUFFER, fb);
       expect(() => gl.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, t, 0)).toThrow(/^unsupported:.*raw texture calls/);
+    });
+
+    describe('parts of levels and pictures', () => {
+      const sampled = (gl: WebGLContext) => {
+        drawing(gl, 'sampler2D');
+        expect(gl.getError()).toBe(GL.NO_ERROR);
+        const draw = gl.content().ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        return texture(gl, draw.units['0']!.texture);
+      };
+      const bind = (gl: WebGLContext) => {
+        const t = gl.createTexture();
+        gl.bindTexture(GL.TEXTURE_2D, t);
+        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+        gl.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+      };
+
+      it('carries texSubImage2D above level 0 after the storage, without a generateMipmap the page did not call', () => {
+        const gl = page();
+        bind(gl);
+        gl.texStorage2D(GL.TEXTURE_2D, 3, GL2.RGBA8, 4, 4);
+        gl.texSubImage2D(GL.TEXTURE_2D, 1, 0, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(8).fill(5));
+        const calls = sampled(gl).calls!;
+        expect(calls.map((c) => [c.op, c.level ?? 0])).toEqual([['storage', 0], ['sub', 1]]);
+        expect(calls[0]).toMatchObject({ levels: 3, internal: GL2.RGBA8, width: 4, height: 4 });
+      });
+
+      it('turns a texture uploaded whole into calls when a level above 0 follows, keeping its flip and its patches, and generateMipmap after them', () => {
+        const gl = page();
+        bind(gl);
+        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, GL.RGBA, GL.UNSIGNED_BYTE, new ImageData(new Uint8ClampedArray(4 * 4 * 4).fill(9), 4, 4));
+        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(GL.TEXTURE_2D, 1, GL.RGBA, 2, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16).fill(7));
+        gl.generateMipmap(GL.TEXTURE_2D);
+        const calls = sampled(gl).calls!;
+        expect(calls.map((c) => [c.op, c.level ?? 0])).toEqual([['image', 0], ['image', 1], ['mipmap', 0]]);
+        expect(calls[0]).toMatchObject({ internal: GL2.RGBA8, format: GL.RGBA, type: GL.UNSIGNED_BYTE, width: 4, height: 4, pictureWidth: 4, pictureHeight: 4, flipY: true });
+        expect(calls[0]!.pixels).toBeDefined();
+      });
+
+      it('cuts a window of a picture with the skips, and carries the flip and the premultiply with it', () => {
+        const gl = page();
+        bind(gl);
+        gl.texStorage2D(GL.TEXTURE_2D, 2, GL2.RGBA8, 4, 4);
+        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+        gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.pixelStorei(GL2.UNPACK_SKIP_PIXELS, 1);
+        gl.pixelStorei(GL2.UNPACK_SKIP_ROWS, 2);
+        gl.texSubImage2D(GL.TEXTURE_2D, 1, 0, 0, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new ImageData(4, 3));
+        expect(gl.getError()).toBe(GL.NO_ERROR);
+        const calls = sampled(gl).calls!;
+        expect(calls[1]).toMatchObject({ op: 'sub', level: 1, width: 2, height: 1, pictureWidth: 4, pictureHeight: 3, skipPixels: 1, skipRows: 2, flipY: true, premultiply: true });
+        gl.texSubImage2D(GL.TEXTURE_2D, 1, 0, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, new ImageData(4, 3));
+        expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+      });
+
+      it('flips and premultiplies the rows of an array as the page asked', () => {
+        const gl = page();
+        bind(gl);
+        gl.texStorage2D(GL.TEXTURE_2D, 2, GL2.RGBA8, 4, 4);
+        gl.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, true);
+        gl.pixelStorei(GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texSubImage2D(GL.TEXTURE_2D, 1, 0, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array([200, 100, 50, 128, 10, 20, 30, 255]));
+        expect(Array.from(Buffer.from(sampled(gl).calls![1]!.data!, 'base64'))).toEqual([10, 20, 30, 255, 100, 50, 25, 128]);
+      });
+
+      it('sets INVALID_OPERATION for a window past the array, and refuses a picture in a format a picture is not uploaded in', () => {
+        const gl = page();
+        bind(gl);
+        gl.texStorage2D(GL.TEXTURE_2D, 2, GL2.RGBA8, 4, 4);
+        gl.pixelStorei(GL2.UNPACK_ROW_LENGTH, 4);
+        gl.pixelStorei(GL2.UNPACK_SKIP_ROWS, 2);
+        gl.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 2, 2, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(4 * 3 * 4));
+        expect(gl.getError()).toBe(GL.INVALID_OPERATION);
+        gl.pixelStorei(GL2.UNPACK_ROW_LENGTH, 0);
+        gl.pixelStorei(GL2.UNPACK_SKIP_ROWS, 0);
+        expect(() => gl.texSubImage2D(GL.TEXTURE_2D, 1, 0, 0, GL.RGB, GL.UNSIGNED_BYTE, new ImageData(1, 1))).toThrow(/^unsupported:.*RGBA and UNSIGNED_BYTE/);
+        gl.pixelStorei(GL2.UNPACK_ROW_LENGTH, -1);
+        expect(gl.getError()).toBe(GL.INVALID_VALUE);
+      });
+
+      it('carries texSubImage3D above level 0 of a texture made with more than one level', () => {
+        const gl = page();
+        const t = gl.createTexture();
+        gl.bindTexture(GL2.TEXTURE_3D, t);
+        gl.texStorage3D(GL2.TEXTURE_3D, 2, GL2.RGBA8, 4, 4, 4);
+        gl.texSubImage3D(GL2.TEXTURE_3D, 1, 0, 0, 1, 2, 2, 1, GL.RGBA, GL.UNSIGNED_BYTE, new Uint8Array(16).fill(1));
+        expect(gl.getError()).toBe(GL.NO_ERROR);
+        drawing(gl, 'sampler3D');
+        const draw = gl.content().ops[0]!;
+        if (draw.op !== 'draw') throw new Error('not a draw');
+        const calls = texture(gl, draw.units['0']!.texture).calls!;
+        expect(calls.map((c) => [c.op, c.target, c.level ?? 0, c.z ?? 0])).toEqual([['storage', GL2.TEXTURE_3D, 0, 0], ['sub', GL2.TEXTURE_3D, 1, 1]]);
+        expect(calls[0]).toMatchObject({ width: 4, height: 4, depth: 4, levels: 2 });
+      });
     });
   });
 });
