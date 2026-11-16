@@ -11,12 +11,12 @@ const dirs = process.argv.slice(2).length
   : ['crates/node', ...fs.readdirSync('crates/node/npm').map((d) => `crates/node/npm/${d}`), 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush', 'packages/plugins/anime', 'packages/plugins/motion'];
 // The ANGLE files a platform package must carry: libEGL and libGLESv2 under the platform's file names, and the licences.
 // Chrome's credits file covers the third-party code compiled into the Chrome for Testing libraries; our own build
-// (SOURCE.txt names its repository) has none yet, so it is not asked for there.
+// (SOURCE.txt names its repository) carries its own THIRD-PARTY-NOTICES.txt instead.
 const angleFiles = (dir) => {
   const name = path.basename(dir);
   const ext = name.includes('darwin') ? 'dylib' : name.includes('win32') ? 'dll' : 'so';
   const own = fs.readFileSync(`${dir}/angle/SOURCE.txt`, 'utf8').includes('kinetograph-angle');
-  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? [] : ['CHROMIUM-CREDITS.txt'])];
+  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? ['THIRD-PARTY-NOTICES.txt'] : ['CHROMIUM-CREDITS.txt'])];
 };
 let bad = 0;
 for (const dir of dirs) {

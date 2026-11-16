@@ -25,6 +25,10 @@ for (const dir of fs.readdirSync(path.join(root, 'npm'))) {
   const target = path.join(root, 'npm', dir);
   const angleDir = path.join(target, 'angle');
   const angle = fs.existsSync(angleDir) ? fs.readdirSync(angleDir).map((f) => `angle/${f}`) : [];
+  // Our own ANGLE build (SOURCE.txt names its repository) must come with its credits file for the code compiled into it.
+  if (angle.length && fs.readFileSync(path.join(angleDir, 'SOURCE.txt'), 'utf8').includes('kinetograph-angle') && !angle.includes('angle/THIRD-PARTY-NOTICES.txt')) {
+    throw new Error(`${dir}: angle/THIRD-PARTY-NOTICES.txt is missing (our ANGLE build ships it)`);
+  }
   for (const f of legal) fs.copyFileSync(path.join(root, 'legal', f), path.join(target, f));
   const apache = fs.readFileSync(path.join(root, '..', '..', 'LICENSE.md'), 'utf8');
   fs.writeFileSync(path.join(target, 'LICENSE.md'), note(angle.length > 0) + apache);
