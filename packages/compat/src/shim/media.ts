@@ -143,6 +143,8 @@ export class MediaPlayer {
   private loadId = 0;
   private file: string | null = null;
   private info: { width: number; height: number; durationInSeconds: number } | null = null;
+  /** What a React `onLoadedMetadata` handler is told of the file before the player's own load has reached it. */
+  private announced: { width: number; height: number; durationInSeconds: number } | null = null;
   private currentSource = '';
   private ready = HAVE_NOTHING;
   private network = 0; // NETWORK_EMPTY
@@ -185,6 +187,7 @@ export class MediaPlayer {
     const id = ++this.loadId;
     this.file = null;
     this.info = null;
+    this.announced = null;
     this.currentSource = '';
     this.ready = HAVE_NOTHING;
     this.errorValue = null;
@@ -303,17 +306,25 @@ export class MediaPlayer {
   get currentSrc(): string {
     return this.currentSource;
   }
+  /** The file's header read ahead of the load (media-events.ts hands it to a handler that runs when the frame's work is done). */
+  announce(info: { width: number; height: number; durationInSeconds: number }): void {
+    this.start();
+    this.announced = info;
+  }
+  private get known(): { width: number; height: number; durationInSeconds: number } | null {
+    return this.ready >= HAVE_METADATA ? this.info : this.announced;
+  }
   get duration(): number {
     this.start();
-    return this.info === null || this.ready < HAVE_METADATA ? NaN : this.info.durationInSeconds;
+    return this.known?.durationInSeconds ?? NaN;
   }
   get videoWidth(): number {
     this.start();
-    return this.ready < HAVE_METADATA ? 0 : (this.info?.width ?? 0);
+    return this.known?.width ?? 0;
   }
   get videoHeight(): number {
     this.start();
-    return this.ready < HAVE_METADATA ? 0 : (this.info?.height ?? 0);
+    return this.known?.height ?? 0;
   }
   /** The file a frame is read from, when metadata is known (what a texture or `drawImage` records). */
   get source(): { file: string; width: number; height: number } | null {

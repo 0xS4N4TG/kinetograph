@@ -83,7 +83,9 @@ export function deliverMediaEvents(readback: Readback, hosts: Set<HostElement>):
     }
     if (hasAddonFunction('probeMedia')) {
       try {
-        addonFunction('probeMedia')(file);
+        const info = addonFunction('probeMedia')(file);
+        // The handler reads `duration` and the size at once; the element's own load reaches them a task later.
+        if (info && typeof info === 'object') target.player?.announce(info);
       } catch (error) {
         props.onError?.(event('error', target, { message: error instanceof Error ? error.message : String(error) }));
         continue;
