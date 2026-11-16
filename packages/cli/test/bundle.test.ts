@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeF
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bundleProject, cacheDir, type UnsupportedImport, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
+import { bundleProject, cacheDir, projectReactError, type UnsupportedImport, familyFromModule, resolveSpecifier, syntheticEntry } from '../src/bundle.js';
 import { CliError } from '../src/errors.js';
 import { publicDirOf } from '../src/source.js';
 
@@ -438,5 +438,38 @@ describe('bundleProject', () => {
       'node_modules/lib/index.js': `exports.v = require('not-installed');`,
     });
     await expect(bundleProject(join(dir, 'index.ts'))).rejects.toMatchObject({ code: 'BUNDLE_FAILED' });
+  });
+});
+
+describe('the React of a host project', () => {
+  // A workspace whose root pins React 18 hoists it to every package that has no React of its own, and the bundle takes
+  // `react` and `react-reconciler` from the CLI: the CLI must carry React 19 itself (and so must resolve it, not the host's).
+  it('is not the CLI\'s: the CLI depends on React 19 and the reconciler itself', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> };
+    expect(manifest.dependencies.react).toMatch(/^\^?19\./);
+    expect(manifest.dependencies['react-reconciler']).toBeDefined();
+  });
+
+  function projectWithReact(version: string | null): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kg-react-')));
+    if (version) {
+      mkdirSync(join(dir, 'node_modules', 'react'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules', 'react', 'package.json'), JSON.stringify({ name: 'react', version, main: 'index.js' }));
+      writeFileSync(join(dir, 'node_modules', 'react', 'index.js'), '');
+    }
+    return dir;
+  }
+
+  it('tells a project written against React older than 19 so', () => {
+    expect(projectReactError(projectWithReact('18.3.1'))).toMatch(/React 18\.3\.1.*needs React 19/);
+    expect(projectReactError(projectWithReact('19.3.1'))).toBeNull();
+    expect(projectReactError(projectWithReact(null))).toBeNull();
+  });
+
+  it('fails the bundle of a React project whose React is too old', async () => {
+    const old = projectWithReact('18.3.1');
+    writeFileSync(join(old, 'package.json'), '{"type":"module"}');
+    writeFileSync(join(old, 'index.tsx'), "import { createElement } from 'react';\nexport const x = createElement('div');\n");
+    await expect(bundleProject(join(old, 'index.tsx'), {})).rejects.toThrow(/needs React 19/);
   });
 });
