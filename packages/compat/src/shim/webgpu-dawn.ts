@@ -50,6 +50,7 @@ export const DAWN_LIMITS: Record<string, number> = {
   maxInterStageShaderVariables: 16, maxColorAttachments: 8, maxColorAttachmentBytesPerSample: 32,
   maxComputeWorkgroupStorageSize: 16384, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256,
   maxComputeWorkgroupSizeY: 256, maxComputeWorkgroupSizeZ: 64, maxComputeWorkgroupsPerDimension: 65535,
+  maxStorageBuffersInVertexStage: 8, maxStorageBuffersInFragmentStage: 8, maxStorageTexturesInVertexStage: 4, maxStorageTexturesInFragmentStage: 4,
 };
 const ALIGNMENTS = new Set(['minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment']);
 

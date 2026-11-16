@@ -47,6 +47,13 @@ describe.skipIf(missing !== null)('WebGPU through Dawn', () => {
     device.destroy();
   });
 
+  it('gives a device to a page that asks for fewer storage buffers in the vertex stage than the default (three.js does, and falls back to WebGL2 on a refusal)', async () => {
+    const adapter = await gpu.requestAdapter();
+    const device = await adapter.requestDevice({ requiredLimits: { maxStorageBuffersInVertexStage: 3 } });
+    expect(device.limits.maxStorageBuffersInVertexStage).toBeGreaterThanOrEqual(3);
+    device.destroy();
+  });
+
   it('answers a timestamp query with zeros, never the time', async () => {
     const adapter = await gpu.requestAdapter();
     takeDawnReports();
