@@ -188,13 +188,13 @@ jobs:
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
       # WebGL through ANGLE (crates/dom/tests/webgl.rs, KINETOGRAPH_WEBGL=angle) on ANGLE's SwiftShader backend, the CPU
-      # rasteriser: these runners have no GPU. SwiftShader is not in the platform package (the files are 4 to 16 MB and the
-      # package does not ship them), so they come from Chrome for Testing into a folder of their own. There is no Chrome
+      # rasteriser: these runners have no GPU. SwiftShader is not in the platform package (the files are 6 to 21 MB and the
+      # package does not ship them), so they come from our ANGLE release into a folder of their own. There is no Chrome
       # here, so a case is held to "drew without an unsupported call"; ANGLE's goldens are Metal's (tests/golden/angle)
       # and are not compared on this backend.
       - name: Fetch ANGLE with SwiftShader (for the tests)
         shell: bash
-        run: node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader --source chrome --out "$RUNNER_TEMP/angle-swiftshader"
+        run: node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader --out "$RUNNER_TEMP/angle-swiftshader"
 
       - name: Test WebGL on ANGLE SwiftShader (macOS, Linux)
         if: runner.os != 'Windows'
