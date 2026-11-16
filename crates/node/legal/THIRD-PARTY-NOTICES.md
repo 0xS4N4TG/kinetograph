@@ -77,10 +77,10 @@ GPL text is `COPYING.GPLv2`.
 
 Not part of the addon and not linked into it: `angle/` holds Google's ANGLE, the OpenGL ES library that runs WebGL
 pages when `KINETOGRAPH_WEBGL=angle` is set. The addon opens `libEGL` and `libGLESv2` from this folder at run time, by
-full path, and only then. They are the unchanged files of Chrome for Testing 150.0.7871.124 (`chrome-headless-shell`),
-checked against SHA-256 values by `scripts/fetch-angle.mjs` in <https://github.com/0xS4N4TG/kinetograph>;
+full path, and only then. They are the unchanged files of Chrome for Testing 150.0.7871.124 (`chrome-headless-shell`) or of our own ANGLE
+build (<https://github.com/0xS4N4TG/kinetograph-angle>), checked against SHA-256 values by `scripts/fetch-angle.mjs` in <https://github.com/0xS4N4TG/kinetograph>;
 `angle/SOURCE.txt` names the archive and the hashes. The licence is `angle/ANGLE-LICENSE`; the libraries also contain
-third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/CHROMIUM-CREDITS.txt`. A build made
+third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/CHROMIUM-CREDITS.txt` (Chrome for Testing builds). A build made
 with `--swiftshader` adds SwiftShader (Apache-2.0, `angle/SWIFTSHADER-LICENSE`) and the Khronos Vulkan loader
 (`angle/VULKAN-LOADER-LICENSE`).
 

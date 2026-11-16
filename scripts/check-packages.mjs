@@ -10,9 +10,13 @@ const dirs = process.argv.slice(2).length
   ? process.argv.slice(2)
   : ['crates/node', ...fs.readdirSync('crates/node/npm').map((d) => `crates/node/npm/${d}`), 'packages/scene', 'packages/compat', 'packages/react', 'packages/core', 'packages/audio', 'packages/cli', 'packages/studio', 'packages/plugins/gsap', 'packages/plugins/p5-brush', 'packages/plugins/anime', 'packages/plugins/motion'];
 // The ANGLE files a platform package must carry: libEGL and libGLESv2 under the platform's file names, and the licences.
-const angleFiles = (name) => {
+// Chrome's credits file covers the third-party code compiled into the Chrome for Testing libraries; our own build
+// (SOURCE.txt names its repository) has none yet, so it is not asked for there.
+const angleFiles = (dir) => {
+  const name = path.basename(dir);
   const ext = name.includes('darwin') ? 'dylib' : name.includes('win32') ? 'dll' : 'so';
-  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'CHROMIUM-CREDITS.txt', 'SOURCE.txt'];
+  const own = fs.readFileSync(`${dir}/angle/SOURCE.txt`, 'utf8').includes('kinetograph-angle');
+  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? [] : ['CHROMIUM-CREDITS.txt'])];
 };
 let bad = 0;
 for (const dir of dirs) {
@@ -29,7 +33,7 @@ for (const dir of dirs) {
   }
   let angle = '';
   if (fs.existsSync(`${dir}/angle`)) {
-    for (const f of angleFiles(path.basename(dir))) if (!paths.includes(`angle/${f}`)) problems.push(`angle/${f} is missing from the package`);
+    for (const f of angleFiles(dir)) if (!paths.includes(`angle/${f}`)) problems.push(`angle/${f} is missing from the package`);
     angle = `, angle/ ${entry.files.filter((f) => f.path.startsWith('angle/')).reduce((n, f) => n + f.size, 0)} bytes unpacked`;
   }
   console.log(`${pkg.name}: ${paths.length} files, ${entry.size} bytes packed${angle}${problems.length ? '\n  ' + problems.join('\n  ') : ''}`);

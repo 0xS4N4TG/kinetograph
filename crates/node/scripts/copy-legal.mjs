@@ -15,8 +15,8 @@ This package holds ${angle ? 'three' : 'two'} separate works:
   It links an FFmpeg built as LGPL 2.1 or later (see THIRD-PARTY-NOTICES.md).
 - The stand-alone program \`bin/ffmpeg\` (\`bin/ffmpeg.exe\` on Windows) is licensed under the GNU General Public License,
   version 2 or later (COPYING.GPLv2). The addon runs it as a child process and never links it. See FFMPEG-LICENSE.md.
-${angle ? `- The libraries in \`angle/\` are Google's ANGLE (BSD-3-Clause, \`angle/ANGLE-LICENSE\`), taken unchanged from a Chrome
-  for Testing build. The addon opens them at run time and does not link them. See THIRD-PARTY-NOTICES.md.
+${angle ? `- The libraries in \`angle/\` are Google's ANGLE (BSD-3-Clause, \`angle/ANGLE-LICENSE\`), taken unchanged from a prebuilt ANGLE
+  (angle/SOURCE.txt says whose). The addon opens them at run time and does not link them. See THIRD-PARTY-NOTICES.md.
 ` : ''}
 ---
 
