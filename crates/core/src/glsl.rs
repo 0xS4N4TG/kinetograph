@@ -4384,6 +4384,7 @@ mod tests {
             cube: false,
             faces: Vec::new(),
             targets: Vec::new(),
+            calls: Vec::new(),
         };
         let rgba8 = decode_texels(&texture(Some(b64(&[7; 16])), None)).unwrap();
         assert_eq!(rgba8, Texels::Rgba8(vec![7; 16]));
