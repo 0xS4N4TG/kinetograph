@@ -222,7 +222,12 @@ jobs:
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
+        # The compositor the cases draw through is wgpu, which found no Vulkan device here and fell back to Skia on the
+        # CPU (about 1.5 minutes a case). Its Vulkan device is the SwiftShader ANGLE ships, through the loader beside it.
+        run: |
+          $env:VK_DRIVER_FILES = "$env:RUNNER_TEMP\angle-swiftshader\vk_swiftshader_icd.json"
+          $env:PATH = "$env:RUNNER_TEMP\angle-swiftshader;$env:PATH"
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
       # ANGLE on the Mac's own GPU through Metal, from the very files the package ships. Its goldens were recorded on an
       # M4; this runner's (virtual) GPU may round differently, so a failure here does not fail the build until a run has
