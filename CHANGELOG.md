@@ -19,6 +19,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 - CSS gradient colour interpolation spaces: `srgb-linear`, `xyz` and `oklch` with hue methods.
 - CSS generic and system font names (`sans-serif`, `serif`, `ui-*`, `system-ui`) draw in bundled fonts; text with no `font-family` stays in the project's first font.
 - The `kinetograph` agent skill routes to smaller skills: `kinetograph-create`, `-markup`, `-render`, `-studio`, `-docs` and `-upgrade`.
+- WebGL draws on ANGLE (Google's OpenGL ES library, loaded from the platform package) by default. `KINETOGRAPH_WEBGL=builtin` selects the earlier hand-written replay, which is also used, with one warning, when ANGLE cannot start.
+- ANGLE picks its device by itself: Metal on macOS, Vulkan on Linux, Direct3D 11 on Windows, and SwiftShader (CPU) when the machine has no usable GPU device. `KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it.
+- The Linux and Windows packages ship SwiftShader and the Vulkan loader in `angle/`.
+- `doctor` reports the WebGL backend and the ANGLE device it would use, and why.
 - WebGL: cube maps, 2D array textures, float colour targets, sRGB textures, struct uniforms, shadow samplers, constant and matrix attributes, line draws and scissored clears.
 - `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - WebGL `blitFramebuffer` to and from float render targets.
@@ -34,7 +38,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL `TEXTURE_BASE_LEVEL`.
 - `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
 - A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
-- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
+- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`.
 
 ### Changed
 

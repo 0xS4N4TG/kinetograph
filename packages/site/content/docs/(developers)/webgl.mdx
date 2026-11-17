@@ -9,7 +9,9 @@ description: How a canvas with a WebGL context is drawn without a browser, what 
 
 ## How it works
 
-- **Drawing.** The calls of one frame become one layer of that frame's scene. The engine translates your GLSL ES (version 100 or 300 es) with naga and draws the layer with wgpu on its own GPU device, together with the rest of the frame.
+- **Drawing.** The calls of one frame become one layer of that frame's scene. By default ANGLE, Google's OpenGL ES library, draws the layer from your GLSL ES, and the engine places the result in the frame. If ANGLE cannot load or start, the built-in replay draws it instead, with one warning saying why.
+- **Backends.** `KINETOGRAPH_WEBGL=builtin` selects the built-in replay: the engine translates your GLSL ES (version 100 or 300 es) with naga and draws with wgpu. `KINETOGRAPH_WEBGL=angle` requires ANGLE and fails where it cannot start. The tables on this page describe the built-in replay; ANGLE draws more of what they list as not drawn.
+- **ANGLE devices.** Metal on macOS, Vulkan on Linux, Direct3D 11 on Windows. A machine with no usable GPU device uses SwiftShader, a CPU rasteriser shipped in the Linux and Windows packages. `KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it. [`doctor`](/docs/terminology/doctor/) with no entry prints the backend and device in use, and why.
 - **One kind of context.** A canvas keeps the first kind it was given. `getContext('2d')` after `getContext('webgl')` returns `null`, and so does the reverse. For `getContext('webgpu')` see [WebGPU](/docs/compat/#webgpu).
 - **Shaders.** `getShaderParameter(shader, gl.COMPILE_STATUS)` is true for any shader that has source. A shader naga cannot translate stops the scene when it loads, and the error names the layer and the program.
 - **A frame starts empty.** Before each frame the engine resets every canvas context. The drawing buffer is empty, also with `preserveDrawingBuffer`. The colour textures of a framebuffer start transparent black, a depth buffer at 1 and a stencil buffer at 0. A frame that draws nothing draws nothing.
