@@ -374,6 +374,8 @@ export function syntheticEntry(entry: string, dev = false): string {
     `export { setMediaParserAddon } from '@kinetographdev/core/media-parser';`,
     // DOM elements are styled, laid out and painted by the addon too (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2).
     `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
+    // `--input`: the scripted input of a page, held in the bundle's copy of the shim, which dispatches it.
+    `export { parsePageInput, setPageInput } from '@kinetographdev/compat/shim';`,
     '',
   ].join('\n');
 }

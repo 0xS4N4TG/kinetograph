@@ -1,8 +1,8 @@
 // `@kinetographdev/compat/shim`: the DOM a React ref and a project's browser globals see in compat mode (packages/cli/skills/kinetograph-markup/references/ENGINE.md
 // §1 "Readback", §10). The reconciler implements `Readback`; core installs the globals.
 
-export { DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';
-export type { CSSStyleDeclarationShim } from './element.js';
+export { gestureListenerElements, setMediaHost, DOMRectShim, DomElement, DomText, domElementFor, domNodeFor, hostOf, isDomElementShim, computedStyleOf, selectorContextOf, affineOf } from './element.js';
+export type { CSSStyleDeclarationShim, MediaHost } from './element.js';
 export type { BoxInfo, HostElement, Overlay, Readback, Rect } from './host.js';
 export { overlayOf, propsWithOverlay, rawParentOf, setRawParent, effectiveParentOf, headHost, bodyHost, setPageDocument, pageDocument } from './host.js';
 export { recordMutation, isRecordingMutations, setMutationSink, insertChild, removeChild } from './tree.js';
@@ -22,11 +22,13 @@ export {
   IntersectionObserverShim,
   MutationObserverShim,
 } from './observers.js';
+export { mediaPending, resetMedia, setMediaClock, takeMediaIssues, tickMedia } from './media.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingFetches } from './web.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
 export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';
 export { matches, queryAll, parseSelectorList } from './selector.js';
+export { armPageInput, dispatchPageInput, parsePageInput, pageInputCount, pageInputDue, setPageInput, type PageInputEvent } from './input.js';

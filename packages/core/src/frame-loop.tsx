@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { resetCanvasStates } from '@kinetographdev/compat/shim';
+import { pendingFetches, resetCanvasStates } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -18,6 +18,7 @@ import {
   collectMotionLayers,
   collectMotionTimes,
   type AudioClipJson,
+  type PageAudioOp,
   type LayerJson,
   type SceneJson,
   type SequenceJson,
@@ -34,16 +35,20 @@ import {
 } from '@kinetographdev/compat/dom';
 import { DELAY_RENDER_TIMEOUT, rejectRenderWaits, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
 import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { realTimers, resetVirtualClock, runAnimationFrames, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
+import { fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
+import { pageAudioNotes, takePageAudioOps } from './page-audio.js';
 import { takePageErrors } from './page-errors.js';
 import { frameReplay, type FrameReplay } from './frame-replay.js';
-import { clearReportedUnsupported, reportedUnsupported, setReportIsRead } from './unsupported.js';
+import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
+import { takeMediaIssues } from '@kinetographdev/compat/shim';
 
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
+  /** What the page did with its `AudioContext` since the last frame returned (the calls of the frames it played on the way too). */
+  pageAudio: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** Layer id to name and source; studio builds only. */
@@ -61,6 +66,37 @@ export interface FrameRenderer {
 }
 
 const tick = () => new Promise<void>((resolve) => realTimers.setImmediate(resolve));
+
+/** Whether something the frame waits for is open: a delayRender handle, a font still loading. */
+const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0;
+setHoldProbe(heldOpen);
+
+/**
+ * Resolves when no delayRender handle is open; rejects with the recorded failure.
+ *
+ * The clock only moves between frames, so a handle whose release waits on a timeout (React holds a revealed Suspense
+ * boundary back for 300 ms with `setTimeout`) would wait for ever. The rule: a `setTimeout` made while the frame is held
+ * open (`heldOpen`) is a hold timer. When the frame is still held and nothing else is moving (no fetch or font is
+ * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
+ * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
+ */
+async function whenReleased(): Promise<void> {
+  let quiet = 0;
+  while (openRenderHandles() > 0) {
+    // A waiter for the release; a new one once that has been released and a handle was opened again.
+    const idle = whenRenderIdle();
+    let released = false;
+    idle.then(() => (released = true), () => (released = true));
+    while (!released && openRenderHandles() > 0) {
+      await Promise.race([idle, tick()]);
+      if (released) break;
+      quiet = pendingFetches() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+      if (quiet >= 2 && fireHoldTimer()) quiet = 0;
+    }
+    await idle;
+  }
+  await whenRenderIdle();
+}
 
 class Renderer implements FrameRenderer {
   private resolved: ResolvedComposition | null;
@@ -149,7 +185,7 @@ class Renderer implements FrameRenderer {
 
     await waitForFonts();
     // A handle the project opened as it loaded (a WASM module's init) holds the first frame, as it holds every other.
-    if (fresh) await whenRenderIdle();
+    if (fresh) await whenReleased();
     let main!: RenderedTree;
     if (!replays) {
       const scene = this.scene!;
@@ -210,6 +246,10 @@ class Renderer implements FrameRenderer {
     }
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
+    // A video or audio element the engine cannot play as asked (an unreadable file, a rate below 0) or a capture it refuses.
+    for (const what of takeMediaIssues()) reportUnsupported('page', 'media', what, 'the page asked for something media elements cannot do here; it is drawn without');
+    // What the page's audio used that the mix cannot do (page-audio.ts), said on every frame.
+    for (const item of pageAudioNotes()) reportUnsupported('audio', item.property, item.value, item.reason);
     const reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
@@ -258,7 +298,7 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
+    return { scene: sceneJson, audio: main.audio, pageAudio: takePageAudioOps(), sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
@@ -357,7 +397,7 @@ class Renderer implements FrameRenderer {
     for (;;) {
       await waitForFonts();
       try {
-        await whenRenderIdle();
+        await whenReleased();
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }

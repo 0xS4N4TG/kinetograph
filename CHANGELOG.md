@@ -31,6 +31,12 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL multisampled renderbuffers (`renderbufferStorageMultisample`, `MAX_SAMPLES` 4), resolved by `blitFramebuffer`.
 - WebGL `copyTexImage2D` and `copyTexSubImage2D`.
 - WebGL `TEXTURE_BASE_LEVEL`.
+- `<video>` and `<audio>` elements play on the virtual clock: `play()`, `pause()`, `currentTime`, `loop`, `playbackRate`, `ended`, `timeupdate` and `requestVideoFrameCallback` follow the frame, never the wall clock.
+- A `<video>` given to WebGL `texImage2D` or `texSubImage2D` is a video texture: the renderer reads the frame at the frame's time.
+- A page's Web Audio (`AudioContext`, `new Audio().play()`, `<audio>` through `createMediaElementSource`) runs on the virtual clock and is replayed into the mix; `AnalyserNode` data comes from the sound. What the mix cannot replay is reported.
+- `--input` sends scripted pointer, mouse, key and wheel events to an HTML page on the virtual clock; `doctor` says when a page waits for a click.
+- `DOMParser` parses XML as XML (namespaces, CDATA, comments, `parsererror`), and `XMLHttpRequest.responseXML` and `responseType = 'document'` return XML documents.
+- `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `KeyboardEvent` globals.
 
 ### Changed
 
@@ -60,6 +66,11 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
+- A `<video>` the page plays itself is not re-seeked by the clip loop.
+- `element.attributes` answers named properties, as a `NamedNodeMap` does.
+- XML elements pass `instanceof Element`, and SVG ones `instanceof SVGElement`.
+- Decoded page audio lives in the user's private cache folder and is checked by SHA-256 before use.
 - A `delayRender()` that was never cleared times out with its label (`DELAY_RENDER_TIMEOUT`) instead of ending `still`, `render` and `doctor` silently with exit code 13 (#101).
 - HyperFrames: a sub-composition's root is found by the id its file gave it, so its script's `getElementById` and `#id` selectors work and its timeline registers (#109).
 - A relative-URL `Request` resolves against the document.
