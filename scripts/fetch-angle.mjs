@@ -32,11 +32,11 @@ export const DEFAULT_SOURCE = 'release';
 // the files below at its top level, plus LICENSE and SOURCE.txt. Hashes are from the release's SHA256SUMS.
 export const RELEASE = {
   repo: '0xS4N4TG/kinetograph-angle',
-  tag: 'angle-454620d149',
+  tag: 'angle-454620d149-r2',
   platforms: {
     'darwin-arm64': {
       asset: 'angle-454620d149-darwin-arm64.tar.gz',
-      archive: 'ee03e8953a76c18919ca2ee455c6c1f20f6fa45587384dbc2ce589c875e3f36b',
+      archive: 'bfbb42b795e71b180581ffb03954235e7f5708535c3bec07c87fcd17d7da8066',
       libs: [
         ['libEGL.dylib', '0afeb443aef7a19fa5edb89961ac214fec078635caab4c963c9c049bf7ddee36'],
         ['libGLESv2.dylib', '108a5d964a2892fa5baf5a5703833d0c79d3de9f3e7941ac7d0a24b1bbfb9da1'],
@@ -49,10 +49,10 @@ export const RELEASE = {
     },
     'linux-x64-gnu': {
       asset: 'angle-454620d149-linux-x64.tar.gz',
-      archive: '50135d4eeb32dcb7676d853de7e3190970d1bd885d839a3ae1bdc78271506857',
+      archive: 'e5bc5ac9bc8876d55f0342f824d7c2f10ccdd20d2c4c94b1f24839a4a1c6f44e',
       libs: [
         ['libEGL.so', '56ffa31c80cd99a2448d9438937aff96979a77317a1c345a981ff07c52d76e0f'],
-        ['libGLESv2.so', '048416d25331166eebfde7b5d0835e50025d9a6e09c789778546f936f1fe52a2'],
+        ['libGLESv2.so', '71316e059df5e4fad5144b16cd799436a4bed2a3cebb300200008046c92804ad'],
       ],
       software: [
         ['libvk_swiftshader.so', 'd0972a335126ce9d2cf80fc91ad20c79ca3a5594f58fe47ba6f4d35ba897596c'],
@@ -63,7 +63,7 @@ export const RELEASE = {
     },
     'win32-x64-msvc': {
       asset: 'angle-454620d149-win32-x64.zip',
-      archive: 'bfd0c052aae00e6e677583afb4abac0be3a12565a99bff49fd177ec27b9c6d13',
+      archive: 'a4d520bd34547e8a2a48b7aafd7ee7188d4fe56f91695e207295588816ab26b3',
       libs: [
         ['libEGL.dll', '61873082e73799e3df02ee6d39eb5057e23c95df414e5bad736b838a14ec7b7d'],
         ['libGLESv2.dll', '1920bb6c80c9d352dd6299344b05ea8a58e50e2b306f7cce79991dc2b2fa3768'],
