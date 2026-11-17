@@ -220,7 +220,7 @@ jobs:
 
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
-        timeout-minutes: 90
+        timeout-minutes: 30
         env:
           KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
@@ -234,9 +234,9 @@ jobs:
           $icd = "$env:RUNNER_TEMP\angle-swiftshader\vk_swiftshader_icd.json"
           New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
           New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
-          $env:KINETOGRAPH_TRACE_START = "1"
-          $env:VK_LOADER_DEBUG = "error,warn"
-          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
+          # SwiftShader draws slowly here, so this runner takes a subset (Linux and macOS run every case): textures, framebuffers,
+          # blending, integer and compressed formats, instancing, uniform buffers, multisampling, and a frame not depending on the last.
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture --exact webgl_texture webgl_framebuffer webgl2_mrt webgl2_float_blend webgl2_int_texture webgl2_compressed webgl2_divisor2 webgl2_ubo_shared webgl2_msaa_resolve webgl2_texture_layers a_frame_does_not_depend_on_what_the_thread_drew_before
 
       # ANGLE on the Mac's own GPU through Metal, from the very files the package ships. Its goldens were recorded on an
       # M4; this runner's (virtual) GPU may round differently, so a failure here does not fail the build until a run has
