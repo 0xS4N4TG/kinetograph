@@ -7,7 +7,7 @@ import { dirname, relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
 import { effectsReport } from '../effects.js';
 import { CliError } from '../errors.js';
-import { describeFailure, hintFor, probeInstall, relevantEnv, type ProbeResult } from '../doctor-probe.js';
+import { describeFailure, hintFor, probeInstall, relevantEnv, type ProbeResult, type WebglBackend } from '../doctor-probe.js';
 import { native, nativeEntry, nativeIsStub } from '../native.js';
 import { formatUpdateReport, updateReport } from '../update-notice.js';
 import { frameRange, type Source } from '../source.js';
@@ -124,7 +124,20 @@ function probeHere(): ProbeResult {
       rendererReason = error instanceof Error ? error.message : String(error);
     }
   }
-  return { addon, renderer, rendererReason };
+  let webgl: WebglBackend | undefined;
+  if (addon.loaded) {
+    try {
+      webgl = native().webglBackend?.();
+    } catch {
+      // The report goes without the WebGL line.
+    }
+  }
+  return { addon, renderer, rendererReason, ...(webgl ? { webgl } : {}) };
+}
+
+/** The WebGL line of the report: the replay, the ANGLE device and why. */
+export function describeWebgl(webgl: WebglBackend): string {
+  return webgl.backend === 'angle' ? `webgl: ANGLE on ${webgl.device ?? 'no device'} (${webgl.why})` : `webgl: built-in replay (${webgl.why})`;
 }
 
 /**
@@ -145,11 +158,11 @@ async function probeApart(progress: Context['progress']): Promise<ProbeResult> {
 
 /** `doctor` with no entry: what this install can do. */
 async function installReport(context: Context): Promise<{ data: object; text: string; exitCode?: number }> {
-  const { addon, renderer, rendererReason, failure, adapters, trace } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
+  const { addon, renderer, rendererReason, webgl, failure, adapters, trace } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
   const updates = await updateReport(cliVersion());
   const env = relevantEnv();
   const data = {
-    node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason,
+    node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason, ...(webgl ? { webgl } : {}),
     ...(adapters ? { adapters } : {}), ...(trace ? { trace } : {}),
     ...(failure ? { failure: failure.kind === 'error' ? failure : { ...failure, hint: hintFor(failure) } } : {}), ...(env.length > 0 ? { env } : {}), ...updates,
   };
@@ -160,6 +173,7 @@ async function installReport(context: Context): Promise<{ data: object; text: st
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
     // A renderer that threw says it once, below, as `why it could not start`.
     ...(rendererReason === null || (failure?.kind === 'error' && failure.message === rendererReason) ? [] : [`why not the GPU: ${rendererReason}`]),
+    ...(webgl ? [describeWebgl(webgl)] : []),
     ...(adapters && (failure !== undefined || renderer === null) ? ['adapters wgpu found:', ...adapters.map((a) => `  ${a}`)] : []),
     ...(failure === undefined ? [] : describeFailure(failure)),
     ...(trace ? ['start-up trace (last lines):', ...trace.slice(-12).map((l) => `  ${l}`), '  (all of it is in --json)'] : []),

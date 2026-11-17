@@ -74,6 +74,11 @@ describe('interpret', () => {
     const r = interpret([...loaded, { stage: 'renderer' }, { stage: 'renderer', done: true, backend: 'Skia GPU (Vulkan)', reason: null }], alive);
     expect(r).toEqual({ addon: { loaded: true, version: '1.2.3' }, renderer: 'Skia GPU (Vulkan)', rendererReason: null });
   });
+  it('carries the WebGL backend the renderer stage reported', () => {
+    const webgl = { backend: 'angle', device: 'SwiftShader', why: 'Vulkan did not start (no Vulkan driver) so SwiftShader' };
+    const r = interpret([...loaded, { stage: 'renderer' }, { stage: 'renderer', done: true, backend: 'Skia CPU (no GPU found)', reason: null, webgl }], alive);
+    expect(r.webgl).toEqual(webgl);
+  });
   it('says a crash in the renderer stage came after the addon loaded', () => {
     const r = interpret([...loaded, { stage: 'renderer' }], { status: -1073741819, signal: null, hung: false });
     expect(r.addon).toEqual({ loaded: true, version: '1.2.3' });

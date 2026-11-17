@@ -400,13 +400,32 @@ pub fn read_canvas_picture(request_json: String) -> Result<Option<Buffer>> {
 }
 
 /// The compressed texture extensions (`WEBGL_compressed_texture_s3tc`, ...) the ANGLE WebGL replay takes on this machine; empty
-/// unless `KINETOGRAPH_WEBGL=angle`. The recorder advertises only these, so a page falls back by itself for the rest.
+/// unless ANGLE is the WebGL replay. The recorder advertises only these, so a page falls back by itself for the rest.
 #[napi]
 pub fn webgl_compressed_formats() -> Vec<String> {
     kinetograph_core::webgl_compressed_formats()
         .into_iter()
         .map(String::from)
         .collect()
+}
+
+/// The WebGL replay a render would use: `angle` or `builtin`, the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`)
+/// when it is ANGLE, and why. Loads and starts ANGLE (the decision is made once per process).
+#[napi(object)]
+pub struct WebglBackend {
+    pub backend: String,
+    pub device: Option<String>,
+    pub why: String,
+}
+
+#[napi]
+pub fn webgl_backend() -> WebglBackend {
+    let (backend, device, why) = kinetograph_core::webgl_backend();
+    WebglBackend {
+        backend: backend.into(),
+        device: device.map(String::from),
+        why,
+    }
 }
 
 /// The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DoctorReport } from '@kinetographdev/compat/doctor';
 import type { SceneJson, Unsupported } from '@kinetographdev/scene';
-import { formatReport } from '../src/commands/doctor.js';
+import { describeWebgl, formatReport } from '../src/commands/doctor.js';
 import { run } from '../src/index.js';
 import { setNativeForTests } from '../src/native.js';
 import type { Source } from '../src/source.js';
@@ -341,5 +341,12 @@ describe('doctor with a delayRender() that is never cleared', () => {
     const r = await cli('doctor', 'index.tsx', '--json');
     expect(r.code).toBe(1);
     expect(r.json).toEqual({ error: { code: 'INTERNAL', message: 'boom' } });
+  });
+});
+
+describe('describeWebgl', () => {
+  it('names the backend, the ANGLE device and why', () => {
+    expect(describeWebgl({ backend: 'angle', device: 'Metal', why: "the platform's own device (Metal)" })).toBe("webgl: ANGLE on Metal (the platform's own device (Metal))");
+    expect(describeWebgl({ backend: 'builtin', device: null, why: 'KINETOGRAPH_WEBGL selects the built-in replay' })).toBe('webgl: built-in replay (KINETOGRAPH_WEBGL selects the built-in replay)');
   });
 });

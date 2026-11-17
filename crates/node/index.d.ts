@@ -715,9 +715,21 @@ export interface VideoOptions {
 
 /**
  * The compressed texture extensions (`WEBGL_compressed_texture_s3tc`, ...) the ANGLE WebGL replay takes on this machine; empty
- * unless `KINETOGRAPH_WEBGL=angle`. The recorder advertises only these, so a page falls back by itself for the rest.
+ * unless ANGLE is the WebGL replay. The recorder advertises only these, so a page falls back by itself for the rest.
  */
 export declare function webglCompressedFormats(): Array<string>
+
+export interface WebglBackend {
+  backend: string
+  device?: string
+  why: string
+}
+
+/**
+ * The WebGL replay a render would use: `angle` or `builtin`, the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`)
+ * when it is ANGLE, and why. Loads and starts ANGLE (the decision is made once per process).
+ */
+export declare function webglBackend(): WebglBackend
 
 /**
  * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
