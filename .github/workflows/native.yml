@@ -196,6 +196,14 @@ jobs:
         shell: bash
         run: node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader --out "$RUNNER_TEMP/angle-swiftshader"
 
+      # The compositor the WebGL cases draw through is wgpu, which needs a Vulkan device of its own: lavapipe, as in the
+      # smoke job. ANGLE's SwiftShader is separate and comes with ANGLE.
+      - name: Install a Vulkan driver for the compositor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+
       - name: Test WebGL on ANGLE SwiftShader (macOS, Linux)
         if: runner.os != 'Windows'
         env:
