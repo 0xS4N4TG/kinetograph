@@ -226,10 +226,8 @@ pub(super) struct GlslGpu {
     webgpu: webgpu::WebGpuCache,
 }
 
-/// What a group's child is called among the pictures a pass samples: the way the texture reads it is part of the name.
-fn input_key(layer: &str, flip_y: bool, premultiply: bool) -> String {
-    format!("{layer}\0{}{}", u8::from(flip_y), u8::from(premultiply))
-}
+// What a group's child is called among the pictures a pass samples: the way the texture reads it is part of the name.
+use crate::angle_replay::layer_key as input_key;
 
 /// The pictures of a group's children a replay reads, by `input_key`: the
 /// view draws sample and the texture uploads copy.
@@ -299,6 +297,9 @@ impl Compositor {
                 );
                 for patch in &texture.patches {
                     note(patch.layer.as_deref(), (patch.flip_y, patch.premultiply));
+                }
+                for call in &texture.calls {
+                    note(call.layer.as_deref(), (call.flip_y, call.premultiply));
                 }
             }
             for op in &content.ops {
@@ -494,6 +495,55 @@ impl Compositor {
         }
     }
 
+    /// The RGBA8 rows of `texture` (of `size`), read back now.
+    fn read_input(&self, texture: &wgpu::Texture, (w, h): (u32, u32)) -> Result<Vec<u8>> {
+        // What the passes recorded for the texture goes first.
+        self.submit();
+        let row = w * 4;
+        let padded = row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("glsl group input readback"),
+            size: u64::from(padded) * u64::from(h),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        let submission = self.queue.submit([encoder.finish()]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait { submission_index: Some(submission), timeout: None })
+            .map_err(|e| render_error(format!("GPU poll failed: {e}")))?;
+        rx.recv()
+            .map_err(|e| render_error(format!("readback channel closed: {e}")))?
+            .map_err(|e| render_error(format!("readback map failed: {e}")))?;
+        let mapped = buffer
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|e| render_error(format!("readback range failed: {e}")))?;
+        let mut rgba = Vec::with_capacity(row as usize * h as usize);
+        for rows in mapped.chunks(padded as usize) {
+            rgba.extend_from_slice(&rows[..row as usize]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        Ok(rgba)
+    }
+
     /// `glsl_draw` with ANGLE drawing: the recording is replayed into an ANGLE context, and
     /// its RGBA8 rows are written into the drawing buffer the rest of the compositor places on the canvas.
     fn glsl_draw_angle(
@@ -503,12 +553,15 @@ impl Compositor {
         base_dir: &Path,
         inputs: &Inputs,
     ) -> Result<()> {
-        if !inputs.is_empty() {
-            return Err(render_error("unsupported: ANGLE does not replay group layers yet"));
-        }
         self.drawing_buffer(size, wgpu::TextureFormat::Rgba8Unorm);
         self.glsl.msaa_on = false;
-        let rgba = crate::angle_replay::replay(content, size, base_dir).map_err(render_error)?;
+        // The children the group's textures read, as the bytes ANGLE uploads: each is the picture `glsl_input` drew
+        // (turned over and premultiplied as its upload asks), read back now.
+        let layers = inputs
+            .iter()
+            .map(|(key, (_, texture))| Ok((key.clone(), self.read_input(texture, size)?)))
+            .collect::<Result<crate::angle_replay::Layers>>()?;
+        let rgba = crate::angle_replay::replay(content, size, base_dir, &layers).map_err(render_error)?;
         let started = crate::angle::settings().time.then(std::time::Instant::now);
         let target = self.glsl.target.as_ref().expect("made above");
         self.queue.write_texture(

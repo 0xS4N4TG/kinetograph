@@ -100,12 +100,37 @@ fn body_of(name: &str) -> (String, u32, u32) {
     let body = format!(
         "<canvas id=\"c\" width=\"{w}\" height=\"{h}\" data-kg-webgl='{}' style=\"display:block\"></canvas>\n\
          <script>\n\
-         const W = {w}, H = {h};\n\
+         const W = {w}, H = {h};\n{}\n\
          (function (gl, W, H) {{\n{script}\n}})(document.getElementById('c').getContext('{ctx}', {attributes}), W, H);\n\
          </script>",
-        recording.trim()
+        recording.trim(),
+        layer_pictures(&script),
     );
     (body, w, h)
+}
+
+/// The children of the shader group of `webgl_group_layer`: id, box (x, y, width, height) and CSS colour. The scene
+/// draws them as shape layers; Chrome's page draws them on 2D canvases (`layerPicture`).
+const GROUP_CHILDREN: [(&str, [u32; 4], &str); 2] = [
+    ("a", [0, 0, 32, 48], "rgba(255,128,0,0.5)"),
+    ("b", [0, 0, 64, 16], "#2060d0"),
+];
+
+/// What the page has for `layerPicture`, which a case of a shader group's textures calls: a 2D canvas with the child
+/// drawn, as a browser would take it (nothing for a case that does not call it).
+fn layer_pictures(script: &str) -> String {
+    if !script.contains("layerPicture(") {
+        return String::new();
+    }
+    let children: Vec<String> = GROUP_CHILDREN
+        .iter()
+        .map(|(id, [x, y, w, h], color)| format!("'{id}': [{x}, {y}, {w}, {h}, '{color}']"))
+        .collect();
+    format!(
+        "const layerPicture = (id, w, h) => {{ const c = document.createElement('canvas'); c.width = w; c.height = h; \
+         const [x, y, bw, bh, color] = {{{}}}[id]; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(x, y, bw, bh); return c; }};",
+        children.join(", ")
+    )
 }
 
 /// The mean and largest difference from Chrome (`None` without Chrome).
@@ -130,6 +155,44 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
         assert!(d.mean < mean_limit, "{name}: {d:?}");
     }
     diff.map(|d| (d.mean, d.max))
+}
+
+/// A texture whose source is a child of a shader group (`GroupLayer::glsl`): the group is a scene, which a page cannot
+/// make, so Chrome draws the children on 2D canvases and the engine renders the group of the same children and the
+/// case's recording. Turned over and premultiplied by the unpack state, as the page asked.
+#[test]
+fn webgl_group_layer() {
+    let name = "webgl_group_layer";
+    let script = case_file(name, "js");
+    let (w, h) = size_of(&script);
+    let (body, ..) = body_of(name);
+    let child = |(id, [x, y, cw, ch], color): &(&str, [u32; 4], &str)| {
+        serde_json::json!({
+            "id": id, "type": "shape", "x": x, "y": y,
+            "shape": { "kind": "rect", "width": cw, "height": ch }, "fill": color,
+        })
+    };
+    let mut glsl: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
+    glsl["width"] = w.into();
+    glsl["height"] = h.into();
+    let scene = serde_json::json!({
+        "width": w, "height": h, "fps": 30, "durationInFrames": 1, "background": "#ffffff",
+        "layers": [{ "id": "pass", "type": "group", "children": GROUP_CHILDREN.iter().map(child).collect::<Vec<_>>(), "glsl": glsl }],
+    });
+    let scene = kinetograph_core::Scene::from_json(&scene.to_string(), paintkit::repo_root().join("crates/dom/tests/assets"))
+        .unwrap_or_else(|e| panic!("scene rejected: {e}"));
+    let frame = kinetograph_core::render_still(scene, 0).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let dir = paintkit::out_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    paintkit::save_frame(&frame, &dir.join(format!("{name}-ours.png")));
+    if std::env::var("KINETOGRAPH_ANGLE_BACKEND").as_deref() != Ok("swiftshader") {
+        check_angle_golden(name, &frame);
+    }
+    if let Some(reference) = paintkit::chrome(name, &body, w, h) {
+        let d = paintkit::diff(&paintkit::frame_image(&frame), &reference);
+        println!("{name}: {d:?}");
+        assert!(d.mean < 1.0, "{name}: {d:?}");
+    }
 }
 
 #[test]
