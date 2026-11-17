@@ -310,21 +310,27 @@ jobs:
       # WebGPU through Dawn (the `webgpu` npm package, KINETOGRAPH_WEBGPU=dawn): the adapter tests, the rendered cases on
       # the built CLI and addon, and the goldens. These runners have no GPU, so Dawn takes its software adapter
       # (`forceFallbackAdapter`, see packages/compat/src/shim/webgpu-dawn.ts): lavapipe on Linux (installed above), WARP
-      # on Windows. On macOS it asks Metal for the runner's own (virtual) GPU; it is not known that one is there, so that
-      # job does not fail the build until a run has shown it. The goldens are Metal's and skip off macOS, saying so. The
-      # tests skip when `webgpu` does not load, so the first step makes that a failure instead.
+      # on Windows. On macOS it asks Metal for the runner's own (virtual) GPU (a run of this job showed one there). The
+      # goldens are Metal's and skip off macOS, saying so. The tests skip when `webgpu` does not load, so the first step
+      # makes that a failure instead; the second prints which backend and adapter Dawn took.
       - name: Dawn loads
         shell: bash
         working-directory: packages/cli
-        continue-on-error: ${{ runner.os == 'macOS' }}
         run: node -e "require('webgpu'); console.log('webgpu loads on', process.platform, process.arch)"
+
+      - name: Which adapter Dawn takes
+        shell: bash
+        timeout-minutes: 5
+        env:
+          KINETOGRAPH_WEBGPU: dawn
+        run: node packages/cli/dist/cli.js doctor
 
       - name: Test WebGPU through Dawn
         shell: bash
-        continue-on-error: ${{ runner.os == 'macOS' }}
+        timeout-minutes: 45
         run: |
           (cd packages/compat && npx vitest run test/webgpu-dawn-adapter.test.ts test/webgpu-dawn-copies.test.ts test/webgpu-dawn-load.test.ts)
-          (cd packages/cli && npx vitest run test/webgpu-dawn.test.ts test/webgpu-dawn-golden.test.ts)
+          (cd packages/cli && npx vitest run --reporter=verbose test/webgpu-dawn.test.ts test/webgpu-dawn-golden.test.ts)
 
       # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
       - name: Clean install and render

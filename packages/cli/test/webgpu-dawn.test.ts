@@ -16,6 +16,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decodePng } from '../src/png.js';
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 30_000 });
+// A child that hangs (a GPU call that never returns) is killed and reported; spawnSync would otherwise block the test run for ever.
+const SPAWN_TIMEOUT = 170_000;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
@@ -48,7 +50,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const env = { ...process.env, KINETOGRAPH_WEBGPU: 'dawn' };
 // KINETOGRAPH_CHUNK=3: a worker takes 3 frames at a time, so four workers over 12 frames each start at a frame of their own (a jump).
-const run = (args: string[]) => spawnSync(process.execPath, [cli, ...args, '--offline'], { encoding: 'utf8', env: { ...env, KINETOGRAPH_CHUNK: '3' } });
+const run = (args: string[]) => spawnSync(process.execPath, [cli, ...args, '--offline'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_CHUNK: '3' } });
 /** Draws `frames` in the order given in one process (a jump back among them), as the PNG md5 of each and what the frames left out. */
 function drawInOrder(entry: string, frames: number[], strict = false): { md5: Record<number, string>; errors: Record<number, string>; leftOut: string } {
   const script = `
@@ -70,7 +72,7 @@ function drawInOrder(entry: string, frames: number[], strict = false): { md5: Re
     // Answered before the project is disposed: the process ends here (a device being destroyed at exit is not what is tested).
     console.log(JSON.stringify(out));
     process.exit(0);`;
-  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, entry, strict ? 'strict' : 'loose', ...frames.map(String)], { encoding: 'utf8', env });
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, entry, strict ? 'strict' : 'loose', ...frames.map(String)], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env });
   expect(r.status, r.stderr).toBe(0);
   return JSON.parse(r.stdout.trim().split('\n').pop()!);
 }
@@ -102,18 +104,18 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     // `dir` is in the temporary folder: resolving "webgpu" from the project's bundle would not find it there.
     const page = join(dir, 'outside.html');
     cpSync(join(fixtures, 'stateless.html'), page);
-    const found = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'outside.png')], { encoding: 'utf8', env: { ...env, KINETOGRAPH_DAWN_MODULE: '' } });
+    const found = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'outside.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: '' } });
     expect(found.status, found.stderr).toBe(0);
-    const absent = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'absent.png')], { encoding: 'utf8', env: { ...env, KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
+    const absent = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'absent.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
     expect(absent.status).not.toBe(0);
     expect(absent.stderr).toMatch(/KINETOGRAPH_WEBGPU=dawn: KINETOGRAPH_DAWN_MODULE=.*no-such-webgpu cannot be loaded/);
     // The default provider does not look for the library, so it is not affected by it.
-    const plain = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'plain.png')], { encoding: 'utf8', env: { ...process.env, KINETOGRAPH_WEBGPU: '', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
+    const plain = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'plain.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: '', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
     expect(plain.status, plain.stderr).toBe(0);
   });
 
   it('says in `doctor` which backend and adapter Dawn gives, and that there is none when the backend has none', () => {
-    const doctor = (extra: Record<string, string>) => spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', env: { ...env, KINETOGRAPH_DAWN_MODULE: '', ...extra } });
+    const doctor = (extra: Record<string, string>) => spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: '', ...extra } });
     const found = JSON.parse(doctor({}).stdout);
     expect(found.dawn.ok, JSON.stringify(found.dawn)).toBe(true);
     expect(found.dawn.adapter.vendor).not.toBe('');
@@ -123,7 +125,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(none.dawn.ok).toBe(false);
     expect(none.dawn.error).toMatch(/Dawn found no adapter/);
     // Not the provider: not mentioned.
-    const plain = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', env: { ...process.env, KINETOGRAPH_WEBGPU: '' } });
+    const plain = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: '' } });
     expect(JSON.parse(plain.stdout).dawn).toBeUndefined();
   });
 
@@ -250,7 +252,7 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
       await second.frame(7);
       console.log(JSON.stringify(globalThis.__kgDraws));
       process.exit(0);`;
-    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, join(fixtures, 'react-two.tsx')], { encoding: 'utf8', env });
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, join(fixtures, 'react-two.tsx')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env });
     expect(r.status, r.stderr).toBe(0);
     // The mount draws frame 0 and then the frame jumped to: nothing replays the frames between.
     expect(JSON.parse(r.stdout.trim().split('\n').pop()!)).toEqual([0, 7]);

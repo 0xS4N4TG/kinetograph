@@ -16,6 +16,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decodePng } from '../src/png.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 30_000 });
+// A child that hangs is killed and reported; spawnSync would otherwise block the test run for ever.
+const SPAWN_TIMEOUT = 110_000;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
@@ -80,7 +82,7 @@ describe.skipIf(missing !== null)('Dawn goldens', () => {
       const page = join(dir, `${name}.html`);
       const out = join(dir, `${name}.png`);
       writeFileSync(page, html);
-      const r = spawnSync(process.execPath, [cli, 'still', page, '0', '--offline', '--strict', '-o', out], { encoding: 'utf8', env: { ...process.env, KINETOGRAPH_WEBGPU: 'dawn' } });
+      const r = spawnSync(process.execPath, [cli, 'still', page, '0', '--offline', '--strict', '-o', out], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: 'dawn' } });
       expect(r.status, r.stderr).toBe(0);
       const golden = join(goldens, `${name}.png`);
       if (update) {
