@@ -1457,6 +1457,7 @@ fn load() -> Result<Shared, String> {
         b"eglInitialize\0",
         unsafe extern "C" fn(*mut c_void, *mut i32, *mut i32) -> u32
     );
+    let get_error = sym!(b"eglGetError\0", unsafe extern "C" fn() -> i32);
     let bind_api = sym!(b"eglBindAPI\0", unsafe extern "C" fn(Enum) -> u32);
     let choose_config = sym!(
         b"eglChooseConfig\0",
@@ -1507,7 +1508,11 @@ fn load() -> Result<Shared, String> {
         }
         let (mut major, mut minor) = (0, 0);
         if initialize(display, &mut major, &mut minor) == 0 {
-            return Err(no_display("eglInitialize failed", software));
+            // ANGLE's own reason (a missing Vulkan extension, say) goes to stderr; the code says which EGL error it was.
+            return Err(no_display(
+                &format!("eglInitialize failed (EGL error {:#x})", get_error()),
+                software,
+            ));
         }
         bind_api(EGL_OPENGL_ES_API);
         // EGL_RENDERABLE_TYPE = ES3, SURFACE_TYPE = PBUFFER, 8 bits a channel.
