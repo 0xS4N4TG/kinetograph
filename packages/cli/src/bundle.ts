@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { build, context, type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { familyFromModuleName } from '@kinetographdev/core/google-fonts';
@@ -93,6 +94,31 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   return null;
 }
 
+const projectReactErrors = new Map<string, string | null>();
+
+/**
+ * Why the React a project's own code would import from `dir` is not one Kinetograph runs, or null. The bundle always
+ * uses the React the CLI carries (React 19), so a project's copy is never loaded; a project written against an older
+ * one is told, instead of being compiled against a React it did not choose. A host workspace's React does not matter
+ * to the pages and scenes that import none (HTML, JSON).
+ */
+export function projectReactError(dir: string): string | null {
+  if (projectReactErrors.has(dir)) return projectReactErrors.get(dir) ?? null;
+  let error: string | null = null;
+  try {
+    const found = createRequire(join(dir, 'noop.js')).resolve('react/package.json');
+    const version = (JSON.parse(readFileSync(found, 'utf8')) as { version?: string }).version ?? '';
+    const major = Number.parseInt(version, 10);
+    if (Number.isFinite(major) && major < 19) {
+      error = `This project resolves React ${version} (${found}), and Kinetograph needs React 19 or newer. Upgrade react and react-dom to 19 in the project.`;
+    }
+  } catch {
+    // No React of the project's own: nothing to be older than 19.
+  }
+  projectReactErrors.set(dir, error);
+  return error;
+}
+
 /** An import of a package Kinetograph does not support, and the file that imports it. */
 export interface UnsupportedImport {
   specifier: string;
@@ -129,6 +155,10 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
     setup(b) {
       b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat|video-matting)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
+        if (/^react(\/|$)/.test(args.path) && args.importer && !args.importer.includes(`${sep}node_modules${sep}`)) {
+          const text = projectReactError(args.resolveDir);
+          if (text) return { errors: [{ text }] };
+        }
         const resolution = resolveSpecifier(args.path);
         if (!resolution) return undefined;
         if (resolution.kind === 'unsupported') {

@@ -42,6 +42,7 @@ Upstream: crates.io `blitz-dom` 0.3.0-beta.3 (`DioxusLabs/blitz`, commit `5890fa
 - `src/stylo.rs`, `src/node/node.rs`: `query_container_size` returns the content box of the node's last layout (`Node::container_size`).
 - `src/resolve.rs`: `resolve` loops, restyling nodes whose size differs from what their queries saw, up to `MAX_CONTAINER_PASSES` (4). Not done: `contain: inline-size`.
 - `src/layout/inline.rs`: a line wider than a float-narrowed slot is reverted (`BreakLines::revert_to`) and laid out again below; block height is at least its last line's bottom.
+- `src/stylo.rs`: `BaseDocument::animates(node, longhand)` says whether a `@keyframes` named in the node's style animates the property (a finished animation leaves the animation set, so the set cannot tell).
 - `src/layout/table.rs`: `auto_columns` implements the automatic table layout algorithm; captions are laid out as blocks above or below the grid.
 - `src/layout/table.rs`, `src/layout/mod.rs`: a cell's `height` is its border box's and a minimum for its row. Not done: percentage widths on `<col>`.
 - `src/mutator.rs`: a `style` change no longer adds `restyle_subtree()` on the element and its parent, nor `ALL_DAMAGE` on the element (setting or removing the attribute): the restyle sets the damage the change does, so a transform or an opacity no longer rebuilds boxes.

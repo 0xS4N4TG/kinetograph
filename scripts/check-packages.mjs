@@ -17,7 +17,7 @@ for (const dir of dirs) {
   if (!/Apache License\s+Version 2\.0/.test(fs.readFileSync(`${dir}/LICENSE.md`, 'utf8'))) problems.push('LICENSE.md is not the Apache License 2.0');
   if (pkg.license !== 'Apache-2.0' && pkg.license !== 'SEE LICENSE IN LICENSE.md') problems.push(`license is ${pkg.license}, not Apache-2.0`);
   for (const [name, range] of Object.entries({ ...pkg.dependencies, ...pkg.optionalDependencies })) {
-    if ((name === 'kinetograph' || name.startsWith('@kinetographdev/')) && !/^\d+\.\d+\.\d+$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
+    if ((name === 'kinetograph' || name.startsWith('@kinetographdev/')) && !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(range)) problems.push(`${name} is ${range}, not an exact version`);
   }
   console.log(`${pkg.name}: ${paths.length} files, ${entry.size} bytes packed${problems.length ? '\n  ' + problems.join('\n  ') : ''}`);
   bad += problems.length;

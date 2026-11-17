@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/scene",
-  "version": "0.3.0",
+  "version": "0.4.0-rc.1",
   "description": "Types and helpers for Kinetograph scene JSON (packages/cli/skills/kinetograph-markup/references/SCENE.md)",
   "license": "Apache-2.0",
   "repository": {

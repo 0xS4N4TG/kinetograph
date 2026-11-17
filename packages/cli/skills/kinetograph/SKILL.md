@@ -2,7 +2,7 @@
 name: kinetograph
 description: Entry point for making videos and motion graphics with Kinetograph, a video engine with no browser in it. Use first when asked to build, edit, preview or render a video, animation, title card or sound design with Kinetograph, or to run any `kinetograph` command; it says which kinetograph-* skill to load next.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Kinetograph

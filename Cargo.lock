@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-cli"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "clap",
  "ffmpeg-next",
@@ -1847,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-core"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "ash",
  "base64 0.23.1",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-dom"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "base64 0.23.1",
  "blitz-dom",
@@ -1910,7 +1910,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-matte"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "ffmpeg-next",
  "kinetograph-cli",
@@ -1920,7 +1920,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-node"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "ffmpeg-next",
  "image",
@@ -1939,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-rive"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "image",
  "kinetograph-core",
@@ -1950,7 +1950,7 @@ dependencies = [
 
 [[package]]
 name = "kinetograph-track"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "ffmpeg-next",
  "kinetograph-core",
@@ -2012,7 +2012,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libmv-sys"
-version = "0.3.0"
+version = "0.4.0-rc.1"
 dependencies = [
  "cc",
 ]
