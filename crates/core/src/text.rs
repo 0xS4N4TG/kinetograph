@@ -197,6 +197,33 @@ fn weight_range(key: &str) -> (f32, Option<f32>) {
     }
 }
 
+/// The bundled fonts of the generic families, in `collection`: Inter for the sans ones, EB Garamond for the serif ones and
+/// JetBrains Mono for the monospace ones. Done when the engine is made, so what a text is set in never depends on which
+/// texts were laid out before it (a render of a part of a scene must equal the render of the whole).
+fn register_generics(collection: &mut Collection) {
+    use crate::generic_fonts::{Kind, generics, register};
+    let (sans, serif) = register(collection);
+    let mono = crate::fallback_fonts::register_monospace(collection);
+    for (kind, ids) in [(Kind::Sans, sans), (Kind::Serif, serif), (Kind::Mono, mono.into_iter().collect())] {
+        for g in generics(kind) {
+            collection.append_generic_families(*g, ids.iter().copied());
+        }
+    }
+}
+
+/// A font key whose family list names no font of the project but a generic or system family (`"Fira Code", monospace`,
+/// `Menlo:700`): the kind of font it is set in, and the weight and italic its `:700i` suffix asks for. A text layout
+/// sets such a key in the bundled font of that kind (`TextEngine::layout`), and a measurement can ask for it, too.
+pub fn generic_key(key: &str) -> Option<(crate::generic_fonts::Kind, Option<f32>, bool)> {
+    let key = key.rsplit_once('@').map_or(key, |(k, _)| k);
+    let (list, suffix) = match key.rsplit_once(':') {
+        Some((list, s)) if !s.is_empty() && s.trim_end_matches('i').bytes().all(|b| b.is_ascii_digit()) => (list, s),
+        _ => (key, ""),
+    };
+    let kind = crate::generic_fonts::kind_of_list(list)?;
+    Some((kind, suffix.trim_end_matches('i').parse::<f32>().ok(), suffix.ends_with('i')))
+}
+
 impl TextEngine {
     /// Registers every font in `fonts` (family name -> path, relative to
     /// `base_dir`) under its scene name.
@@ -242,6 +269,7 @@ impl TextEngine {
             }
         }
         crate::fallback_fonts::register(&mut font_cx.collection, &project);
+        register_generics(&mut font_cx.collection);
         Ok(TextEngine {
             font_cx,
             layout_cx: LayoutContext::new(),
@@ -324,6 +352,15 @@ impl TextEngine {
         laid
     }
 
+    /// The generic family a font key stands for (`generic_key`), when the key is not a family that is loaded.
+    fn generic_of(&mut self, key: &str) -> Option<(parley::fontique::GenericFamily, Option<f32>, bool)> {
+        if self.font_cx.collection.family_id(key).is_some() {
+            return None;
+        }
+        let (kind, weight, italic) = generic_key(key)?;
+        Some((crate::generic_fonts::generics(kind)[0], weight, italic))
+    }
+
     /// Shapes `text` in the named font. `line_height` is a multiple of
     /// `size`; `max_width` wraps lines. `align` places each line within
     /// `max_width`, or within the widest line when there is none.
@@ -344,10 +381,23 @@ impl TextEngine {
             },
             None => (font, None),
         };
+        // A family list that names no loaded family but ends in a generic keyword (`"Fira Code", monospace`, which the
+        // canvas passes whole) is set in the bundled font of that generic family, as a browser sets it in the system's.
+        let generic = self.generic_of(font);
+        let (font, weight, italic) = match &generic {
+            Some((_, w, italic)) => (font, weight.or(*w), *italic),
+            None => (font, weight, false),
+        };
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, false);
-        builder.push_default(StyleProperty::FontFamily(FontFamily::named(font)));
+        match &generic {
+            Some((g, _, _)) => builder.push_default(StyleProperty::from(*g)),
+            None => builder.push_default(StyleProperty::FontFamily(FontFamily::named(font))),
+        }
+        if italic {
+            builder.push_default(StyleProperty::FontStyle(parley::fontique::FontStyle::Italic));
+        }
         if let Some(w) = weight {
             builder.push_default(StyleProperty::FontWeight(FontWeight::new(w)));
         }
@@ -476,6 +526,39 @@ mod tests {
             .iter()
             .find(|r| r.glyphs.iter().any(|g| g.char_index == char_index))?;
         crate::fallback_fonts::name_of_blob(run.font.data.id())
+    }
+
+    /// A text is set the same whatever was laid out before it: the generic families are in the engine from the start, not
+    /// from the first text that names one (a render of a part of a scene must equal the render of the whole).
+    #[test]
+    fn what_a_text_is_set_in_does_not_depend_on_the_texts_laid_out_before_it() {
+        let glyphs = |t: &LaidOutText| t.runs.iter().flat_map(|r| r.glyphs.iter().map(|g| (g.id, g.advance.to_bits()))).collect::<Vec<_>>();
+        let mut first = engine();
+        let a1 = first.layout("Hello wide world", "Unknown Family", 30.0, None, None, TextAlign::Left);
+        let b1 = first.layout("Hello wide world", "monospace", 30.0, None, None, TextAlign::Left);
+        let mut second = engine();
+        let b2 = second.layout("Hello wide world", "monospace", 30.0, None, None, TextAlign::Left);
+        let a2 = second.layout("Hello wide world", "Unknown Family", 30.0, None, None, TextAlign::Left);
+        assert_eq!(glyphs(&a1), glyphs(&a2));
+        assert_eq!(glyphs(&b1), glyphs(&b2));
+    }
+
+    /// CSS Fonts 4, generic families: a family list that names nothing loaded but ends in `monospace` is set in the
+    /// monospace font (here the bundled one), the way a browser sets it in the system's.
+    #[test]
+    fn a_family_list_that_ends_in_monospace_is_set_in_the_bundled_monospace_font() {
+        let mut e = engine();
+        let bundled = format!("builtin:{}", crate::fallback_fonts::monospace_face().name);
+        for font in ["monospace", "Fira Code, monospace", "Fira Code, monospace:700", "ui-monospace"] {
+            let t = e.layout("Hi Wide", font, 30.0, None, None, TextAlign::Left);
+            assert_eq!(font_of(&t, 0).as_deref(), Some(bundled.as_str()), "{font}");
+            // Every glyph is as wide as any other.
+            let widths: Vec<f32> = t.runs.iter().flat_map(|r| r.glyphs.iter().map(|g| g.advance)).collect();
+            assert!(widths.windows(2).all(|w| (w[0] - w[1]).abs() < 0.01), "{font}: {widths:?}");
+        }
+        // A list with no generic keyword stays as it was: the project's font, here the only one.
+        let t = e.layout("Hi", "Fira Code", 30.0, None, None, TextAlign::Left);
+        assert_ne!(font_of(&t, 0).as_deref(), Some(bundled.as_str()));
     }
 
     #[test]

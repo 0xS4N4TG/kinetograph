@@ -1,33 +1,22 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 
-import { components, templates } from '@/lib/catalog';
-import { ItemPage, MovedPage } from '@/sections/item';
+import { Redirect } from '@/components/redirect';
+import { items, movedTo } from '@/lib/library';
 
 type Params = { id: string };
 
 export const dynamicParams = false;
 
-/** Templates were components: their old /components/<id>/ pages stay and point to /templates/<id>/. */
+/** Templates were once components, so their old /components/<id>/ addresses stay too. */
 export function generateStaticParams(): Params[] {
-  return [...components, ...templates].map((t) => ({ id: t.id }));
+  return items.filter((i) => i.type !== 'taste').map((i) => ({ id: i.name }));
 }
 
 export async function generateMetadata(props: { params: Promise<Params> }): Promise<Metadata> {
-  const { id } = await props.params;
-  const t = components.find((x) => x.id === id);
-  if (t) return { title: `${t.title} component | Kinetograph`, description: t.description };
-  return {
-    title: 'Moved | Kinetograph',
-    robots: { index: false },
-    alternates: { canonical: `https://kinetograph.dev/templates/${id}/` },
-  };
+  return movedTo(`/catalog/${(await props.params).id}/`);
 }
 
-export default async function ComponentPage(props: { params: Promise<Params> }) {
-  const { id } = await props.params;
-  const t = components.find((x) => x.id === id);
-  if (t) return <ItemPage kind="component" item={t} items={components} />;
-  if (templates.some((x) => x.id === id)) return <MovedPage to={`/templates/${id}/`} />;
-  notFound();
+/** The old /components/<id>/ page: the item's page in the catalog. */
+export default async function Page(props: { params: Promise<Params> }) {
+  return <Redirect to={`/catalog/${(await props.params).id}/`} />;
 }

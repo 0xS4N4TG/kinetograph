@@ -1,4 +1,5 @@
 import { source } from '@/lib/source';
+import { expandSpeed } from '@/lib/speed-markdown';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-static';
@@ -17,7 +18,9 @@ export async function GET(_req: Request, props: { params: Promise<{ slug: string
   const { slug } = await props.params;
   const page = source.getPage(toSlug(slug));
   if (!page) notFound();
-  const text = await page.data.getText('processed');
+  const processed = await page.data.getText('processed');
+  // The Speed page draws charts; its export carries the same numbers as tables.
+  const text = page.slugs.join('/') === 'speed' ? expandSpeed(processed) : processed;
   return new Response(`# ${page.data.title}\n\n${text}`, {
     headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
   });

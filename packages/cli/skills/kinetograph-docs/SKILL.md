@@ -2,7 +2,7 @@
 name: kinetograph-docs
 description: Search the Kinetograph docs at kinetograph.dev and read a page as Markdown. Use when you need a fact about Kinetograph that the other skills do not give: a CLI flag, a guide, a plugin, the compatibility list, terminology or the changelog.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Read the Kinetograph docs

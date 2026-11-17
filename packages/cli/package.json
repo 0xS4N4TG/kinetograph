@@ -1,9 +1,9 @@
 {
   "name": "kinetograph",
-  "version": "0.3.0",
+  "version": "0.4.0-rc.1",
   "mcpName": "io.github.0xS4N4TG/kinetograph",
   "description": "Agent CLI and MCP server for the Kinetograph video engine: renders Remotion projects, HTML pages and HyperFrames projects without a browser",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
@@ -38,24 +38,27 @@
     "dist",
     "!dist/**/*.map",
     "skills",
-    "assets"
+    "assets",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetographdev/audio": "0.3.0",
-    "@kinetographdev/compat": "0.3.0",
-    "@kinetographdev/core": "0.3.0",
-    "@kinetographdev/native": "0.3.0",
-    "@kinetographdev/scene": "0.3.0",
-    "@kinetographdev/studio": "0.3.0",
-    "@kinetographdev/video-matting": "0.3.0",
+    "@kinetographdev/audio": "0.4.0-rc.1",
+    "@kinetographdev/compat": "0.4.0-rc.1",
+    "@kinetographdev/core": "0.4.0-rc.1",
+    "@kinetographdev/native": "0.4.0-rc.1",
+    "@kinetographdev/scene": "0.4.0-rc.1",
+    "@kinetographdev/studio": "0.4.0-rc.1",
+    "@kinetographdev/video-matting": "0.4.0-rc.1",
     "@modelcontextprotocol/sdk": "1.32.1",
     "esbuild": "0.28.2",
     "parse5": "8.0.1",
     "postcss": "8.5.30",
+    "react": "19.3.1",
+    "react-reconciler": "0.34.0",
     "typescript": "5.9.3",
     "zod": "4.6.7"
   },

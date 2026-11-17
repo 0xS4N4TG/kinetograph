@@ -997,10 +997,34 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: NodeId) {
 /// anonymous blocks it had as a box before an edit: its children now have
 /// another box as `layout_parent`, or none. The paint tree rebuilds only a
 /// node's paint children that has layout children, so they go too.
+///
+/// Nor is it the containing block of the out-of-flow boxes its layout hoisted
+/// to it. Only a node's own layout takes those back (`clear_hoisted_children`),
+/// and it is laid out no more: one of them that is back in flow would keep it
+/// as its containing block, be placed from where it was, and not be painted
+/// (its layout parent leaves a box another node owns to that node).
 fn drop_box_children(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
     *node.layout_children.borrow_mut() = None;
     *node.paint_children.borrow_mut() = None;
     old_anonymous_blocks.extend(std::mem::take(&mut node.anonymous_blocks));
+    let hoisted = std::mem::take(&mut *node.hoisted_children.borrow_mut());
+    for id in hoisted {
+        if let Some(hoisted) = node.tree().get(id) {
+            if hoisted.oof_containing_block.get() == Some(node.id) {
+                hoisted.oof_containing_block.set(None);
+            }
+        }
+    }
+}
+
+/// [`drop_box_children`] for a node that is inline content or the pseudo-element of one, and marks it
+/// ([`NodeFlags::BOX_DROPPED`]): nothing else says that it has to be built when it is a box again. Damage is
+/// cleared whether or not a box is built from it, and the style system keeps restyling the node, so a node that
+/// went back to being a layout child (an edit changed the box that holds it, not the node) would keep no layout
+/// children, a layout parent that is another's, and an inline layout shaped from a style it no longer has.
+fn give_up_box(node: &mut Node, old_anonymous_blocks: &mut Vec<NodeId>) {
+    drop_box_children(node, old_anonymous_blocks);
+    node.flags.insert(NodeFlags::BOX_DROPPED);
 }
 
 /// Find and return the "layout_children" (inline boxes) for an inline layout
@@ -1054,7 +1078,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
         let node = &mut nodes[node_id];
 
         // Set layout_parent for node.
-        node.layout_parent.set(Some(parent_id));
+        node.set_layout_parent(parent_id);
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
@@ -1075,11 +1099,21 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                         if let Some(element) = node.element_data_mut() {
                             element.take_inline_layout();
                         }
-                        drop_box_children(node, old_anonymous_blocks);
+                        give_up_box(node, old_anonymous_blocks);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         drop_box_children(node, old_anonymous_blocks);
+                        // The pseudo-elements of the element are not built into the text (below: only its children
+                        // are), so they have no box either.
+                        for pseudo in [node.before(), node.after()].into_iter().flatten() {
+                            let pseudo = &mut nodes[pseudo];
+                            pseudo.flags.reset_construction_flags();
+                            if let Some(element) = pseudo.element_data_mut() {
+                                element.take_inline_layout();
+                            }
+                            give_up_box(pseudo, old_anonymous_blocks);
+                        }
                         iter_children!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
@@ -1105,7 +1139,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             if let Some(element) = node.element_data_mut() {
                                 element.take_inline_layout();
                             }
-                            drop_box_children(node, old_anonymous_blocks);
+                            give_up_box(node, old_anonymous_blocks);
                             iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,

@@ -5,7 +5,7 @@
 - Render backend: Skia (Graphite on Metal/Vulkan/D3D12, CPU fallback) is the only renderer (Vello is gone); `KINETOGRAPH_SKIA_CPU=1` forces the CPU. `render`, `still` and `doctor` print which one runs. DOM islands via vendored blitz-dom/stylo/taffy.
 - npm: CLI `kinetograph`, libraries `@kinetographdev/*` (0.1.0 published 2026-10-24). Site kinetograph.dev on Vercel (packages/site, auto-deploy from main).
 - Repo: github.com/0xS4N4TG/kinetograph (public), branch main; PRs merge after native.yml CI is green on macOS/Linux/Windows + smoke
-- Licence: PolyForm Small Business 1.0.0 (LICENSE.md); commercial licence for larger companies (COMMERCIAL.md)
+- Licence: Apache-2.0 (LICENSE.md, NOTICE), open source since 2026-11-08; earlier versions stay under PolyForm Small Business 1.0.0
 
 ## Entry points
 - `cargo build --release`; `./target/release/kinetograph still <scene.json> <frame> -o out.png`; `bench <scene.json> --frame N --runs K`.

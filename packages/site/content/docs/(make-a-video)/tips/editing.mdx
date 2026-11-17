@@ -1,0 +1,81 @@
+---
+title: Editing an existing video
+description: How to change a Kinetograph, Remotion or HyperFrames project with an agent, by marking up the preview, changing one thing and proving nothing else moved.
+---
+
+<Media src="studio/markup-dark.webp" width={1600} height={1160} alt={"Markup mode with a pin, a box and a pen stroke, each with a note"} />
+
+Mark the problem in Studio, or name the frame and the layer, and ask for one change. Lock the frames you like first, so a snapshot shows you anything else that moved.
+
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-render Save frames 0, 60, 120 and 179 as approved snapshots. Then move the logo to the top right, and run snapshot. Tell me which frames changed and why each should have.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **What changes and what stays** | "Move the logo. Leave everything else as it is." |
+| **The frame** | "At frame 120 the title sits on the photo." |
+| **Absolute targets** | "The headline at 140 px", not "bigger". |
+| **Approved snapshots** | They show you anything else that moved. |
+
+## Common failure modes
+
+**A vague fix.**
+- **Avoid:** "make it better"
+- **Instead:** "move the logo to the top right and leave everything else"
+
+**Several edits at once.**
+- **Avoid:** "fix the logo, the title and the music"
+- **Instead:** "fix the logo. Then we will do the title"
+
+**No proof.**
+- **Avoid:** "looks fine"
+- **Instead:** "run snapshot and list the frames that changed"
+
+## In more detail
+
+## Mark it up in Studio
+
+Press `M` in Studio, mark the problem on the preview or the timeline, write a note by each mark and send them. See [Studio](/docs/agents/studio-agent/#point-draw-or-comment-on-the-picture).
+
+```txt title="Suggested prompt"
+/kinetograph-studio Fix my markup notes in order. When you finish, list which you did and which you skipped, with the reason.
+```
+
+Without Studio, name the place: "the subtitle at 0:07, the second line, is cut off on the right".
+
+## One change at a time
+
+- **Say what changes and what stays.** "Move the logo to the top right. Leave everything else as it is."
+- **Name the frame.** "At frame 120 the title sits on top of the photo."
+- **Use absolute targets.** "The headline at 140 px", not "bigger".
+
+## Prove nothing else moved
+
+Before the edit, approve the frames that are right. After it, compare:
+
+```txt title="Suggested prompt"
+/kinetograph-render Save frames 0, 60, 120 and 179 as approved snapshots. Then move the logo to the top right, and run snapshot. Tell me which frames changed and why each should have.
+```
+
+A frame that changed when you didn't mean it to is a regression. See the [CLI reference](/docs/reference/cli/#snapshot).
+
+## Retime and extend
+
+Give the new length in seconds and say what absorbs it: "Make the whole video 18 seconds. Shorten scene 2, and leave the others." A transition shortens the video by its length, so mention the total.
+
+## Remotion, HyperFrames and video files
+
+Kinetograph runs Remotion and HyperFrames projects as they are, so an agent can edit them in place. Say which kind it is, and run `doctor` after the edit. See [Migrating](/docs/migrating/remotion/).
+
+An exported video file is not a project. To add titles to it, ask for a new composition that plays the file with `Video` and puts layers over it.
+
+## Related topics
+
+- [Edit in Studio](/docs/studio/)
+- [Bring a project](/docs/making/bring-a-project/)
+- [Ask for a great video](/docs/tips/)

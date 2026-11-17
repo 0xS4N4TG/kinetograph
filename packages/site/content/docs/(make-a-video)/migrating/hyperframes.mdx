@@ -1,0 +1,65 @@
+---
+title: Move from HyperFrames to Kinetograph
+description: What to say to render a HyperFrames project with Kinetograph, and what to expect your agent to flag.
+---
+
+<Terminal command="npx kinetograph doctor index.html\nnpx kinetograph render index.html --strict -o out.mp4" />
+
+Bring an existing HyperFrames project onto Kinetograph, then use everything else here on it: Studio, the library and export.
+
+## What this makes
+
+Not a new video, a **render**. A HyperFrames project needs no rewrite. Kinetograph reads its `index.html`, the compositions it mounts and the scripts it loads, and renders them without a browser. You keep the HTML, the `data-*` attributes and the GSAP timelines.
+
+This only starts when you ask to render or move a HyperFrames project. If you only want something like your HyperFrames video, ask for a new video instead.
+
+## Base prompt
+
+```text title="Suggested prompt"
+Render the HyperFrames project in this folder with Kinetograph. Run kinetograph doctor on index.html first and tell me what the engine cannot draw. Keep the same duration and size, then save it to out/video.mp4.
+```
+
+Name the page or folder. `index.html` or the folder that holds it both work.
+
+## What won't render as it is, and why that's correct
+
+The check lists what a page holds that the engine cannot draw, and the frames where it happens. The agent reports it and does not guess:
+
+- **Anything that needs a browser**, such as a live embedded page. It is drawn without, or approximated, and a warning names it.
+- **A script that waits on the network.** Files the page loads from the web are fetched once and pinned, so a first render needs a connection.
+- **CSS or elements the engine skips.** The report names each one and the frame.
+
+Don't ask the agent to "just approximate" past a finding. It lists every omission and approximation.
+
+## Validation is not optional
+
+```text title="Suggested prompt"
+After rendering, draw a strip of 12 frames and compare it with the HyperFrames preview. Render with --strict so it stops on the first frame with something missing.
+```
+
+`doctor` and a clean render can both pass while a font is missing. Looking at the strip catches that.
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **"The page is `index.html`"** | Names what to render. A folder works too. |
+| **"Keep the same duration and size"** | It is the default. State it so nothing is resized. |
+| **"Run doctor first"** | You see what will be missing before a long render. |
+| **"Render with --strict"** | Stops at the first frame with something unsupported. |
+
+## Common failure modes
+
+**Expecting your editor's preview to match exactly.** Both draw the same page, but a difference in a browser-only feature can show up.
+- **Avoid:** "it must be pixel identical to the preview"
+- **Instead:** "compare a strip of frames and list what differs"
+
+**Pushing past a finding.**
+- **Avoid:** "ignore the doctor report"
+- **Instead:** "fix each finding, or tell me why you can't"
+
+## Related topics
+
+- [HyperFrames project reference](/docs/reference/hyperframes-projects/)
+- [Kinetograph vs Remotion and HyperFrames](/docs/compare/)
+- [Keep your editor, render with Kinetograph](/docs/keep-your-editor/)

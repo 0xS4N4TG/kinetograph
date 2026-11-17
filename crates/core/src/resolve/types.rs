@@ -223,6 +223,8 @@ pub enum ResolvedEffect {
         radius: f32,
         mirror: bool,
     },
+    /// The colour functions of a `backdrop-filter`, as one matrix, applied to what is behind the layer.
+    BackdropColor(ColorMatrix),
     Glow(ResolvedGlow),
     /// The red channel is read `amount` pixels along `angle` degrees
     /// (clockwise from +x), the blue one the same distance the other way.

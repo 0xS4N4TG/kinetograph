@@ -14,7 +14,7 @@ import { fakeNative } from './helpers.js';
 const DAY = 24 * 60 * 60 * 1000;
 const VERSION = cliVersion();
 const SKILLS_LINE = (oldest: string | null) =>
-  `Your Kinetograph agent skills ${oldest === null ? 'have no version stamp' : `are ${oldest}`} and the CLI is ${VERSION}: update them with npx skills add 0xS4N4TG/kinetograph (coding agents: tell the user and ask first)`;
+  `Your Kinetograph agent skills ${oldest === null ? 'have no version stamp' : `are ${oldest}`} and the CLI is ${VERSION}: update them with npx kinetograph skills update (coding agents: tell the user and ask first)`;
 const CLI_LINE = `kinetograph 99.0.0 is out (you have ${VERSION}): npm install kinetograph@latest (coding agents: tell the user and ask first)`;
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'kinetograph-update-test-'));

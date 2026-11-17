@@ -1,4 +1,4 @@
-// Island edits (packages/cli/skills/kinetograph/references/ENGINE.md §2): after a script writes to the tree it reads,
+// Island edits (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2): after a script writes to the tree it reads,
 // the addon is sent what changed instead of the whole request. The stand-in addon keeps the state it was sent and makes
 // the edits to it; every state it reads must be the request a whole build gives (an addon without edits is sent those).
 

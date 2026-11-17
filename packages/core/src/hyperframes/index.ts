@@ -2,6 +2,7 @@
 
 export { defineHyperframes, styleDeclarations } from './runtime.js';
 export type { HfNode, HfPlan, HfScript, HfStylesheet, HfGoogleFont } from './plan.js';
+export { inRunOrder } from './plan.js';
 export { runScopedScript } from './scope.js';
 export type { ScopeEnv } from './scope.js';
 export {

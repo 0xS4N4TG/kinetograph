@@ -1,0 +1,94 @@
+---
+title: Motion and transitions
+description: How to ask for motion that feels right and for cuts between scenes that have a reason, with the words an agent turns into easing, springs and transitions.
+---
+
+<Video name="tips-motion" label="The same card with three different easings" />
+
+Describe how the motion should feel, give a time and a size, and change one thing at a time. The agent turns "snappy" or "slow" into an easing curve, a spring or a duration, and a strip of frames shows you whether it worked.
+
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Make the three cards enter with a 10 frame ease-out, each starting 6 frames after the one before. Nothing else moves. Show a strip of frames 0 to 45.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **A time and an easing** | "10 frame ease-out" means the same thing every time. "Snappy" does not. |
+| **What stays still** | Without it, everything may move. |
+| **The order and the gap** | "Each 6 frames after the one before" makes a stagger. |
+| **Which layer** | Name the one you mean. |
+
+## Common failure modes
+
+**Moving everything.**
+- **Avoid:** "animate the whole scene"
+- **Instead:** "only the three cards move; the background holds still"
+
+**A mood word alone.**
+- **Avoid:** "make it feel premium"
+- **Instead:** "ease-out over 12 frames, 20 px of travel, no bounce"
+
+**Several changes in one go.**
+- **Avoid:** "faster, bigger and bouncier"
+- **Instead:** "make the enter 8 frames. Change nothing else"
+
+## In more detail
+
+## Fix motion you don't like
+
+| What you see | Say |
+|---|---|
+| Too fast to read | "Hold the title for 2 seconds after it lands" |
+| Everything keeps moving | "Only the headline moves. Everything else holds still" |
+| Feels like slides | "Overlap the entrances: the second card starts while the first is still arriving" |
+| Too bouncy | "No overshoot. Ease out over 15 frames" |
+| Jumps at a cut | "Start the next scene's motion 8 frames before the cut" |
+| Dead time | "Cut the pause at 0:04. Something should move every second" |
+
+Give a time when you can: "the card lands at 0:02.0". Frames and seconds both work. Change one thing, then ask for `strip` or `still` at the frames you care about.
+
+## Words for how motion feels
+
+The agent picks the numbers. These are starting points.
+
+| Say | The agent will likely use |
+|---|---|
+| Smooth, calm | An in-out ease over 20 to 30 frames at 30 fps |
+| Snappy | An ease-out over 8 to 12 frames |
+| Bouncy, springy | `spring` with lower damping, so it overshoots |
+| Dramatic | A long ease, 45 frames or more, with a held pause |
+| Mechanical | `linear`, or steps with `Easing.step0` |
+
+Move only what is live, start the next action before the last one ends, and keep overshoot for physical things such as a card or a button. Handmade jitter is seeded, so it is the same every render: ask for "a line that wobbles by 2 px, redrawn every 3 frames".
+
+## Between scenes: transitions
+
+Give a transition a cause: a card that wipes across the screen and reveals the next scene. Pick three to five kinds for the whole video and reuse them.
+
+| Energy | Ask for |
+|---|---|
+| Calm | `fade` or a slow `dissolve`, 20 to 30 frames |
+| Medium | `slide` or `wipe`, 12 to 18 frames |
+| High | `zoomBlur`, `crossZoom`, `ripple` or `filmBurn`, 8 to 15 frames |
+
+The full list is on [Transitions](/docs/making-videos/transitions/). A transition overlaps the scenes around it, so the video gets shorter by its length: "keep the total at 20 seconds" makes the agent lengthen the scenes. For fast moves, ask for [motion blur](/docs/making-videos/motion-blur/) on the thing that moves.
+
+## Suggested prompt
+
+```txt title="Suggested prompt"
+/kinetograph-markup Make the three cards enter with a 10 frame ease-out, each starting 6 frames after the one before. Nothing else moves. Show a strip of frames 0 to 45.
+```
+
+## What works
+
+Everything above is drawn natively. A library that reads the wall clock isn't frame-pure, so its motion can differ between renders. See [Animation and timing](/docs/making-videos/animation/#determinism), [Libraries](/docs/plugins/library-adapters/) and [What works](/docs/compat/).
+
+## Related topics
+
+- [Ask for a great video](/docs/tips/)
+- [Animation and timing](/docs/making-videos/animation/)
+- [Transitions](/docs/making-videos/transitions/)

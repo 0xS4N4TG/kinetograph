@@ -69,7 +69,7 @@ interface WorkerEvents {
 }
 
 function startWorker(start: WorkerStart): Started {
-  const started: Started = { worker: new Worker(new URL('./render-worker.js', import.meta.url), { workerData: start }), early: [] };
+  const started: Started = { worker: new Worker(new URL('./render-worker-entry.js', import.meta.url), { workerData: start }), early: [] };
   const route = (event: (on: WorkerEvents) => void): void => {
     if (started.on) event(started.on);
     else started.early.push(event);

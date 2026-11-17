@@ -26,6 +26,15 @@ export interface HfScript {
   sourceFile: string | null;
 }
 
+/**
+ * The order the scripts run in: the page's own first (classic scripts, then modules), then each mounted composition's.
+ * HyperFrames' runtime mounts the compositions once the page has been parsed and run, then runs their scripts, so a page
+ * script can still edit what a composition will import (a `<template>` it clones from) when the composition's script runs.
+ */
+export function inRunOrder(scripts: readonly HfScript[]): HfScript[] {
+  return [...scripts.filter((s) => s.scope === null), ...scripts.filter((s) => s.scope !== null)];
+}
+
 export interface HfStylesheet {
   css: string;
   file: string;
@@ -63,6 +72,8 @@ export interface HfPlan {
   googleFonts: HfGoogleFont[];
   /** The declared defaults and the host's values of each composition's variables (`getVariables()`), by composition id. */
   variables: Record<string, Record<string, unknown>>;
+  /** The id a mounted file's root was written with, by the id of the host that mounts it, where the two differ (`main` in a block, a host named for the block). */
+  authoredIds: Record<string, string>;
   /** Remote files the page fetches that `fetch-deps` has cached: URL to the cached file's path. `fetch(url)` of one reads it. */
   remoteData: Record<string, string>;
   /** Natural duration in seconds of each media file (absolute path), probed by the CLI. */

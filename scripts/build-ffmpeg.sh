@@ -9,7 +9,7 @@
 #   FFMPEG_DIR=PREFIX                    npm run build:release -w @kinetographdev/native -- --features ffmpeg-static      (Windows)
 #
 # Licence: no --enable-gpl, --enable-version3 or --enable-nonfree anywhere, so libavcodec and the rest are LGPL 2.1+
-# and the PolyForm-licensed addon may link them statically. That rules out libx264 and libx265 (GPL). H.264 comes from
+# and the Apache-2.0-licensed addon may link them statically. That rules out libx264 and libx265 (GPL). H.264 comes from
 #   macOS    VideoToolbox (the system's) and libopenh264 (BSD, built here from source)
 #   Linux    libopenh264, and NVENC (the NVIDIA driver's library, loaded at run time, nothing linked)
 #   Windows  Media Foundation (h264_mf, system DLLs) and NVENC

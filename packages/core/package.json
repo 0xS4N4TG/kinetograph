@@ -1,8 +1,8 @@
 {
   "name": "@kinetographdev/core",
-  "version": "0.3.0",
+  "version": "0.4.0-rc.1",
   "description": "Remotion-shaped authoring API for Kinetograph: frame clock, Remotion core and packages, determinism",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
@@ -179,17 +179,18 @@
     "dist",
     "!dist/**/*.map",
     "THIRD-PARTY-NOTICES.md",
-    "LICENSE-APACHE-2.0.txt"
+    "LICENSE-APACHE-2.0.txt",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetographdev/compat": "0.3.0",
-    "@kinetographdev/native": "0.3.0",
-    "@kinetographdev/react": "0.3.0",
-    "@kinetographdev/scene": "0.3.0",
+    "@kinetographdev/compat": "0.4.0-rc.1",
+    "@kinetographdev/native": "0.4.0-rc.1",
+    "@kinetographdev/react": "0.4.0-rc.1",
+    "@kinetographdev/scene": "0.4.0-rc.1",
     "react-reconciler": "0.34.0"
   },
   "peerDependencies": {

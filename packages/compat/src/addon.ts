@@ -9,9 +9,10 @@ export interface DomAddon {
   /**
    * `IslandRequest` JSON in, `IslandOutput` JSON out. `pass` numbers the renders of one frame, its motion-blur samples
    * included; `base` is the pass of the island's layers the caller kept (`bases` of dom/index.ts): when the addon kept
-   * the same ones, the layers come back as changes from them, with `delta: base`.
+   * the same ones, the layers come back as changes from them, with `delta: base`. With `probes` (host-tree paths), the
+   * output's `probes` has each element's size and overflow in the layout the render draws (an older addon has none).
    */
-  renderDomIsland(requestJson: string, pass?: number, base?: number): string;
+  renderDomIsland(requestJson: string, pass?: number, base?: number, probes?: string[]): string;
   /** `renderDomIsland` queued behind the renders before it: a ticket for `finishDomIsland`, which waits for the output. */
   startDomIsland?(requestJson: string, pass?: number, base?: number): number;
   finishDomIsland?(ticket: number): string;

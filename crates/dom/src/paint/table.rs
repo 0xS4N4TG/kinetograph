@@ -199,6 +199,7 @@ impl<'a> Painter<'a> {
                 border: [0.0; 4],
                 padding: [0.0; 4],
                 radii: Radii::ZERO,
+                inline_text: None,
             };
             let mut layers = self.background(part, &style, &geom);
             let cut = Rect::new(

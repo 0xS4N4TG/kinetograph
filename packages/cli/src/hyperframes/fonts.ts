@@ -40,9 +40,16 @@ const SANS = 'inter';
 const MONO = 'jetbrains-mono';
 const SERIF = 'eb-garamond';
 
+/**
+ * Names HyperFrames has no entry for, whose text its renderer sets in the operating system's font of that name (Chrome on
+ * the machine that renders). Kinetograph reads no system fonts: each is set in the nearest bundled family instead, and the
+ * page is told. `Impact` is a heavy condensed face, so Archivo Black (one weight, heavy) stands in for it.
+ */
+export const NEAREST_BUNDLED: Record<string, string> = { impact: 'archivo-black' };
 /** Lower-cased family name to a key of `BUNDLED`: the families themselves, then the names HyperFrames maps to one. */
 export const FONT_ALIASES: Record<string, string> = {
   ...Object.fromEntries(Object.entries(BUNDLED).map(([slug, f]) => [f.family.toLowerCase(), slug])),
+  ...NEAREST_BUNDLED,
   'helvetica neue': SANS, helvetica: SANS, arial: SANS, 'helvetica bold': SANS,
   futura: 'montserrat', 'din alternate': 'montserrat', 'arial black': 'montserrat',
   'bebas neue': 'league-gothic', 'courier new': MONO, courier: MONO, garamond: SERIF,
@@ -172,6 +179,8 @@ export interface BundledUse {
   weights: string[];
   /** Names the page uses for it, other than its own. */
   as: string[];
+  /** Those of `as` that are system fonts set in this family as the nearest one (`NEAREST_BUNDLED`), not as HyperFrames does. */
+  nearest: string[];
 }
 
 /**
@@ -187,8 +196,9 @@ export function bundledUses(use: FontUse, linked: ReadonlySet<string>): BundledU
     if (slug === undefined) continue;
     const bundled = BUNDLED[slug]!;
     if (linked.has(bundled.family.toLowerCase()) && lower === bundled.family.toLowerCase()) continue;
-    const entry = byFamily.get(bundled.family) ?? { family: bundled.family, weights: bundled.weights, as: [] };
+    const entry = byFamily.get(bundled.family) ?? { family: bundled.family, weights: bundled.weights, as: [], nearest: [] };
     if (lower !== bundled.family.toLowerCase() && !entry.as.includes(name)) entry.as.push(name);
+    if (lower in NEAREST_BUNDLED && !entry.nearest.includes(name)) entry.nearest.push(name);
     byFamily.set(bundled.family, entry);
   }
   return [...byFamily.values()];

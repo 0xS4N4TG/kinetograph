@@ -1,0 +1,42 @@
+---
+title: Troubleshooting
+description: Fixes for the problems people hit most, from install checks to a missing skill, a slow render, a missing font and an out-of-date notice.
+---
+
+<Terminal command="npx kinetograph doctor" />
+
+Run `npx kinetograph doctor` first. It reports what is wrong with your install. Run `npx kinetograph doctor <entry>` to list what a project holds that the engine cannot draw.
+
+## The install does not work
+
+- **`doctor` says `NOT loaded`.** The text after it gives the reason. Check that `node -v` shows 22 or newer. On a system with no prebuilt package, [build from source](/docs/contributing/build-from-source/).
+- **Saving an MP4 fails.** The npm package carries its own `ffmpeg` program. If you set `KINETOGRAPH_FFMPEG`, check that the path is right, or unset it.
+
+## My agent does not know Kinetograph
+
+- Install the skills with `npx kinetograph skills update`, then start a new session in your agent. See [Agent skills](/docs/agents/skills/).
+- `doctor` lists each installed skill and whether it is current.
+
+## The video looks wrong
+
+- **Text is cut off or a font is missing.** Run `npx kinetograph lint <entry>`. It reports overflow, missing fonts and missing files.
+- **Something is not drawn.** Run `npx kinetograph doctor <entry>`. It names each thing the engine cannot draw and the frames where it happens. [What works](/docs/compat/) has the full list.
+- **You want an error, not a warning.** Add `--strict` to `render`, `still` or `strip`.
+
+## It is slow
+
+Look at single frames with `still` and `strip` before a full render, and use `render --draft`. [Fix a slow render or preview](/docs/rendering/slow-renders/) shows how to find the slow part.
+
+## Studio does not open
+
+Studio listens on port 3000. If that is busy, run `npx kinetograph studio <entry> --port 0` to pick a free one. See [Studio](/docs/studio/).
+
+## An out-of-date notice appears
+
+Once a day Kinetograph prints one line when the CLI or a skill is out of date. It never installs anything. To update, see [Update Kinetograph](/docs/upgrading/). To silence it, set `KINETOGRAPH_NO_UPDATE_CHECK=1`.
+
+## Related topics
+
+- [Check your setup](/docs/check-your-setup/)
+- [FAQ](/docs/faq/)
+- [What works](/docs/compat/)

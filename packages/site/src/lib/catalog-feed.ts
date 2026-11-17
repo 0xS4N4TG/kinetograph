@@ -4,7 +4,7 @@
 // truth. This file imports nothing from the app (the script loads it with Node's type stripping) and uses no syntax
 // that stripping cannot erase.
 
-/** The site's address: a plugin's page is `${SITE_URL}/plugins/<slug>/`. */
+/** The site's address: a plugin's page is `${SITE_URL}/catalog/plugin-<slug>/`. */
 export const SITE_URL = 'https://kinetograph.dev';
 
 /** What the feed reads from a catalog plugin. The catalog may add `icon`, `version` and `published` later. */
@@ -52,7 +52,7 @@ export function catalogFeed(plugins: readonly CatalogSource[], siteUrl: string =
       ...(p.icon ? { icon: p.icon } : {}),
       ...(p.version ? { version: p.version } : {}),
       published: p.published === true,
-      url: `${base}/plugins/${p.slug}/`,
+      url: `${base}/catalog/plugin-${p.slug}/`,
     })),
   };
 }

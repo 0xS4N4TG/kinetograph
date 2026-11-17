@@ -1,8 +1,8 @@
 {
   "name": "@kinetographdev/studio",
-  "version": "0.3.0",
+  "version": "0.4.0-rc.1",
   "description": "kinetograph studio: a local web server and browser UI whose preview frames the addon renders",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/0xS4N4TG/kinetograph.git",
@@ -35,7 +35,8 @@
     "dist",
     "catalog",
     "!dist/**/*.map",
-    "ui/dist"
+    "ui/dist",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -44,14 +45,14 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^2.0.2",
-    "@kinetographdev/audio": "0.3.0",
-    "@kinetographdev/core": "0.3.0",
-    "@kinetographdev/native": "0.3.0",
-    "@kinetographdev/scene": "0.3.0",
+    "@kinetographdev/audio": "0.4.0-rc.1",
+    "@kinetographdev/core": "0.4.0-rc.1",
+    "@kinetographdev/native": "0.4.0-rc.1",
+    "@kinetographdev/scene": "0.4.0-rc.1",
     "ws": "8.22.0"
   },
   "peerDependencies": {
-    "kinetograph": "0.3.0"
+    "kinetograph": "0.4.0-rc.1"
   },
   "devDependencies": {
     "@types/ws": "8.18.2"

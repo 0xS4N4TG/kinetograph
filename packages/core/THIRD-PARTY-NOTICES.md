@@ -1,6 +1,6 @@
 # Third-party notices
 
-The rest of this package is licensed under the PolyForm Small Business License 1.0.0 (`LICENSE.md`). The files below
+The rest of this package is licensed under the Apache License 2.0 (`LICENSE.md`). The files below
 are derived from Apache-2.0 work.
 
 ## HyperFrames (Apache License 2.0)

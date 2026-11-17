@@ -4,11 +4,11 @@
 
 import { z } from 'zod';
 
-export const ITEM_TYPES = ['component', 'template', 'taste'] as const;
+export const ITEM_TYPES = ['component', 'template', 'taste', 'skill'] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 /** The folder under `src/` each type installs into. */
-export const TYPE_FOLDERS: Record<ItemType, string> = { component: 'components', template: 'templates', taste: 'tastes' };
+export const TYPE_FOLDERS: Record<ItemType, string> = { component: 'components', template: 'templates', taste: 'tastes', skill: 'skills' };
 
 /** The `public/` folders `kinetograph init` makes; an item's assets go in these, namespaced by item name. */
 export const ASSET_KINDS = ['images', 'fonts', 'audio', 'video'] as const;

@@ -3,17 +3,19 @@
   "version": "0.3.0",
   "private": true,
   "description": "The Kinetograph landing site: Next.js static export, Tailwind CSS, shadcn-style components",
-  "license": "PolyForm-Small-Business-1.0.0",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "videos": "node scripts/fetch-videos.mjs",
+    "build": "node scripts/fetch-videos.mjs && next build",
     "start": "npx serve out",
     "preview": "npx serve out",
     "catalog": "node scripts/catalog.mjs",
     "registry": "node scripts/registry.mjs",
     "test": "vitest run",
-    "engine-diagram": "node scripts/engine-diagram.mjs"
+    "engine-diagram": "node scripts/engine-diagram.mjs",
+    "illustrations": "node scripts/illustrations.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -23,6 +25,7 @@
     "@fontsource-variable/geist-mono": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource-variable/newsreader": "5.3.0",
+    "@fontsource-variable/sofia-sans-extra-condensed": "5.3.0",
     "@fontsource/kalam": "5.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -36,6 +39,7 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "roughjs": "4.6.6",
+    "simple-icons": "^16.37.0",
     "tailwind-merge": "3.7.0"
   },
   "devDependencies": {

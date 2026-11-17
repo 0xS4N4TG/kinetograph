@@ -350,6 +350,9 @@ pub struct BoxGeom {
     pub border: [f64; 4],
     pub padding: [f64; 4],
     pub radii: Radii,
+    /// For a fragment of an inline element: the inline formatting context that holds its text, and where that
+    /// context's content origin is in this box's own space (`background-clip: text` cuts to the element's glyphs).
+    pub inline_text: Option<(blitz_traits::node_id::NodeId, (f64, f64))>,
 }
 
 impl BoxGeom {

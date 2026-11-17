@@ -1,0 +1,66 @@
+---
+title: Make a video like one you like
+description: Give your agent a video you like and get a new one with the same timing, layout and look, or a reusable style.
+---
+
+<Video name="taste-match" label="A reference video and the Kinetograph video made to match it, side by side" />
+
+Give your agent a video you like, and it makes one with your words in the same timing, layout and look. You can also keep just the style and use it again. This is the `kinetograph-taste-clone` skill.
+
+## Before you start
+
+- Kinetograph installed.
+- `ffmpeg`, `ffprobe` and `python3` on your computer, and `yt-dlp` to fetch a link.
+- A video you have the right to use as a reference.
+
+## Install
+
+The taste skill comes with the other skills. Run this in your project folder, then start a new session in your agent:
+
+```sh
+npx kinetograph skills update
+```
+
+## Ask for your first match
+
+Paste the link, say what to change, and say what to keep:
+
+```text title="Suggested prompt"
+/kinetograph-taste-clone Here is a reel: <url>. Match it with our words and logo, then save its taste as src/tastes/ledger/.
+```
+
+## What happens
+
+1. **Your agent fetches and reads it.** It downloads the video (Pinterest, Instagram, X, TikTok, YouTube or any `yt-dlp` link) into a git-ignored folder, reads every frame and finds the cuts and where each move starts and settles.
+2. **It writes a spec.** `SPEC.md` holds a number for every timing, position, colour, shadow and blur. Anything it only estimated is marked and measured first.
+3. **It picks assets.** Each object comes from public-domain or CC0 sources, is cut out cleanly and is credited in `CREDITS.md`.
+4. **It builds from the numbers**, one shot at a time.
+5. **It checks every shot.** Timing, layout, colour, type, shadows, edges, glow, blur, transitions and assets are each shown as reference, result and difference at full size. You see the video when the checks pass, with a side-by-side and a list of what differs on purpose.
+6. **It writes the style**, if you asked: `TASTE.md` and `taste.json`, with this reel's own words and objects left out.
+
+## Pick the mode
+
+| You want | Mode |
+|---|---|
+| A video with your words and objects, and the reference's timing, camera, layout, type and transitions | Match (the default) |
+| The reference's style, to reuse in new videos | Taste |
+| Both | Match, then Taste |
+| A component like a chart, UI demo or audio visual you saw | Component |
+| A drawn look: hand lettering, scribbles, cut paper | Trace |
+
+When it is unclear, say Match first. Trace also needs `potrace` and PIL. It turns the frames into a private draft that is used only for checking and never shipped or committed. A piece you ship draws your own content in that hand.
+
+## If something goes wrong
+
+- **The result is "flat" or "not accurate".** That tells your agent nothing. Name a frame and a number: "the shadow under the card at 0:03 is too hard".
+- **The reference's own text, logos or people show up.** They are always swapped for yours. Ask for them to be replaced.
+- **It cannot download the link.** Check that `yt-dlp` is installed, or give it the file. Downloaded media is never committed.
+- **Anything else.** See [Troubleshooting](/docs/help/).
+
+It works with Kinetograph, Remotion or any frame-based renderer.
+
+## Related topics
+
+- [Recreating something you saw](/docs/tips/matching/)
+- [Tastes](/docs/tastes/)
+- [Agent skills](/docs/agents/skills/)

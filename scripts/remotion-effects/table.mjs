@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const statusFile = resolve(process.argv[2] ?? join(here, 'status.json'));
-const pageFile = resolve(process.argv[3] ?? join(here, '..', '..', 'packages', 'site', 'content', 'docs', 'guides', 'remotion-effects.mdx'));
+const pageFile = resolve(process.argv[3] ?? join(here, '..', '..', 'packages', 'site', 'content', 'docs', 'making-videos', 'remotion-effects.mdx'));
 const status = JSON.parse(readFileSync(statusFile, 'utf8'));
 const { version } = status;
 // The harness's own cases (the chain, the components) are not effects of the package.

@@ -1,5 +1,5 @@
 // An island request changed by what a script wrote since it was sent, and the changes as `IslandEdits` of
-// crates/dom/src/request.rs (packages/cli/skills/kinetograph/references/ENGINE.md §2): the addon edits the state it
+// crates/dom/src/request.rs (packages/cli/skills/kinetograph-markup/references/ENGINE.md §2): the addon edits the state it
 // holds instead of reading the whole tree again. Pure: no addon, no clock.
 
 import { sameJson } from '@kinetographdev/scene';

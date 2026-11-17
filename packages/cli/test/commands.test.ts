@@ -180,6 +180,23 @@ describe('compositions, effects, doctor', () => {
   });
 });
 
+describe('doctor with a backend that is not in the build', () => {
+  it('gives the reason in --json and says it once in the text', async () => {
+    const reason = 'no compatible GPU adapter found: no adapter on Backends(GL); this build has no Backends(GL) backend (it has Backends(VULKAN))';
+    class Refused {
+      constructor() {
+        throw new Error(reason);
+      }
+    }
+    setNativeForTests(fakeNative({ Renderer: Refused }).native);
+    const json = await cli('doctor', '--json');
+    expect(json.json).toMatchObject({ renderer: null, rendererReason: reason });
+    const text = await cli('doctor');
+    expect(text.text).toContain('renderer: could not start');
+    expect(text.text.split(reason)).toHaveLength(2);
+  });
+});
+
 describe('still', () => {
   it('hands a scene file to the addon unchanged and writes the PNG', async () => {
     const file = sceneFile();

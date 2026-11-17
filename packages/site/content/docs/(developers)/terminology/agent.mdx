@@ -1,0 +1,21 @@
+---
+title: Agent
+description: A coding agent that works on your project, in Studio's chat or through the MCP server.
+---
+
+An agent is a coding agent such as Claude Code, Codex or Gemini CLI. It can write a project, look at frames and render a video.
+
+There are two ways it connects. In Studio, the chat panel talks to your agent over the Agent Client Protocol (ACP). Studio sends it the layers or the span of time you picked, and asks before it edits a file.
+
+Outside Studio, the agent uses the MCP server, started with `npx kinetograph mcp`. It has one tool for each command except `studio`. An agent in Studio gets the same tools, plus ones to read and set the props on screen.
+
+Skills, each a `SKILL.md`, teach the agent the loop: write, look, check, render.
+
+**Coming from Remotion:** no equivalent.
+**Coming from HyperFrames:** no equivalent. The `kinetograph` skills cover HTML pages too.
+
+## Related topics
+
+- [Use it with your agent](/docs/agents/claude-code/)
+- [Studio: the agent](/docs/studio/find-your-way/#the-agent-chat)
+- [Panels](/docs/studio/panels/)

@@ -1,5 +1,5 @@
 import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
-import { FolderTreeIcon, SparklesIcon } from 'lucide-react';
+import { FolderTreeIcon, InfoIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { CopyButton } from '@/components/docs/copy-button';
@@ -65,7 +65,7 @@ function Tree({ code, ...props }: { code: string } & Omit<ComponentProps<typeof 
  * Written as a ```txt block titled "Suggested prompt" whose text starts with `/skill-name`, or as
  * `<Prompt skill="kinetograph-markup">Add motion blur to my text</Prompt>`.
  */
-export function PromptBox({ skill, children }: { skill?: string; children?: ReactNode }) {
+export function PromptBox({ skill, label = 'Suggested prompt', children }: { skill?: string; label?: string; children?: ReactNode }) {
   let text = textOf(children).trim();
   let name = skill;
   if (!name) {
@@ -77,7 +77,7 @@ export function PromptBox({ skill, children }: { skill?: string; children?: Reac
     <figure className="not-prose my-6">
       <div className="kg-box flex items-start gap-3 px-4 py-5 sm:items-center sm:px-6">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fd-accent text-fd-primary">
-          <SparklesIcon className="size-4" />
+          <InfoIcon className="size-4" />
         </span>
         <p className="min-w-0 flex-1 text-sm leading-relaxed text-fd-foreground">
           {name ? (
@@ -89,18 +89,18 @@ export function PromptBox({ skill, children }: { skill?: string; children?: Reac
         </p>
         <CopyButton text={full} label="Copy prompt" />
       </div>
-      <figcaption className="mt-2 text-center text-xs text-fd-muted-foreground">Suggested prompt</figcaption>
+      <figcaption className="mt-2 text-center text-xs text-fd-muted-foreground">{label}</figcaption>
     </figure>
   );
 }
 
 /**
  * The docs' `pre`. Fumadocs' own already renders `title="src/MyComp.tsx"` as a file-name header with a copy button.
- * On top of it: a text block drawn with ├─ branches is a file tree, and a block titled "Suggested prompt" is a prompt box.
+ * On top of it: a text block drawn with ├─ branches is a file tree, and a block titled "Suggested prompt" or "Install prompt" is a prompt box.
  */
 export function DocsPre(props: ComponentProps<'pre'> & { title?: string; icon?: ReactNode }) {
   const { title, children, icon, ...rest } = props;
-  if (title === 'Suggested prompt') return <PromptBox>{textOf(children)}</PromptBox>;
+  if (title === 'Suggested prompt' || title === 'Install prompt') return <PromptBox label={title}>{textOf(children)}</PromptBox>;
   const code = textOf(children);
   if (TREE_LINE.test(code)) return <Tree code={code} title={title} {...(rest as object)} />;
   return (

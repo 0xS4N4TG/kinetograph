@@ -1,0 +1,30 @@
+---
+title: Check your setup
+description: What Kinetograph needs on your computer, and how to check that it works.
+---
+
+<Terminal command="npx kinetograph doctor" />
+
+Kinetograph needs a few things on your computer. One command checks them.
+
+## What you need
+
+- Node.js 22 or newer.
+- A Mac with Apple Silicon, Linux (64-bit) or Windows (64-bit).
+- No screen. It runs on a server too.
+
+On any other system, [build from source](/docs/contributing/build-from-source/).
+
+## Check it works
+
+```sh
+npx kinetograph doctor
+```
+
+It prints your system and whether the drawing engine loaded. If it says `NOT loaded`, the next line gives the reason. The usual causes are an old Node.js (check with `node -v`) and a system with no prebuilt package.
+
+## Related topics
+
+- [Make your first video](/docs/getting-started/first-video/)
+- [Troubleshooting](/docs/help/)
+- [Update Kinetograph](/docs/upgrading/)

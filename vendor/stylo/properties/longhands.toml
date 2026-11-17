@@ -4049,7 +4049,6 @@ keyword = { values = ["fill", "contain", "cover", "none", "scale-down"] }
 
 [mask-type]
 struct = "svg"
-servo_pref = "layout.unimplemented"
 spec = "https://drafts.fxtf.org/css-masking-1/#propdef-mask-type"
 animation_type = "discrete"
 affects = "paint"

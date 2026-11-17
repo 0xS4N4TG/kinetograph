@@ -1,6 +1,7 @@
 // CSS colours as a Canvas 2D context reads them (`fillStyle`, `addColorStop`, `shadowColor`): the forms a canvas takes
-// every day, and what the scene's colours spell (`#rrggbbaa`). Colour spaces beyond sRGB (`lab()`, `oklch()`,
-// `color()`) are not read; a context ignores such an assignment as it does any it cannot parse.
+// every day, and what the scene's colours spell (`#rrggbbaa`), with `color(srgb ...)`, which is how a computed
+// `color-mix()` reads back. Other colour spaces (`lab()`, `oklch()`, `color(display-p3 ...)`) are not read; a context
+// ignores such an assignment as it does any it cannot parse.
 
 /** The named colours of CSS Color 4, as `name:rrggbb`. */
 const NAMED =
@@ -90,6 +91,16 @@ export function parseCssColor(input: string): Rgba | null {
     if (digits.length !== 6 && digits.length !== 8) return null;
     const byte = (at: number): number => parseInt(digits.slice(at, at + 2), 16);
     return { r: byte(0), g: byte(2), b: byte(4), a: digits.length === 8 ? byte(6) / 255 : 1 };
+  }
+  const srgb = /^color\(\s*srgb\s+(.*?)\s*\)$/.exec(text);
+  if (srgb) {
+    const parts = argumentsOf(srgb[1]!);
+    const alpha = parts === null ? null : alphaOf(parts[3]);
+    if (parts === null || parts.length < 3 || parts.length > 4 || alpha === null) return null;
+    const [r, g, b] = [0, 1, 2].map((i) => channel(parts[i]!, 1));
+    if (r === null || g === null || b === null) return null;
+    const byte = (v: number | null | undefined): number => Math.round(clamp(v!, 0, 1) * 255);
+    return { r: byte(r), g: byte(g), b: byte(b), a: alpha };
   }
   const call = FUNCTION.exec(text);
   if (!call) return null;

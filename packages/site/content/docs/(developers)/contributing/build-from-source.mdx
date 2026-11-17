@@ -1,0 +1,57 @@
+---
+title: Build from source
+description: Build Kinetograph from a copy of the repository, for working on the engine or a platform with no prebuilt package, and the FFmpeg licence.
+---
+
+<Terminal command="npm ci\nnpm run build\nnpx kinetograph doctor" />
+
+Most people install the prebuilt package from npm: see [Write your first video in code](/docs/making-videos/first-video-in-code/). Build from source only to work on the engine, or on a platform with no prebuilt package (Intel Mac, Linux on ARM). It takes 15 to 30 minutes.
+
+The prebuilt native addon covers macOS (arm64), Linux (x64, glibc) and Windows (x64). It carries FFmpeg, so a prebuilt install needs nothing else.
+
+## What you need
+
+- Node.js 22 or newer.
+- A stable Rust toolchain from rustup.
+- The FFmpeg development libraries, pkg-config and libclang.
+
+Install the libraries:
+
+<IconTabs>
+  <Tab label="macOS" icon="macos">
+    ```sh
+    brew install ffmpeg pkgconf
+    ```
+  </Tab>
+  <Tab label="Debian or Ubuntu" icon="ubuntu">
+    ```sh
+    sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libavutil-dev libclang-dev pkg-config
+    ```
+  </Tab>
+</IconTabs>
+
+## Build
+
+From the repository root:
+
+```sh
+npm ci
+npm run build
+```
+
+Then check it from the copy:
+
+```sh
+npx kinetograph doctor
+```
+
+With no entry, `doctor` prints the Node version, the platform, whether the addon loaded and which renderer draws. If the addon line says `NOT loaded`, the text after it gives the reason.
+
+## FFmpeg licence
+
+The FFmpeg libraries linked into the native addon are LGPL 2.1 or later. The `bin/ffmpeg` program in the same npm package is a separate executable under GPL 2 or later, which the addon runs as a child process for `libx264` and `libx265`. The two share no memory or code. To use your own `ffmpeg`, set `KINETOGRAPH_FFMPEG`; to keep the GPL program out of your install, delete `bin/ffmpeg`. Sources and build scripts are in the repository.
+
+## Related topics
+
+- [Contributing to Kinetograph](/docs/contributing/)
+- [How Kinetograph works](/docs/internals/engine/)

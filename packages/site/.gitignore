@@ -6,3 +6,6 @@ next-env.d.ts
 *.tsbuildinfo
 .vercel
 .env*
+
+# Docs clips fetched from the docs-media release at build time
+public/docs-video/

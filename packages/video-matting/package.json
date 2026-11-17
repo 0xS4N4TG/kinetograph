@@ -1,6 +1,6 @@
 {
   "name": "@kinetographdev/video-matting",
-  "version": "0.3.0",
+  "version": "0.4.0-rc.1",
   "description": "Video matting for Kinetograph: separates a video into an opaque base and a foreground with alpha, with the API of @remotion/video-matting, natively",
   "license": "Apache-2.0",
   "repository": {
@@ -43,7 +43,7 @@
     "test": "tsc -p tsconfig.test.json && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kinetographdev/native": "0.3.0"
+    "@kinetographdev/native": "0.4.0-rc.1"
   },
   "engines": {
     "node": ">=22"

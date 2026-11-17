@@ -39,6 +39,7 @@ pub fn box_geom(node: &Node, style: &ComputedValues) -> BoxGeom {
             f64::from(l.padding.left),
         ],
         radii,
+        inline_text: None,
     }
 }
 

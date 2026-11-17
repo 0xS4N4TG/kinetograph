@@ -1,0 +1,24 @@
+---
+title: "kinetograph"
+description: "The command-line tool and MCP server. Most people install only this package."
+---
+
+The CLI and the MCP server. It runs a project, draws frames on the GPU and writes video. It carries the native addon, FFmpeg and the agent skills, so it is the one package most projects need.
+
+```sh
+npm install kinetograph
+```
+Most people only need `npx kinetograph init`, which sets up a project with what it needs.
+
+Current version: 0.3.0.
+
+## Exports
+
+- `kinetograph` (binary): every command, such as `init`, `render`, `still`, `strip`, `lint`, `doctor`, `studio` and `mcp`.
+- Programmatic API: `renderSource`, `listCompositions`, `openSource`, `createMcpServer`, `toolCommands`, `bundleProject`, `findPlugins` and `native`.
+
+## Related topics
+
+- [Check your setup](/docs/check-your-setup/)
+- [CLI reference](/docs/reference/cli/)
+- [Agent tools (MCP)](/docs/mcp/)

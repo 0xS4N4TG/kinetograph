@@ -170,6 +170,7 @@ impl<'a> Painter<'a> {
             camera: self.camera,
             margin: (self.margin_reach > 0.0).then(|| self.margin_reach.ceil() as u32),
             blend_space: "srgb",
+            probes: Default::default(),
         }
     }
 
@@ -472,9 +473,10 @@ impl<'a> Painter<'a> {
             let child = self.node(cid);
             let loc = child.final_layout().location;
             let at = (origin.0 + f64::from(loc.x), origin.1 + f64::from(loc.y));
-            if child.is_anonymous() {
+            if child.is_anonymous() && !is_pseudo_element(node, child) {
                 // A box Blitz made to hold inline content among blocks: no box
-                // of its own to paint.
+                // of its own to paint. (A `::before` or `::after` is built as an
+                // anonymous node too, but it is a box with a style of its own.)
                 self.walk(child, at, ph, pos);
                 continue;
             }
@@ -592,9 +594,9 @@ impl<'a> Painter<'a> {
 
     // ---- small queries ----
 
-    /// Whether `node` makes a stacking context: Blitz's rule plus what it
-    /// leaves out (`mix-blend-mode`, `perspective`, `preserve-3d`,
-    /// `backdrop-filter`, a `url()` filter).
+    /// Whether `node` makes a stacking context: Blitz's rule (`is_stacking_context_root`,
+    /// which also sorts and hoists) plus what it cannot see (a `url()` filter,
+    /// a graded picture).
     pub fn is_sc(&self, node: &Node, parent_flex: bool) -> bool {
         if node.is_stacking_context_root(parent_flex) {
             return true;
@@ -613,16 +615,7 @@ impl<'a> Painter<'a> {
         if node.is_element() && attr(node, grade::GRADE_ATTR).is_some() {
             return true;
         }
-        node.primary_styles().is_some_and(|s| {
-            use style::computed_values::mix_blend_mode::T as Blend;
-            use style::computed_values::transform_style::T as Style3d;
-            use style::values::computed::Perspective;
-            let b = s.get_box();
-            s.get_effects().mix_blend_mode != Blend::Normal
-                || !matches!(b.perspective, Perspective::None)
-                || b.transform_style == Style3d::Preserve3d
-                || !s.get_effects().backdrop_filter.0.is_empty()
-        })
+        false
     }
 
     pub fn is_visible(&self, node: &Node) -> bool {
@@ -703,6 +696,11 @@ fn flatten_plain_group(group: Value) -> Vec<Value> {
         util::shift(l, dx, dy);
     }
     out
+}
+
+/// Whether `child` is the `::before` or `::after` of `parent`.
+fn is_pseudo_element(parent: &Node, child: &Node) -> bool {
+    parent.before() == Some(child.id) || parent.after() == Some(child.id)
 }
 
 /// An attribute of an element, by name.

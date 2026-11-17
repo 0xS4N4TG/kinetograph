@@ -367,12 +367,16 @@ fn enter_bases(at: &mut Option<u64>, bases: &mut HashMap<String, Base>, pass: Op
 /// motion-blur sub-frames included: they update one document per island
 /// instead of building it again. `base` is the pass of the layers of this island the caller holds (`Base`): when they
 /// are the ones kept here, the layers come back as changes from them (`delta`), with `"delta": base`.
+///
+/// `probes` are host-tree paths of elements the output reports on (`IslandOutput::probes`), read from the layout the
+/// render draws.
 pub fn render_dom_island(
     request_json: &str,
     pass: Option<u64>,
     base: Option<u64>,
+    probes: Vec<String>,
 ) -> Result<String> {
-    wait_for(start_dom_island(request_json, pass, base)?)
+    wait_for(start_dom_island(request_json, pass, base, probes)?)
 }
 
 thread_local! {
@@ -385,7 +389,7 @@ thread_local! {
 /// thread after the ones before it, and the ticket returned finishes it
 /// (`finish_dom_island`). The caller can build what comes next meanwhile.
 pub fn start_island(request_json: &str, pass: Option<u64>, base: Option<u64>) -> Result<u32> {
-    let outcome = start_dom_island(request_json, pass, base)?;
+    let outcome = start_dom_island(request_json, pass, base, Vec::new())?;
     Ok(STARTED.with(|started| {
         let (next, pending) = &mut *started.borrow_mut();
         *next = next.wrapping_add(1);
@@ -407,6 +411,7 @@ fn start_dom_island(
     request_json: &str,
     pass: Option<u64>,
     base: Option<u64>,
+    probes: Vec<String>,
 ) -> Result<Outcome<String>> {
     let json = request_json.to_string();
     let caller = kinetograph_core::profile::caller();
@@ -473,6 +478,9 @@ fn start_dom_island(
         kinetograph_core::profile::add_for(&caller, "n_sc_painted", painted as f64);
         let write_timer = kinetograph_core::profile::start();
         let island = &resolved.island;
+        if !probes.is_empty() {
+            output.probes = readback::probes(island, &probes);
+        }
         // A file the island named that could not be read is not drawn as the
         // author meant: say so rather than draw a blank.
         for missing in &island.missing {

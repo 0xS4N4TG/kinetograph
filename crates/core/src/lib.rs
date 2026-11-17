@@ -42,6 +42,7 @@ pub mod shader;
 pub mod stored_pixels;
 pub mod svg_picture;
 pub mod text;
+pub mod trace;
 pub mod turbulence;
 pub mod uniforms;
 pub mod video;

@@ -50,4 +50,4 @@ The built-in ffmpeg does all decoding and encodes with what it has. An encoder i
 program: the GPL one bundled in the platform package (`libx264`, `libx265`), or your own. `KINETOGRAPH_FFMPEG=$(which ffmpeg)`
 makes your system ffmpeg's encoders available, including `h264_vaapi`, `hevc_vaapi`, `h264_qsv` and `hevc_qsv` for Intel and
 AMD GPUs on Linux (`--encoder` only; never the default; 4:2:0 only). An encoder no ffmpeg has is an error that says to set
-`KINETOGRAPH_FFMPEG`. See `/docs/getting-started/installation/#ffmpeg-licence`.
+`KINETOGRAPH_FFMPEG`. See `/docs/contributing/build-from-source/#ffmpeg-licence`.

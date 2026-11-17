@@ -140,6 +140,21 @@ pub struct IslandOutput {
     /// that holds the island's layers must set it.
     #[serde(rename = "blendSpace")]
     pub blend_space: &'static str,
+    /// What the render was asked to report of elements it drew (`probes` of `renderDomIsland`), by host-tree path.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub probes: BTreeMap<String, Probe>,
+}
+
+/// What a script that checks the layout of a frame reads of an element, from the layout the frame is drawn from: its
+/// `getBoundingClientRect` size and the computed `overflow-x` and `overflow-y`.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Probe {
+    pub width: f64,
+    pub height: f64,
+    #[serde(rename = "overflowX")]
+    pub overflow_x: String,
+    #[serde(rename = "overflowY")]
+    pub overflow_y: String,
 }
 
 /// The layers [`write_output`] wrote as changes from `base`, put back

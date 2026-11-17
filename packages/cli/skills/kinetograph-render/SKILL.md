@@ -2,7 +2,7 @@
 name: kinetograph-render
 description: Look at, check and export a Kinetograph composition. Use to see frames (`still`, `strip`, `onion`), check a project without pixels (`inspect`, `lint`, `check`, `doctor`, `snapshot`, `audio analyze`), render to MP4, MOV, WebM, GIF or an image sequence, choose codecs, ProRes profiles, alpha and size, or confirm a render came out right.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0-rc.1"
 ---
 
 # Look, check, render

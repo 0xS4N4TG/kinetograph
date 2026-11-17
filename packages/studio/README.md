@@ -8,4 +8,4 @@ Click a layer in the preview (or drag a box around several, Shift adds), open th
 
 Part of [Kinetograph](https://github.com/0xS4N4TG/kinetograph), a programmatic video engine with no browser in it. See the repository for the documentation.
 
-Licensed under the PolyForm Small Business License 1.0.0, see `LICENSE.md`.
+Licensed under the Apache License 2.0, see `LICENSE.md`.

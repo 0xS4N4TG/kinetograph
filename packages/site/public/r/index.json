@@ -58,6 +58,13 @@
       "access": "free"
     },
     {
+      "name": "blueprint",
+      "type": "taste",
+      "title": "Blueprint",
+      "description": "White line art draws itself on a Prussian-blue cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp.",
+      "access": "free"
+    },
+    {
       "name": "build-out",
       "type": "template",
       "title": "Send button zoom-out",
@@ -300,6 +307,13 @@
       "type": "component",
       "title": "Hexagon tally",
       "description": "A unit chart of hexagons fills in beside a metric card that counts up.",
+      "access": "free"
+    },
+    {
+      "name": "kinetograph-taste-clone",
+      "type": "skill",
+      "title": "Taste Clone",
+      "description": "Agent skill: clone a reel or reference video 1:1, or distil its style into a taste. Installed with `npx kinetograph skills update`.",
       "access": "free"
     },
     {

@@ -1,0 +1,80 @@
+---
+title: Storyboards
+description: How to plan a multi-scene video once, so every scene follows the same direction, and how to use Studio's storyboard panel for it.
+---
+
+<Media src="making-videos/layers-example.webp" width={1280} height={720} alt={"Layers placed one over another on a storyboard frame"} />
+
+For a video with more than a few scenes, state the film's shape once, give one direction block that every scene inherits, and give each scene a job. Settle that plan before any animation, because it is cheaper to change a line of text than a render.
+
+## Base prompt
+
+```text title="Suggested prompt"
+/kinetograph-markup Plan a 24 second vertical video, 1080 by 1920, for a budgeting app. Don't animate yet. Write the plan to plan/storyboard.md for me to approve.
+```
+
+## The knobs that matter
+
+| What to say | Why it matters |
+| --- | --- |
+| **The film** | The point to remember, the arc, the audience, the mood and the length. |
+| **One direction block** | Palette, type, how long things take to enter, one still scene and a ban list. |
+| **A job for each scene** | One focal point, its seconds and how it joins the next. |
+| **A stop for approval** | You change the plan before anything moves. |
+
+## Common failure modes
+
+**Animating first.**
+- **Avoid:** "make a video about budgeting"
+- **Instead:** "plan it first and wait for my approval"
+
+**Every scene moving.**
+- **Avoid:** "animate every scene"
+- **Instead:** "scene 3 is a breather with nothing moving"
+
+**No ban list.**
+- **Avoid:** "make it look good"
+- **Instead:** "no stock photos, no bounce, no gradients"
+
+## In more detail
+
+## The plan
+
+- **The film.** The point a viewer should remember, the arc (a problem, a turn, a payoff), the audience and where they watch, the mood and the length.
+- **One direction block.** The palette and where each colour is used, the type families and sizes, how long things take to enter, one breather scene with nothing moving, and what is banned.
+- **A job for each scene.** What it is, the one focal point, the elements (hero and support), its seconds and how it joins the next scene.
+
+Plant something in the first scene, such as a line or a shape, and bring it back in the last. The video feels planned, and it costs one line.
+
+```txt title="Suggested prompt"
+/kinetograph-markup Plan a 24 second vertical video, 1080 by 1920, for a budgeting app. Don't animate yet. Write the plan to plan/storyboard.md for me to approve.
+
+Film: the point is that you always know what is left to spend. Arc: confusion, then one number, then calm. Audience: people on a short-video feed, sound off. Mood: calm, confident.
+
+Direction for every scene: background #f6f0e4, text #1d1a16, accent #e0553a used only for the number that matters. Newsreader for the headline at 120 px, Inter for labels at 44 px. Entrances take 14 frames with an ease-out. Nothing bounces, nothing has a shadow. Scene 4 is the breather: nothing moves for 2 seconds.
+
+Scenes:
+1. 0:00 to 0:05, a hook. A pile of receipts and the words "Where did it go?". Focal point: the words. Draws a thin accent line under them.
+2. 0:05 to 0:12, the turn. The pile collapses into one number, "412 left". Focal point: the number, in the accent.
+3. 0:12 to 0:18, the proof. Three rows, "Rent", "Food", "Fun", each filling to a bar over 20 frames, one after the other.
+4. 0:18 to 0:21, the breather. The number alone.
+5. 0:21 to 0:24, the end. The logo from public/images/logo.svg and "Know what's left". The accent line from scene 1 draws out under it.
+```
+
+When you approve it, say "build it, hook and turn first, then show me a strip of each".
+
+## Plan in Studio
+
+Studio has panels for the plan: a brief, a script, a storyboard with a card for each shot, a choice of looks shown as frames, and a review beside the preview. Ask the agent to open them and wait for your answers.
+
+```txt title="Suggested prompt"
+/kinetograph-studio Open Studio on src/index.tsx. Start with a brief for a 24 second launch video, then a storyboard, and wait for my answers in the panels before you animate anything.
+```
+
+See [Panels](/docs/studio/panels/).
+
+## Related topics
+
+- [A full film, prompt by prompt](/docs/tips/full-film/)
+- [Edit in Studio](/docs/studio/)
+- [Ask for a great video](/docs/tips/)

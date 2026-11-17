@@ -1,0 +1,39 @@
+---
+title: Speed
+description: Render times of Kinetograph, HyperFrames and Remotion on the same videos.
+---
+
+import { Fact, FrameTime, SpeedBars, SpeedMethod, SpeedSummary, WorkerLanes, WorkerScaling, WorkerSection } from '@/components/docs/speed-charts';
+
+<SpeedSummary />
+
+## Render time per video
+
+<SpeedBars />
+
+<WorkerSection>
+
+## Worker scaling
+
+A render splits the video between workers, and they draw different parts at the same time. On this machine, 4 workers are <Fact k="gain" /> faster than 1 worker, not 4× faster.
+
+<WorkerScaling />
+
+Two things hold it back today:
+
+- **Replay.** A worker has to play the animation through the frames other workers drew before it can draw its own. That is <Fact k="replay" /> of a worker's time.
+- **Slow cores.** One worker already keeps most of the four fast cores busy. Extra workers land on slow cores, and each frame takes <Fact k="slow" /> longer there.
+
+<WorkerLanes />
+
+Machines with more equal cores have more room to scale. This is being worked on.
+
+### Where a frame's time goes
+
+<FrameTime />
+
+</WorkerSection>
+
+## How it was measured
+
+<SpeedMethod />

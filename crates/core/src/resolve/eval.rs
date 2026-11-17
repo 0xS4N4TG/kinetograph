@@ -774,6 +774,15 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
             mirror: *edge_mode == crate::scene::BackdropEdge::Mirror,
         },
+        Effect::BackdropFilter { effects } => ResolvedEffect::BackdropColor(
+            effects
+                .iter()
+                .filter_map(|e| match resolve_effect(e, clock) {
+                    ResolvedEffect::ColorMatrix(m) => Some(m),
+                    _ => None,
+                })
+                .fold(ColorMatrix::IDENTITY, |acc, m| acc.then(&m)),
+        ),
         Effect::Glow {
             radius,
             color,
@@ -1168,6 +1177,21 @@ mod tests {
         );
         let scene = Scene::from_json(&json, PathBuf::new()).unwrap();
         scene.resolve(frame).unwrap().layers[0].effects.clone()
+    }
+
+    #[test]
+    fn a_backdrop_filter_resolves_to_the_colour_functions_one_after_the_other() {
+        let effects = effects_at(
+            r#"[{"type": "backdropFilter", "effects": [{"type": "saturate", "amount": 0}, {"type": "invert", "amount": 1}]}]"#,
+            0,
+        );
+        let [ResolvedEffect::BackdropColor(m)] = effects[..] else {
+            panic!("{effects:?}");
+        };
+        assert_eq!(m, ColorMatrix::saturate(0.0).then(&ColorMatrix::invert(1.0)));
+        // Nothing in it is the identity.
+        let none = effects_at(r#"[{"type": "backdropFilter", "effects": []}]"#, 0);
+        assert!(matches!(none[..], [ResolvedEffect::BackdropColor(m)] if m == ColorMatrix::IDENTITY));
     }
 
     #[test]

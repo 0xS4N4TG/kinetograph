@@ -1,0 +1,39 @@
+---
+title: Edit with the agent
+description: Change a video in Studio by typing a request, or by marking up the preview, and let your coding agent make the edit.
+---
+
+<Video name="studio-edit-agent" label="Marking a box on the preview, writing a note and sending it to the agent" silent />
+
+Studio's chat sends your selection, a frame or a span of time, to the coding agent already on your computer. Type a change, or mark up the preview, and the agent edits the files.
+
+## Type a change
+
+Type in the **Agent** chat and send. Each message carries your selection.
+
+Studio finds Claude Code, Codex or Gemini CLI on your computer. The command menu switches between them, and `--agent <command>` names another one. Only Claude Code is tested so far. The agent works in the folder you started Studio in, and Studio asks you before it edits a file.
+
+You can send a message while the agent is still working. It waits in the **Up next** tray above the message box and goes out when the turn ends.
+
+Drop images onto the chat, paste one, or use the attach button. The agent can use them in the video, for example with `staticFile('refs/name.png')`.
+
+Each message carries the selection: the composition, the frame or span, and the layers you picked. Keep the picture switch on to attach a picture of the selected area, or a contact sheet for a span.
+
+The agent also gets Kinetograph's MCP tools, so it can read and set the props you see, and ask you for a decision in a [panel](/docs/studio/panels/). See [Studio's agent](/docs/plugins/#studios-agent).
+
+Studio listens on `127.0.0.1` by default. If you set `--host` so other computers can reach Studio, the agent is off unless you pass `--allow-remote-agent`.
+
+## Point, draw or comment on the picture
+
+Press `M` for markup mode. Drop a **pin**, drag a **box**, draw with the **pen**, or drag a **range** on the timeline ruler. Type a comment, press Enter to add the note, and send the notes together when you are done. The agent gets each note with its frame, the layers under your mark and a picture of the frame with your marks drawn on it. Esc leaves markup mode.
+
+## Undo
+
+Press Cmd+Z to undo the last edit made with an editing tool, and Shift+Cmd+Z to redo it. See [Find your way around Studio](/docs/studio/find-your-way/#undo-and-redo).
+
+## Related topics
+
+- [Find your way around Studio](/docs/studio/find-your-way/)
+- [Connect your agent](/docs/studio/connect-your-agent/)
+- [Studio panels](/docs/studio/panels/)
+- [Use it with your agent](/docs/agents/claude-code/)

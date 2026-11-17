@@ -29,7 +29,7 @@ export function CommandBar({ command, className, tone = 'paper' }: { command: st
       )}
     >
       <span className={tone === 'ink' ? 'text-paper/60' : 'text-muted-foreground'}>$</span>
-      <code className="min-w-0 flex-1 truncate text-left">{command}</code>
+      <code className="min-w-0 flex-1 overflow-x-auto text-left whitespace-nowrap [scrollbar-width:none]">{command}</code>
       <Button
         size="icon-sm"
         variant={tone === 'ink' ? 'ghost' : 'outline'}
@@ -43,8 +43,8 @@ export function CommandBar({ command, className, tone = 'paper' }: { command: st
   );
 }
 
-/** A code block with a filename tab and a copy button. */
-export function CodeBlock({ code, title, className }: { code: string; title?: string; className?: string }) {
+/** A code block with a filename tab and a copy button. `wrap` wraps long lines (a prompt) instead of scrolling. */
+export function CodeBlock({ code, title, className, wrap = false }: { code: string; title?: string; className?: string; wrap?: boolean }) {
   const { copied, copy } = useCopy(code);
   return (
     <div className={cn('bg-night text-paper overflow-hidden rounded-lg border border-white/10', className)}>
@@ -54,7 +54,7 @@ export function CodeBlock({ code, title, className }: { code: string; title?: st
           {copied ? <CheckIcon /> : <CopyIcon />}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed">
+      <pre className={cn('p-4 font-mono text-[13px] leading-relaxed', wrap ? 'whitespace-pre-wrap' : 'overflow-x-auto')}>
         <code>{code}</code>
       </pre>
     </div>

@@ -1,0 +1,49 @@
+---
+title: Export a video
+description: Render a finished video file from Studio, and find it in your project folder.
+---
+
+When the video is ready, choose **Export** in the top bar. The **Export** dialog opens for the composition you are looking at.
+
+<Video name="studio-export" label="Choosing Export, Whole video, Start export, and the render finishing in the Renders tab" silent />
+
+## This machine
+
+Exports render on your computer. There is no cloud renderer, so there is nothing to sign in to and nothing is uploaded.
+
+| | This machine |
+| --- | --- |
+| Cost | Free |
+| Your computer | Busy while it renders. You can keep working in Studio. |
+| Your files | Stay on your computer |
+| Limits | Any size and length |
+
+## Choose the file
+
+| Choice | Options | Default |
+| --- | --- | --- |
+| **Range** | **Whole video**, or **Custom** with a **Start** and an **End** | Whole video |
+| **Output** | A path relative to the project folder, such as `out/title.mp4` | `out/<composition id>.mp4` |
+| **Draft (half size)** | On for a faster render that checks timing | Off |
+
+The export uses the settings you changed in the **Props** tab, or the composition's own settings if you changed none. The dialog says which. The file can be an MP4 or a MOV: the extension of the output path decides. Other formats and encoder options are in [Rendering](/docs/rendering/).
+
+## Render
+
+Choose **Start export**. The top bar shows **Exporting** with a percentage. Open the **Renders** tab to see each export with its frames done out of the total, and the output file. **Cancel** on a row stops it.
+
+How long it takes depends on the size, the length and the effects. A draft is quick. [Fix a slow render or preview](/docs/rendering/slow-renders/) shows how to find what is slow.
+
+## Find the file
+
+The file is in your project folder, at the output path you chose, by default under `out/`. The **Renders** tab lists it with its path.
+
+## If the export fails
+
+The dialog or the **Renders** row shows the error. Run `npx kinetograph doctor <entry>` to list anything the engine cannot draw, and see [Troubleshooting](/docs/help/).
+
+## Related topics
+
+- [Rendering](/docs/rendering/)
+- [Fix a slow render or preview](/docs/rendering/slow-renders/)
+- [Find your way around Studio](/docs/studio/find-your-way/)

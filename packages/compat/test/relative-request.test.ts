@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { setDomEnvironment } from '../src/environment.js';
+import { sameOriginPath, setDomEnvironment } from '../src/environment.js';
 import { installDomGlobals } from '../src/shim/index.js';
 
 installDomGlobals();
@@ -22,6 +22,23 @@ describe('a Request for a relative URL', () => {
     expect(request.url).toBe('http://localhost/assets/models/a.glb');
     const response = await fetch(request);
     expect(await response.text()).toBe('glTF');
+  });
+
+  it('reads a file by the absolute path a composition\'s assetUrl() gives (http://localhost/<abs>)', async () => {
+    const dir = project();
+    writeFileSync(join(dir, 'data.json'), '{"msg":"abs"}');
+    const response = await fetch(`http://localhost${join(dir, 'data.json')}`);
+    expect((await response.json()).msg).toBe('abs');
+    // A root-relative URL is still the project's file.
+    expect(await (await fetch('/assets/models/a.glb')).text()).toBe('glTF');
+  });
+
+  it('keeps a Windows drive path inside the project as an absolute path', () => {
+    setDomEnvironment({ baseDir: 'C:\\Users\\me\\proj' });
+    expect(sameOriginPath('http://localhost/C:/Users/me/proj/assets/a.json')).toBe('C:/Users/me/proj/assets/a.json');
+    expect(sameOriginPath('http://localhost/c:/users/me/proj/a.json')).toBe('c:/users/me/proj/a.json');
+    expect(sameOriginPath('http://localhost/C:/Users/other/a.json')).toBe('C:/Users/other/a.json');
+    expect(sameOriginPath('http://localhost/img/a.png')).toBe('img/a.png');
   });
 
   it('cannot leave the project by dots, and never reaches the network', async () => {

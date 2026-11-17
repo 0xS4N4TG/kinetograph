@@ -1,0 +1,18 @@
+{
+  "title": "Studio",
+  "description": "The local editor",
+  "icon": "MonitorPlay",
+  "root": true,
+  "pages": [
+    "---Studio---",
+    "studio/index",
+    "studio/first-video",
+    "studio/continue-from-claude-code",
+    "agents/studio-agent",
+    "studio/find-your-way",
+    "studio/connect-your-agent",
+    "studio/export",
+    "---More---",
+    "studio/panels"
+  ]
+}

@@ -3,6 +3,7 @@
     {
       "slug": "hexed",
       "name": "@kinetographdev/hexed",
+      "published": true,
       "title": "Hexed",
       "description": "Roll a look onto any picture or clip. Hexed picks a grade, a print screen, lens effects, tape damage and a camera shake. Keep the parts you like and reroll the rest.",
       "components": [
@@ -811,6 +812,7 @@
     {
       "slug": "kinetic-typography",
       "name": "@kinetographdev/kinetic-typography",
+      "published": true,
       "title": "Kinetic typography",
       "description": "Captions that move with the voice, in fifteen ready-made styles. A hook word is set huge, and handwritten captions can follow a tracked subject.",
       "components": [
@@ -1469,6 +1471,7 @@
     {
       "slug": "paper",
       "name": "@kinetographdev/paper",
+      "published": true,
       "title": "Paper",
       "description": "Give a video the feel of real paper. Keyword match cuts, photo cut-outs that unfold from a crumpled packet, and hand-drawn lines round a moving subject on torn paper.",
       "components": [
@@ -2530,6 +2533,7 @@
     {
       "slug": "vj",
       "name": "@kinetographdev/vj",
+      "published": true,
       "title": "VJ",
       "description": "Make footage look like a CRT, a worn VHS tape, a thermal camera or a 1-bit screen. Track what moves and draw boxes on it, cut a person into a pop-art poster, or fly a camera through clips seen as windows.",
       "components": [
@@ -10643,6 +10647,21 @@
         "len": 4
       },
       "source": "tastes/archive"
+    },
+    {
+      "id": "blueprint",
+      "title": "Blueprint",
+      "description": "White line art draws itself on a Prussian-blue cyanotype sheet, with dimension lines, hatching, typed labels and one red stamp.",
+      "hero": {
+        "src": "/catalog/tastes/blueprint/hero.webp",
+        "w": 720,
+        "h": 1280,
+        "from": "tastes/blueprint/demo/out/camera-obscura.mp4",
+        "at": 7.2,
+        "video": "/catalog/tastes/blueprint/hero.mp4",
+        "len": 4
+      },
+      "source": "tastes/blueprint"
     },
     {
       "id": "collage",

@@ -626,6 +626,7 @@ impl Walk<'_> {
                 ),
                 // Painted inside the layer, or recolouring what is there.
                 ResolvedEffect::BackdropBlur { .. }
+                | ResolvedEffect::BackdropColor(_)
                 | ResolvedEffect::InsetShadow(_)
                 | ResolvedEffect::ColorMatrix(_)
                 | ResolvedEffect::GradientMap(_)
@@ -781,6 +782,7 @@ fn effect_name(effect: &Effect) -> &'static str {
     match effect {
         Effect::Blur { .. } => "blur",
         Effect::BackdropBlur { .. } => "backdropBlur",
+        Effect::BackdropFilter { .. } => "backdropFilter",
         Effect::Glow { .. } => "glow",
         Effect::ChromaticAberration { .. } => "chromaticAberration",
         Effect::DropShadow(_) => "dropShadow",

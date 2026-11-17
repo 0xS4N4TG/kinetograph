@@ -623,8 +623,8 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   in any order), `preserveDrawingBuffer` or not, and a frame that draws nothing draws nothing. A canvas has one kind of context for good; `getContext('2d')` after `getContext('webgl')`
   returns `null`.
 - Anything outside the list throws a `WebGLUnsupportedError` (message starting `unsupported:`) saying what to do:
-  multisampled renderbuffers, `readPixels`, lines, instanced points, cube and float textures, attachments of different
-  sizes in one framebuffer, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
+  `readPixels`, instanced points, multisampled renderbuffers of 32-bit floats, cube faces of float pixels or depth,
+  attachments of different sizes in one framebuffer, `getContext('webgpu')`, and drawing or `toDataURL`-ing a WebGL canvas.
   The depth test is drawn: `enable(DEPTH_TEST)`, `depthFunc`, `depthMask`, `depthRange`, `clearDepth`, `clear(DEPTH_BUFFER_BIT)` and
   `polygonOffset` on the canvas (the `depth` attribute, true by default) and on a framebuffer with a depth
   renderbuffer or depth texture; framebuffers that attach one depth buffer share it.
@@ -1180,7 +1180,7 @@ program (`bin/ffmpeg`) that has them, and the addon runs it as a child process (
 file out; the sound is muxed in by the linked ffmpeg). `KINETOGRAPH_FFMPEG=/path/to/ffmpeg` names another program and
 is tried before the bundled one (an encoder is looked up in each program in turn); with neither, an `ffmpeg` on the
 `PATH` is used if it lists libx264. For the other codecs: `libx265`, `prores_ks` and `libvpx-vp9` (linked on macOS and Linux); `gif` has
-one. See `/docs/getting-started/installation/#ffmpeg-licence`.
+one. See `/docs/contributing/build-from-source/#ffmpeg-licence`.
 
 Intel and AMD GPU encoders on Linux: `h264_vaapi`, `hevc_vaapi` (VAAPI, any Intel or AMD GPU with a driver) and
 `h264_qsv`, `hevc_qsv` (Intel Quick Sync, oneVPL) run in a system ffmpeg that has them, never in the linked one (it

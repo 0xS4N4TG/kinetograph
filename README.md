@@ -30,6 +30,7 @@ installs in about a minute with nothing else to set up:
 ```sh
 npm install kinetograph
 npx kinetograph doctor
+npx kinetograph skills update   # agent skills for Claude Code, Codex and Cursor, user-wide
 ```
 
 Building from source is only for working on the engine, or for a platform with no prebuilt package. It needs Rust and
@@ -99,9 +100,5 @@ Everything else is on the docs site, [kinetograph.dev/docs](https://kinetograph.
 
 ## License
 
-[PolyForm Small Business License 1.0.0](LICENSE.md). Kinetograph is source-available: free for individuals,
-non-profits, and companies with fewer than 100 people and under 1,000,000 USD (2019) revenue. Larger companies need a
-commercial licence: email [sanatasgsih@gmail.com](mailto:sanatasgsih@gmail.com), and see [COMMERCIAL.md](COMMERCIAL.md). Vendored crates keep their own licences
-([vendor/README.md](vendor/README.md)).
-
-Required Notice: Copyright 2026 Sanat Gupta (https://github.com/0xS4N4TG)
+Kinetograph is open source under the [Apache License 2.0](LICENSE.md), free for any use, including commercial. Vendored
+crates keep their own licences ([vendor/README.md](vendor/README.md)).

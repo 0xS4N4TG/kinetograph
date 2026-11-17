@@ -41,10 +41,13 @@ calls it lazily and caches by tree generation.
   A `{"type": "native", "path", "x", "y", "width", "height"}` layer marks where a native element's layers go.
 - Layer ids: derived from the node's explicit `id` attribute if it is a valid layer id, else its `path`, with the
   suffixes the painter needs (`.bg`, `.border`, `.text`, …), unique per island.
-- Addon functions: `renderDomIsland(requestJson: string, pass?: number, base?: number): string` and
+- Addon functions: `renderDomIsland(requestJson: string, pass?: number, base?: number, probes?: string[]): string` and
   `domLayoutBoxes(requestJson: string, pass?: number, paths?: string[]): string` → `{ [path]: { x, y, width, height, rect: {x,y,width,height},
   client: {width,height}, scroll: {width,height} } }` (offset box in island coordinates; `rect` is the transformed
   bounding box, as `getBoundingClientRect` gives).
+- `probes` (host-tree paths) asks the render for `probes: { [path]: { width, height, overflowX, overflowY } }` in its output: the `getBoundingClientRect`
+  size and computed overflow of those elements in the layout the render draws, so a check of the frame's layout (HyperFrames'
+  collapsed-root warning) needs no readback of its own (`probeOnDraw` of `@kinetographdev/compat/shim`).
 - `pass` numbers the renders of one frame (its own and its motion-blur sub-frames'; compat's `beginSamplePass`). In a
   pass, and in the pass after it, an island's document is edited from its last render instead of built again. Both
   sides keep the island's base layers: its first render of a pass, or its last one written in full. `base` names the

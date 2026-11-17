@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { TextLayoutRequest } from '@kinetographdev/native';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { addFace, installFontFace, NodeFontFace } from '../src/font-face.js';
-import { fetchFileCachedSync, FontDownloadError, type FetchLike } from '../src/font-files.js';
+import { fetchFileCachedSync, fileCachePath, FontDownloadError, type FetchLike } from '../src/font-files.js';
 import { clearFonts, getFonts, pendingFontLoads, setFontProblemHandler, waitForFonts } from '../src/font-registry.js';
 import { loadFont } from '../src/fonts.js';
 import { makeGoogleFont } from '../src/google-fonts.js';
@@ -72,6 +72,17 @@ describe('a remote FontFace', () => {
     expect(error).toBeInstanceOf(FontDownloadError);
     expect(error).toMatchObject({ code: 'FONT_DOWNLOAD', status: 0 });
     expect((error as Error).message).toMatch(/ENOTFOUND/);
+  });
+});
+
+describe('the cache file of a font URL', () => {
+  it('stays under the file-name limit for a long URL, keeps the extension, and differs per URL', () => {
+    const long = (tail: string): string => `https://fonts.gstatic.com/s/x/v1/${'AbC-_9'.repeat(60)}${tail}.ttf`;
+    const [a, b] = [fileCachePath(long('a'), { cacheDir: '/c' }), fileCachePath(long('b'), { cacheDir: '/c' })];
+    expect(a.slice('/c/'.length).length).toBeLessThan(255);
+    expect(a.endsWith('.ttf')).toBe(true);
+    expect(a).not.toBe(b);
+    expect(fileCachePath('https://x.test/f/Inter.ttf', { cacheDir: '/c' })).toMatch(/\/[0-9a-f]{12}-Inter\.ttf$/);
   });
 });
 

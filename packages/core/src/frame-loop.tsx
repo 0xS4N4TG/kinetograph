@@ -38,6 +38,7 @@ import { animationFramesQueued, fireHoldTimer, realTimers, resetVirtualClock, ru
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { takePageErrors } from './page-errors.js';
+import { frameReplay, type FrameReplay } from './frame-replay.js';
 import { drawSettled } from './canvas-draws.js';
 import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
 
@@ -245,7 +246,16 @@ class Renderer implements FrameRenderer {
         // A WebGL render target a frame makes from what it held before (a trail) is the same, once a frame has shown it
         // (below): a draw made by a render or an animation-frame callback of a skipped frame is not made unless that
         // frame is rendered.
-        for (let at = was + 1; at < frame; at++) await this.replayFrame(scene, config, component, at);
+        const play = frameReplay();
+        for (let at = was + 1; at < frame; at++) {
+          if (play === null) {
+            await this.replayFrame(scene, config, component, at);
+            continue;
+          }
+          setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+          // A source that says what its scripts see of a frame is played through that, without rendering the composition.
+          await this.settle(scene, () => this.replay(play, at, config), true, false);
+        }
       } else if (frame - was > 1 && glHoldsTargets()) {
         // A WebGL render target a frame reads that the frame before wrote is what that frame drew (a ping-pong that swaps
         // its targets each frame), so the frame before this one is rendered too; the frames before that are stepped.
@@ -433,6 +443,15 @@ class Renderer implements FrameRenderer {
       endGsapSamples();
       setVirtualFrame(at, config.fps, { fireTimers: false });
     }
+  }
+
+  /** `update` for a frame that is played through and not drawn, by what its source says its scripts see (`frame-replay.ts`). */
+  private replay(play: FrameReplay, frame: number, config: VideoConfig): void {
+    this.rendering = frame;
+    resetCanvasStates();
+    clearReportedUnsupported();
+    setReportIsRead(false);
+    play(frame, config.fps, config.durationInFrames);
   }
 
   private startScene(config: VideoConfig): void {
