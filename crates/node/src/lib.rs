@@ -409,8 +409,6 @@ pub fn webgl_compressed_formats() -> Vec<String> {
         .collect()
 }
 
-/// The WebGL replay a render would use: `angle` or `builtin`, the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`)
-/// when it is ANGLE, and why. Loads and starts ANGLE (the decision is made once per process).
 #[napi(object)]
 pub struct WebglBackend {
     pub backend: String,
@@ -418,6 +416,8 @@ pub struct WebglBackend {
     pub why: String,
 }
 
+/// The WebGL replay a render would use: `angle` or `builtin`, the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`)
+/// when it is ANGLE, and why. Loads and starts ANGLE (the decision is made once per process).
 #[napi]
 pub fn webgl_backend() -> WebglBackend {
     let (backend, device, why) = kinetograph_core::webgl_backend();
