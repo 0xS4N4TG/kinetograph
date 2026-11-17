@@ -322,6 +322,9 @@ async function bundle(state: PluginState, format: 'iife' | 'esm'): Promise<strin
   const result = await build({
     entryPoints: [entry],
     bundle: true,
+    // A browser runs every module's top-level code, annotated pure or not; dropping an unused `/*@__PURE__*/ new Texture()`
+    // (three.js has a dozen) would leave the page's Math.random sequence shorter than the browser's (a uuid draws four).
+    treeShaking: false,
     write: false,
     format,
     platform: 'browser',

@@ -810,4 +810,6 @@ module.exports.takeProfile = nativeBinding.takeProfile
 module.exports.track = nativeBinding.track
 module.exports.validateScene = nativeBinding.validateScene
 module.exports.version = nativeBinding.version
+module.exports.webglBackend = nativeBinding.webglBackend
+module.exports.webglCompressedFormats = nativeBinding.webglCompressedFormats
 module.exports.webgpuDeviceInfo = nativeBinding.webgpuDeviceInfo

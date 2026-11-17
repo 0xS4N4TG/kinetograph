@@ -16,7 +16,7 @@ import { Audio, createSceneRoot } from '@kinetographdev/react';
 import { noteStylesheetProblem, registerStylesheet, setRemoteAssetResolver } from '@kinetographdev/compat/dom';
 import { armPageInput, dispatchPageInput, gestureListenerElements, hostOf, pageInputCount, probeOnDraw, setPageDocument, setRefusedFetchHandler, setRemoteFiles, whenFetchesSettle, withCurrentScript } from '@kinetographdev/compat/shim';
 import { animationFramesQueued } from '../determinism.js';
-import { continueRender, delayRender } from '../assets.js';
+import { PAGE_LOAD_LABEL, continueRender, delayRender } from '../assets.js';
 import { Composition, registerRoot, setRemotionPage } from '../compositions.js';
 import { Sequence, useCurrentFrame, useVideoConfig } from '../timeline.js';
 import { finishFontLoadsSync, getFonts } from '../font-registry.js';
@@ -342,7 +342,7 @@ class Runtime {
   holdForPage(): void {
     if (this.settling === null || this.held) return;
     this.held = true;
-    const handle = delayRender('HyperFrames page scripts');
+    const handle = delayRender(PAGE_LOAD_LABEL);
     void this.settling.then(
       () => continueRender(handle),
       () => continueRender(handle),

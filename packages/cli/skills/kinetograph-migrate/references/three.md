@@ -1,8 +1,15 @@
-# @remotion/three and three.js to the scene3d layer
+# @remotion/three and three.js
 
-Kinetograph has no `@remotion/three`, `three` or `@react-three/fiber`. A `<ThreeCanvas>` import stops the bundle with
-`"@remotion/three" is not supported by Kinetograph yet`. Rebuild the scene with the own 3D layer from `@kinetographdev/core`.
-It is drawn by the GPU compositor, so it renders at the same speed as the rest of the frame and needs no WebGL.
+`<ThreeCanvas>` from `@remotion/three` works as it is: `width`, `height` and the props of react-three-fiber's `<Canvas>`,
+drawn once for each frame by the WebGL stand-in. Keep `three` and `@react-three/fiber` (and drei) as the project's own
+dependencies; the bundle names the one that is missing. `useCurrentFrame()` and `useVideoConfig()` work inside, `<Sequence>`
+works inside (use `layout="none"`), and the frame waits for `useTexture`, `useGLTF` and other suspending loads. Write motion
+from `useCurrentFrame()`: `useFrame` runs once for each frame drawn, not on a clock. Not available: `useVideoTexture` and
+`useOffthreadVideoTexture`, drei `<Environment>` (needs cube-map mip levels), `<Text>` (needs a Worker and WebGL 1 instancing),
+skinned models, uniform buffer objects; `doctor` and `--strict` report what the stand-in cannot draw.
+
+Rebuild a scene with the own 3D layer from `@kinetographdev/core` when it uses one of those, or to drop `three` from the
+project. It is drawn by the GPU compositor, so it renders at the same speed as the rest of the frame and needs no WebGL.
 
 Details: `../../kinetograph-markup/references/AUTHORING.md` section 6.6 and `../../kinetograph-markup/references/SCENE.md` ("scene3d") in the Kinetograph repo
 (github.com/0xS4N4TG/kinetograph); they are not in the npm package.
@@ -108,5 +115,5 @@ over. Tune from a `still`, and say in the report that the lighting is approximat
   direction is off; `kinetograph inspect <entry> --frame N` shows each layer's resolved bounds.
 - Shaders (`shaderMaterial`, `extend`, custom GLSL), postprocessing (`@react-three/postprocessing`) and physics have no
   scene3d equivalent. Approximate with materials and the effects list on the `<Scene3D>` (`glow`, `blur`, `grain`,
-  `chromaticAberration`), or leave them out. Report it. Do not bring `three` into the render path.
+  `chromaticAberration`), or leave them out. Report it, or keep that part on `<ThreeCanvas>` if the stand-in draws it.
 - Every light may cast shadows, within 1 GiB of shadow maps (48 maps of 2048). Do not rely on `preserve-3d` for crossing planes.

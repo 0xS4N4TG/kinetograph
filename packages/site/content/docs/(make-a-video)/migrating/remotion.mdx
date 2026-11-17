@@ -26,7 +26,7 @@ Name the entry file and the composition. A project can register several composit
 The skill checks the project first and tells you, rather than guessing, when it finds something the engine does not draw:
 
 - **Tooling packages.** `@remotion/player`, `renderer`, `bundler`, `lambda`, `cloudrun` and `cli` have no equivalent in a render. They are replaced by the `kinetograph` commands. There is no cloud renderer.
-- **`@remotion/three`.** The scene is rebuilt with Kinetograph's own 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/).
+- **`@remotion/three`.** `<ThreeCanvas>` runs as it is; what it cannot draw is rebuilt with Kinetograph's own 3D layer. See [Remotion three.js mapping](/docs/reference/remotion-three/).
 - **`IFrame`.** A web page needs a browser, so it is not drawn. Expect a screenshot or a labelled box in its place, and a note saying so.
 - **Encoding and decoding with `@remotion/webcodecs`.** Play clips with the video and audio components instead.
 

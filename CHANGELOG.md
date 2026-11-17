@@ -19,7 +19,12 @@ Kinetograph is in beta, so APIs can still change between versions.
 - CSS gradient colour interpolation spaces: `srgb-linear`, `xyz` and `oklch` with hue methods.
 - CSS generic and system font names (`sans-serif`, `serif`, `ui-*`, `system-ui`) draw in bundled fonts; text with no `font-family` stays in the project's first font.
 - The `kinetograph` agent skill routes to smaller skills: `kinetograph-create`, `-markup`, `-render`, `-studio`, `-docs` and `-upgrade`.
+- WebGL draws on ANGLE (Google's OpenGL ES library, loaded from the platform package) by default. `KINETOGRAPH_WEBGL=builtin` selects the earlier hand-written replay, which is also used, with one warning, when ANGLE cannot start.
+- ANGLE picks its device by itself: Metal on macOS, Vulkan on Linux, Direct3D 11 on Windows, and SwiftShader (CPU) when the machine has no usable GPU device. `KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it.
+- The Linux and Windows packages ship SwiftShader and the Vulkan loader in `angle/`.
+- `doctor` reports the WebGL backend and the ANGLE device it would use, and why.
 - WebGL: cube maps, 2D array textures, float colour targets, sRGB textures, struct uniforms, shadow samplers, constant and matrix attributes, line draws and scissored clears.
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - WebGL `blitFramebuffer` to and from float render targets.
 - WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).
 - WebGL `generateMipmap` of a texture or cube map a framebuffer drew in.
@@ -31,12 +36,15 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL multisampled renderbuffers (`renderbufferStorageMultisample`, `MAX_SAMPLES` 4), resolved by `blitFramebuffer`.
 - WebGL `copyTexImage2D` and `copyTexSubImage2D`.
 - WebGL `TEXTURE_BASE_LEVEL`.
+- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
+- A script-made `<img>` fires `load` and `error`; `ProgressEvent` exists; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
+- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`.
 - `<video>` and `<audio>` elements play on the virtual clock: `play()`, `pause()`, `currentTime`, `loop`, `playbackRate`, `ended`, `timeupdate` and `requestVideoFrameCallback` follow the frame, never the wall clock.
 - A `<video>` given to WebGL `texImage2D` or `texSubImage2D` is a video texture: the renderer reads the frame at the frame's time.
 - A page's Web Audio (`AudioContext`, `new Audio().play()`, `<audio>` through `createMediaElementSource`) runs on the virtual clock and is replayed into the mix; `AnalyserNode` data comes from the sound. What the mix cannot replay is reported.
 - `--input` sends scripted pointer, mouse, key and wheel events to an HTML page on the virtual clock; `doctor` says when a page waits for a click.
 - `DOMParser` parses XML as XML (namespaces, CDATA, comments, `parsererror`), and `XMLHttpRequest.responseXML` and `responseType = 'document'` return XML documents.
-- `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `KeyboardEvent` globals.
+- `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent`, `KeyboardEvent` and `ProgressEvent` globals.
 
 ### Changed
 
@@ -45,6 +53,9 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `--json` command keeps the page's logs off stdout.
 - HyperFrames: the plan reports Three.js only for what the WebGL stand-in could not draw.
 - The docs have a new structure (Getting started, Making videos, Studio, Rendering, Agents, Plugins, Migrating, Compare), a Tips for better videos section and Studio panel pages; old URLs redirect.
+- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
+- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
+- Node's process warnings printed through `console.error` are no longer reported as page errors.
 - A frame a HyperFrames worker plays through to reach its chunk is not rendered: only the clips, the timelines, `hf-seek` and the videos' `currentTime` are done (film 9.41 → 8.50 s, mg1 3.39 → 3.21 s).
 - A bundle whose inputs have not changed is used again instead of built again, and Node's compile cache (`~/.cache/kinetograph/compile-cache`) serves the CLI and the render workers (compat 0.78 → 0.64 s, mg2 0.86 → 0.71 s).
 - A HyperFrames page's collapsed-root check is answered by the render that draws the frame (its size and overflow come back in the island's output) instead of a layout readback of its own (film 9.98 → 8.90 s, steady JS 11.7 → 9.2 ms a frame).
@@ -74,6 +85,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `delayRender()` that was never cleared times out with its label (`DELAY_RENDER_TIMEOUT`) instead of ending `still`, `render` and `doctor` silently with exit code 13 (#101).
 - HyperFrames: a sub-composition's root is found by the id its file gave it, so its script's `getElementById` and `#id` selectors work and its timeline registers (#109).
 - A relative-URL `Request` resolves against the document.
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
 - HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
 - A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).

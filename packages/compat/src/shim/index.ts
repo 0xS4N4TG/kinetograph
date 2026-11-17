@@ -24,10 +24,12 @@ export {
 } from './observers.js';
 export { mediaPending, resetMedia, setMediaClock, takeMediaIssues, tickMedia } from './media.js';
 export { deliverMediaEvents } from './media-events.js';
-export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingFetches } from './web.js';
+export { installDomGlobals, setWebViewport, evaluateMedia, realFetch, remoteMessage, projectFileOf, setRemoteFiles, setRefusedFetchHandler, whenFetchesSettle, trackPending, pendingImageLoads, pendingFetches, takeLoadFailures, loadsSettled } from './web.js';
+export { setWorkerHold, setWorkerModuleLoader, whenWorkersIdle, resetWorkers, workersStarted, cloneMessage, WorkerShim, MessageChannelShim, MessagePortShim } from './worker.js';
+export { DEFAULT_SECRET_PARAMS, INDEX_FILE, finishNetRecord, isSecretParam, looksLikeCredential, netFetch, netKey, setNetFrame, setNetStore, type NetConfig } from './net-store.js';
 export { setPathMeasure } from './geometry.js';
 export { animationClockMoved, animationsPending, resetAnimations, setAnimationClock, tickAnimations } from './animations.js';
-export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, setCanvasFonts, CanvasSurface } from './canvas.js';
+export { canvasEnvironment, LayerPicturesNotReady, setLayerPictures, type LayerPictures, rasterizeCanvas, webgpuDeviceInfo, canvasCommandsOf, withCanvasCommands, resetCanvasStates, takeGlReports, glDependsOnHistory, glHoldsTargets, snapshotGlStates, setCanvasFonts, CanvasSurface } from './canvas.js';
 export type { PathMeasure } from './geometry.js';
 export { imageSizeOfBytes } from './image-size.js';
 export { matches, queryAll, parseSelectorList } from './selector.js';

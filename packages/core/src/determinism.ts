@@ -72,7 +72,7 @@ interface Timer {
 
 let holdProbe: () => boolean = () => false;
 
-/** Says whether the frame being rendered is held open (a `delayRender` handle or a font still loading). */
+/** Says whether the frame being rendered is held open (a `delayRender` handle, a font or an image still loading). */
 export function setHoldProbe(probe: () => boolean): void {
   holdProbe = probe;
 }
@@ -168,6 +168,9 @@ function virtualRequestAnimationFrame(callback: (time: number) => void): number 
   }
   const id = nextAnimationId++;
   animationQueue.push({ id, callback });
+  const waiting = animationFrameWaiters;
+  animationFrameWaiters = [];
+  for (const wake of waiting) wake();
   return id;
 }
 function virtualCancelAnimationFrame(id: number): void {
@@ -276,6 +279,13 @@ export function setVirtualFrame(frame: number, fps: number, options: VirtualFram
   // Video and audio elements: playback that ended, `timeupdate`, and the video frame callbacks, before the animation frames.
   tickMedia();
   if (options.deferAnimationFrames !== true) runAnimationFrames();
+}
+
+let animationFrameWaiters: (() => void)[] = [];
+
+/** Resolves when an animation frame is next requested (the frame loop wakes to run it while a handle is open). */
+export function whenAnimationFrameRequested(): Promise<void> {
+  return new Promise<void>((resolve) => animationFrameWaiters.push(resolve));
 }
 
 /** Whether animation-frame callbacks are waiting to run. */

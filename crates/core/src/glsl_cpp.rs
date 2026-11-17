@@ -32,6 +32,8 @@ impl Cpp {
             open: Vec::new(),
         };
         cpp.define("GL_ES", false, "1");
+        // The fragment shader has highp, as the replay computes in 32-bit floats.
+        cpp.define("GL_FRAGMENT_PRECISION_HIGH", false, "1");
         cpp.define("__VERSION__", false, "100");
         cpp
     }

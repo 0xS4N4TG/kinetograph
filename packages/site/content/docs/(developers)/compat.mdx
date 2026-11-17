@@ -161,13 +161,14 @@ kinetograph fetch-deps my-video                   # the download alone; --update
 - This covers scripts, modules, data files a script names, remote `<video>` and `<audio>` (500 MB each, `--max-media-mb`) and pictures (50 MB each).
 - A file that isn't cached stops the command, naming the URL and `fetch-deps`. A picture is drawn without and reported.
 - A module or picture URL built at run time is found by running the first frames in the pre-pass. One seen only in an unsampled frame is downloaded on first use and noted; with `--offline` a module is an error naming the specifier. `doctor` gives the `fetch-deps` command for a picture it can't find.
+- A URL a page builds at run time (map tiles, styles) is recorded: `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps each `fetch` response in `.kinetograph/net`, and a render answers only from it. A request that wasn't recorded is an error naming the URL and the frame. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, and any `--secret-param`) are left out of the store and the lock, and a value that looks like a credential in any other parameter fails the pass unless it is named with `--keep-param`. Path segments are recorded as they are; one that looks like a credential is warned about.
 - `kinetograph.lock.json` beside the entry stores each file's SHA-256 and size; commit it. A changed file stops the command until `fetch-deps --update`.
 
 ## Not planned
 
 - `IFrame` is not drawn, because a real webpage needs a browser (reported).
 - `Internals`, `FolderContext`, `PathInternals` and `AudioForPreview` are internal to Remotion and not exported.
-- `@remotion/three` and `@remotion/player` are replaced by the engine's 3D layer and studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
+- `@remotion/three` is `<ThreeCanvas>` over the project's own `three` and `@react-three/fiber`, drawn through the WebGL stand-in; `useVideoTexture` is not available, and the engine's 3D layer (`Scene3D`) is the alternative. `@remotion/player` is replaced by the studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
 - `tailwind` and `tailwind-v4` only configure webpack, so do nothing. Tailwind itself works.
 
 ## Can differ by a pixel

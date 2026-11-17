@@ -82,6 +82,12 @@ jobs:
             exe=ffmpeg; if [ "$p" = win32-x64-msvc ]; then exe=ffmpeg.exe; fi
             cp "$a/$exe" "$a/SOURCES.txt" "npm/$p/bin/"
           done
+          # The ANGLE libraries of each platform (angle/: libEGL, libGLESv2, their licences and SOURCE.txt; on Linux and
+          # Windows also SwiftShader and the Vulkan loader) ride in the same artifact. `npm run legal` below lists what is in the folder in the package's `files`.
+          for p in darwin-arm64 linux-x64-gnu win32-x64-msvc; do
+            mkdir -p "npm/$p/angle"
+            cp artifacts/bindings-$p/npm/$p/angle/* "npm/$p/angle/"
+          done
           chmod +x npm/darwin-arm64/bin/ffmpeg npm/linux-x64-gnu/bin/ffmpeg
           npm run legal
           npx napi pre-publish -t npm --skip-optional-publish --no-gh-release
@@ -102,6 +108,13 @@ jobs:
           # Each platform package carries the GPL ffmpeg program and the notice that goes with it.
           for d in crates/node/npm/*; do ls "$d"/bin/ffmpeg* "$d"/bin/SOURCES.txt "$d"/FFMPEG-LICENSE.md "$d"/COPYING.GPLv2; done
           test -x crates/node/npm/linux-x64-gnu/bin/ffmpeg
+          # Each platform package carries ANGLE: both libraries, ANGLE's licence and SOURCE.txt (check-packages.mjs checks that
+          # they are packed and that the Chrome for Testing credits file is there when the libraries are Chrome's).
+          for d in crates/node/npm/*; do ls "$d"/angle/libEGL.* "$d"/angle/libGLESv2.* "$d"/angle/ANGLE-LICENSE "$d"/angle/SOURCE.txt; done
+          # Linux and Windows also carry SwiftShader, its ICD file and the Vulkan loader (macOS has Metal).
+          ls crates/node/npm/linux-x64-gnu/angle/libvk_swiftshader.so crates/node/npm/linux-x64-gnu/angle/vk_swiftshader_icd.json crates/node/npm/linux-x64-gnu/angle/libvulkan.so.1
+          ls crates/node/npm/win32-x64-msvc/angle/vk_swiftshader.dll crates/node/npm/win32-x64-msvc/angle/vk_swiftshader_icd.json crates/node/npm/win32-x64-msvc/angle/vulkan-1.dll
+          du -sh crates/node/npm/*/angle
           du -sh crates/node/npm/*/bin
           test -f packages/studio/ui/dist/index.html
 

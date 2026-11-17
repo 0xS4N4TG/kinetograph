@@ -1,0 +1,42 @@
+[
+  {
+    "name": "an #if on __VERSION__ reads the version line",
+    "fragment": "#version 300 es\nprecision mediump float;\n#if __VERSION__ >= 300\nuniform float on_300;\n#else\nuniform float off_300;\n#endif\nout vec4 o;\nvoid main() { o = vec4(on_300); }",
+    "uniforms": { "on_300": 1 }
+  },
+  {
+    "name": "without a version line __VERSION__ is 100",
+    "fragment": "precision mediump float;\n#if __VERSION__ == 100\nuniform float v100;\n#endif\n#if __VERSION__ >= 300\nuniform float v300;\n#endif\nvoid main() { gl_FragColor = vec4(v100); }",
+    "uniforms": { "v100": 1 }
+  },
+  {
+    "name": "a block comment opened inside a line comment does not start a comment",
+    "fragment": "precision mediump float;\n// see /* note\nuniform float kept;\n// */\nuniform float also_kept;\nvoid main() { gl_FragColor = vec4(kept + also_kept); }",
+    "uniforms": { "kept": 1, "also_kept": 1 }
+  },
+  {
+    "name": "a line comment marker inside a block comment is part of the block",
+    "fragment": "precision mediump float;\n/* start // still inside\nuniform float hidden;\n*/ uniform float shown;\nvoid main() { gl_FragColor = vec4(shown); }",
+    "uniforms": { "shown": 1 }
+  },
+  {
+    "name": "an array length that is an expression of macros",
+    "fragment": "precision mediump float;\n#define N 2\nuniform vec4 v[N*2];\nuniform vec4 w[(N + 1) * 2 - 1];\nvoid main() { gl_FragColor = v[3] + w[4]; }",
+    "uniforms": { "v": 4, "w": 5 }
+  },
+  {
+    "name": "a conditional chain takes the first live branch",
+    "fragment": "precision mediump float;\n#define A 2\n#if A == 1\nuniform float one;\n#elif A == 2\nuniform float two;\n#elif A == 2\nuniform float two_again;\n#else\nuniform float other;\n#endif\nvoid main() { gl_FragColor = vec4(two); }",
+    "uniforms": { "two": 1 }
+  },
+  {
+    "name": "a define in a dead branch does not happen",
+    "fragment": "precision mediump float;\n#if 0\n#define M 9\n#endif\n#ifdef M\nuniform float m_defined;\n#else\nuniform float m_missing;\n#endif\nvoid main() { gl_FragColor = vec4(m_missing); }",
+    "uniforms": { "m_missing": 1 }
+  },
+  {
+    "name": "defined, GL_ES and nested conditionals",
+    "fragment": "precision mediump float;\n#ifdef GL_ES\n#if defined(GL_FRAGMENT_PRECISION_HIGH) && !defined(NOPE)\nuniform float es_high;\n#endif\n#endif\nvoid main() { gl_FragColor = vec4(es_high); }",
+    "uniforms": { "es_high": 1 }
+  }
+]

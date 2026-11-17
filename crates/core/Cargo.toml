@@ -12,6 +12,9 @@ objc2-metal = { version = "0.3" }
 
 # Vulkan: the Skia Graphite context is made on wgpu's VkDevice (`render/skia/vulkan.rs`). `ash` is the version wgpu-hal
 # 30 uses, for the handles and the proc-address calls.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 skia-safe = { version = "0.153.3", features = ["vulkan", "graphite"] }
 ash = { version = "0.38" }
@@ -22,6 +25,8 @@ ash = { version = "0.38" }
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
 
 [dependencies]
+# ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, the default WebGL replay; KINETOGRAPH_WEBGL=builtin opts out).
+libloading = "0.8"
 kurbo = "0.13.1"
 peniko = "0.6.1"
 # CSS colour syntax for scene colours (`color.rs`): names, rgb(), hsl(), hwb(), lab(), oklch() and the rest.

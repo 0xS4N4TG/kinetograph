@@ -24,10 +24,18 @@ export interface ProbeFailure {
   crash?: string[];
 }
 
+export interface WebglBackend {
+  backend: string;
+  device?: string | null;
+  why: string;
+}
+
 export interface ProbeResult {
   addon: { loaded: true; version: string } | { loaded: false; error: string };
   renderer: string | null;
   rendererReason: string | null;
+  /** The WebGL replay a render would use (`angle` or `builtin`), the ANGLE device when it is ANGLE, and why. */
+  webgl?: WebglBackend;
   failure?: ProbeFailure;
   /** The GPU adapters the renderer found (name, backend, type, vendor and device ids, driver), when it got that far. */
   adapters?: string[];
@@ -125,6 +133,7 @@ export function interpret(lines: Record<string, unknown>[], ended: { status: num
   let renderer: string | null = null;
   let rendererReason: string | null = null;
   let rendererDone = false;
+  let webgl: WebglBackend | undefined;
   let started: Stage | undefined;
   let failure: ProbeFailure | undefined;
   for (const line of lines) {
@@ -138,6 +147,8 @@ export function interpret(lines: Record<string, unknown>[], ended: { status: num
       rendererDone = true;
       renderer = String(line.backend);
       rendererReason = typeof line.reason === 'string' ? line.reason : null;
+      const w = line.webgl as Partial<WebglBackend> | null | undefined;
+      if (w && typeof w.backend === 'string' && typeof w.why === 'string') webgl = { backend: w.backend, device: w.device ?? null, why: w.why };
     } else if (line.done === undefined) {
       started = stage;
     }
@@ -159,7 +170,7 @@ export function interpret(lines: Record<string, unknown>[], ended: { status: num
   }
   const adapters = adaptersOf(trace);
   return {
-    addon, renderer, rendererReason, ...(failure ? { failure } : {}), ...(adapters.length > 0 ? { adapters } : {}),
+    addon, renderer, rendererReason, ...(webgl ? { webgl } : {}), ...(failure ? { failure } : {}), ...(adapters.length > 0 ? { adapters } : {}),
     ...(failure && failure.kind !== 'error' && trace.length > 0 ? { trace: trace.slice(-TRACE_KEPT).map((l) => `${l.n} ${l.kind} ${l.step} ${l.detail}`.trimEnd()) } : {}),
   };
 }
@@ -206,7 +217,9 @@ try {
   stage = 'renderer';
   say({ stage });
   const r = new native.Renderer();
-  say({ stage, done: true, backend: r.backend(), reason: r.backendReason() });
+  let webgl = null;
+  try { webgl = native.webglBackend ? native.webglBackend() : null; } catch {}
+  say({ stage, done: true, backend: r.backend(), reason: r.backendReason(), webgl });
 } catch (e) {
   say({ stage, error: e instanceof Error ? e.message : String(e) });
 }
@@ -214,7 +227,7 @@ try {
 
 /** Env vars that change what the renderer does, as set here, for the report. */
 export function relevantEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-  const names = ['WGPU_BACKEND', 'WGPU_POWER_PREF', 'WGPU_ADAPTER_NAME', 'WGPU_DX12_COMPILER', 'KINETOGRAPH_SKIA_CPU'];
+  const names = ['WGPU_BACKEND', 'WGPU_POWER_PREF', 'WGPU_ADAPTER_NAME', 'WGPU_DX12_COMPILER', 'KINETOGRAPH_SKIA_CPU', 'KINETOGRAPH_WEBGL', 'KINETOGRAPH_ANGLE_BACKEND', 'KINETOGRAPH_ANGLE_DIR'];
   return names.filter((n) => env[n] !== undefined).map((n) => `${n}=${env[n]}`);
 }
 
