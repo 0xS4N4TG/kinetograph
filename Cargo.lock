@@ -1892,6 +1892,7 @@ dependencies = [
  "cssparser",
  "data-url",
  "euclid",
+ "ffmpeg-next",
  "image",
  "kinetograph-core",
  "kurbo",
