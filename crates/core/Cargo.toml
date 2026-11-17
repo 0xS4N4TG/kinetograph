@@ -25,7 +25,7 @@ ash = { version = "0.38" }
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
 
 [dependencies]
-# ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, opt in with KINETOGRAPH_WEBGL=angle).
+# ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, the default WebGL replay; KINETOGRAPH_WEBGL=builtin opts out).
 libloading = "0.8"
 kurbo = "0.13.1"
 peniko = "0.6.1"

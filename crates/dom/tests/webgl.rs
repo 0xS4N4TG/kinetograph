@@ -228,7 +228,7 @@ fn webgl2_divisor2() {
 }
 
 /// The cases of what `gl_FrontFacing` does (the hand-written replay does not follow `frontFace` with culling off, so these
-/// run with `KINETOGRAPH_WEBGL=angle` only).
+/// run with ANGLE only).
 fn angle_only(name: &str) {
     if angle_mode() {
         run(name, 1.0);
@@ -250,8 +250,9 @@ fn angle_only_reported(name: &str) {
     assert!(error.contains("unsupported:"), "{name}: {error}");
 }
 
+/// Whether ANGLE draws: the default when it starts, so `KINETOGRAPH_WEBGL=builtin` is how the built-in replay is tested.
 fn angle_mode() -> bool {
-    std::env::var("KINETOGRAPH_WEBGL").as_deref() == Ok("angle")
+    kinetograph_core::webgl_backend().0 == "angle"
 }
 
 #[test]

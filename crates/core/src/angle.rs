@@ -1,6 +1,7 @@
 //! ANGLE as a library: `libEGL` and `libGLESv2` loaded at run time, an offscreen OpenGL ES 3.0 context with ANGLE's
-//! WebGL compatibility on, and the GL entry points a replay needs (`angle_replay.rs`). Opt in with
-//! `KINETOGRAPH_WEBGL=angle`; `KINETOGRAPH_ANGLE_DIR` is the folder holding the two libraries.
+//! WebGL compatibility on, and the GL entry points a replay needs (`angle_replay.rs`). The default WebGL replay when the
+//! libraries load and start (`angle_select.rs` has the rules; `KINETOGRAPH_WEBGL=builtin` opts out);
+//! `KINETOGRAPH_ANGLE_DIR` is the folder holding the two libraries.
 //!
 //! All `unsafe` of the ANGLE path is here. The invariants, once: the libraries are loaded for the life of the
 //! process (a `Library` kept beside the pointers taken from it), every pointer is checked non-null when it is
@@ -12,6 +13,8 @@ use std::ffi::{CString, c_char, c_void};
 use std::path::PathBuf;
 
 use libloading::Library;
+
+use crate::angle_select::{self as select, Decision, Device};
 
 pub type Enum = u32;
 
@@ -1106,10 +1109,35 @@ pub(crate) fn settings() -> &'static Settings {
     })
 }
 
-/// Whether `KINETOGRAPH_WEBGL=angle` asks for the ANGLE replay.
+/// The WebGL replay this process uses, decided on first use (which loads and starts ANGLE unless the environment
+/// settles it) and kept: the same for every project and frame of the process.
+fn decision() -> &'static Decision {
+    static DECISION: std::sync::OnceLock<Decision> = std::sync::OnceLock::new();
+    DECISION.get_or_init(|| {
+        let mode = select::mode(std::env::var("KINETOGRAPH_WEBGL").ok().as_deref());
+        let decision = select::decide(mode, || shared().map(|s| s.why.clone()));
+        if let Some(warning) = &decision.warning {
+            eprintln!("{warning}");
+        }
+        decision
+    })
+}
+
+/// Whether the ANGLE replay draws WebGL (the default when ANGLE starts; `KINETOGRAPH_WEBGL=builtin` turns it off).
 pub fn enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("KINETOGRAPH_WEBGL").is_ok_and(|v| v == "angle"))
+    decision().angle
+}
+
+/// Which WebGL replay draws, the ANGLE device when it is ANGLE, and why: `(backend, device, why)`.
+pub fn backend_report() -> (&'static str, Option<&'static str>, String) {
+    let d = decision();
+    if !d.angle {
+        return ("builtin", None, d.why.clone());
+    }
+    match shared() {
+        Ok(s) => ("angle", Some(s.device.name()), s.why.clone()),
+        Err(e) => ("angle", None, format!("{}, but it cannot start: {e}", d.why)),
+    }
 }
 
 /// The extensions a page can enable that a context keeps on once asked for.
@@ -1412,6 +1440,9 @@ struct Shared {
     destroy_surface: Destroy,
     display: usize,
     config: usize,
+    device: Device,
+    /// Why this device: the platform's own, or what the ones before it lacked.
+    why: String,
 }
 
 /// The process's ANGLE, made on first use; a failure to find it is kept, so a missing ANGLE is looked for once.
@@ -1420,22 +1451,27 @@ fn shared() -> Result<&'static Shared, String> {
     SHARED.get_or_init(load).as_ref().map_err(Clone::clone)
 }
 
-/// An EGL display that would not start, with what is missing on the platform: the default backend needs a Vulkan
-/// driver on Linux and Direct3D 11 on Windows, and the software one needs `--swiftshader` files beside libEGL.
-fn no_display(what: &str, software: bool) -> String {
-    if software {
-        format!(
-            "{what}: the SwiftShader backend needs libvk_swiftshader and its ICD file beside libEGL (scripts/fetch-angle.mjs --swiftshader)"
-        )
-    } else if cfg!(target_os = "linux") {
-        format!(
-            "{what}: ANGLE's Vulkan backend found no Vulkan driver; install one (Mesa lavapipe: mesa-vulkan-drivers and libvulkan1)"
-        )
-    } else if cfg!(windows) {
-        format!("{what}: ANGLE's Direct3D 11 backend found no device")
-    } else {
-        what.to_string()
+/// An EGL display that would not start, with what is missing on the platform.
+fn no_display(what: &str, device: Device) -> String {
+    match device {
+        Device::SwiftShader => format!(
+            "{what}: the SwiftShader backend needs its driver library and ICD file beside libEGL (scripts/fetch-angle.mjs --swiftshader)"
+        ),
+        Device::Vulkan => format!("{what}: ANGLE's Vulkan backend found no Vulkan driver (Mesa lavapipe: mesa-vulkan-drivers and libvulkan1)"),
+        Device::D3D11 => format!("{what}: ANGLE's Direct3D 11 backend found no hardware device"),
+        Device::D3D11Warp => format!("{what}: ANGLE's Direct3D 11 backend found no device"),
+        Device::Metal => what.to_string(),
     }
+}
+
+/// Whether the SwiftShader driver and its ICD file are beside libEGL in `dir`.
+fn has_swiftshader(dir: &std::path::Path) -> bool {
+    let driver = if cfg!(windows) {
+        "vk_swiftshader.dll".into()
+    } else {
+        libloading::library_filename("vk_swiftshader")
+    };
+    dir.join(driver).is_file() && dir.join("vk_swiftshader_icd.json").is_file()
 }
 
 fn load() -> Result<Shared, String> {
@@ -1470,61 +1506,46 @@ fn load() -> Result<Shared, String> {
     let destroy_surface: Destroy = sym!(b"eglDestroySurface\0", Destroy);
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
 
-    // `KINETOGRAPH_ANGLE_BACKEND=swiftshader` asks for ANGLE's Vulkan backend on SwiftShader, the CPU rasteriser Chrome's
-    // oracle runs on (it needs libvk_swiftshader beside libEGL).
-    let software = std::env::var("KINETOGRAPH_ANGLE_BACKEND").is_ok_and(|v| v == "swiftshader");
-    let backend = if software {
-        EGL_PLATFORM_ANGLE_TYPE_VULKAN
-    } else if cfg!(target_os = "macos") {
-        EGL_PLATFORM_ANGLE_TYPE_METAL
-    } else if cfg!(windows) {
-        EGL_PLATFORM_ANGLE_TYPE_D3D11
-    } else {
-        EGL_PLATFORM_ANGLE_TYPE_VULKAN
-    };
-    // EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE = EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE.
-    let device = if software {
-        [0x3209, 0x3487]
-    } else {
-        [EGL_NONE as isize, EGL_NONE as isize]
-    };
-    let display_attribs: [isize; 5] = [
-        EGL_PLATFORM_ANGLE_TYPE,
-        backend,
-        device[0],
-        device[1],
-        EGL_NONE as isize,
-    ];
-    // SAFETY: each call below passes pointers to locals that outlive it and attribute lists ended by EGL_NONE; the
-    // handles are the ones the previous calls returned and are checked before use.
-    let (display, config) = unsafe {
-        let display = get_platform_display(
-            EGL_PLATFORM_ANGLE_ANGLE,
-            std::ptr::null_mut(),
-            display_attribs.as_ptr(),
-        );
-        if display.is_null() {
-            return Err(no_display("ANGLE gave no display", software));
+    // The device: the platform's own, else SwiftShader when its files are beside libEGL (a machine with no Vulkan
+    // driver or no D3D11 hardware); `KINETOGRAPH_ANGLE_BACKEND` overrides (`angle_select.rs`).
+    let backend = std::env::var("KINETOGRAPH_ANGLE_BACKEND").ok();
+    let list = select::candidates(select::Os::this(), backend.as_deref(), has_swiftshader(&dir));
+    let (device, (display, config), why) = select::pick(&list, backend.as_deref(), |device| {
+        // EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE (0x3209) = HARDWARE (0x320A), WARP (0x320B) or SWIFTSHADER (0x3487).
+        let (kind, device_type) = match device {
+            Device::Metal => (EGL_PLATFORM_ANGLE_TYPE_METAL, EGL_NONE as isize),
+            Device::Vulkan => (EGL_PLATFORM_ANGLE_TYPE_VULKAN, EGL_NONE as isize),
+            Device::D3D11 => (EGL_PLATFORM_ANGLE_TYPE_D3D11, 0x320A),
+            Device::D3D11Warp => (EGL_PLATFORM_ANGLE_TYPE_D3D11, 0x320B),
+            Device::SwiftShader => (EGL_PLATFORM_ANGLE_TYPE_VULKAN, 0x3487),
+        };
+        let attribs: [isize; 5] = if device_type == EGL_NONE as isize {
+            [EGL_PLATFORM_ANGLE_TYPE, kind, EGL_NONE as isize, EGL_NONE as isize, EGL_NONE as isize]
+        } else {
+            [EGL_PLATFORM_ANGLE_TYPE, kind, 0x3209, device_type, EGL_NONE as isize]
+        };
+        // SAFETY: each call below passes pointers to locals that outlive it and attribute lists ended by EGL_NONE; the
+        // handles are the ones the previous calls returned and are checked before use.
+        unsafe {
+            let display = get_platform_display(EGL_PLATFORM_ANGLE_ANGLE, std::ptr::null_mut(), attribs.as_ptr());
+            if display.is_null() {
+                return Err("ANGLE gave no display".to_string());
+            }
+            let (mut major, mut minor) = (0, 0);
+            if initialize(display, &mut major, &mut minor) == 0 {
+                // ANGLE's own reason (a missing Vulkan extension, say) goes to stderr; the code says which EGL error it was.
+                return Err(no_display(&format!("eglInitialize failed (EGL error {:#x})", get_error()), device));
+            }
+            bind_api(EGL_OPENGL_ES_API);
+            // EGL_RENDERABLE_TYPE = ES3, SURFACE_TYPE = PBUFFER, 8 bits a channel.
+            let config_attribs = [0x3040, 0x40, 0x3033, 1, 0x3024, 8, 0x3023, 8, 0x3022, 8, 0x3021, 8, EGL_NONE];
+            let (mut config, mut n) = (std::ptr::null_mut(), 0);
+            if choose_config(display, config_attribs.as_ptr(), &mut config, 1, &mut n) == 0 || n == 0 {
+                return Err("no ES 3 pbuffer config".into());
+            }
+            Ok((display as usize, config as usize))
         }
-        let (mut major, mut minor) = (0, 0);
-        if initialize(display, &mut major, &mut minor) == 0 {
-            // ANGLE's own reason (a missing Vulkan extension, say) goes to stderr; the code says which EGL error it was.
-            return Err(no_display(
-                &format!("eglInitialize failed (EGL error {:#x})", get_error()),
-                software,
-            ));
-        }
-        bind_api(EGL_OPENGL_ES_API);
-        // EGL_RENDERABLE_TYPE = ES3, SURFACE_TYPE = PBUFFER, 8 bits a channel.
-        let config_attribs = [
-            0x3040, 0x40, 0x3033, 1, 0x3024, 8, 0x3023, 8, 0x3022, 8, 0x3021, 8, EGL_NONE,
-        ];
-        let (mut config, mut n) = (std::ptr::null_mut(), 0);
-        if choose_config(display, config_attribs.as_ptr(), &mut config, 1, &mut n) == 0 || n == 0 {
-            return Err("no ES 3 pbuffer config".into());
-        }
-        (display as usize, config as usize)
-    };
+    })?;
     Ok(Shared {
         _egl: egl,
         _gles: gles,
@@ -1536,6 +1557,8 @@ fn load() -> Result<Shared, String> {
         destroy_surface,
         display,
         config,
+        device,
+        why,
     })
 }
 
@@ -1621,7 +1644,7 @@ fn create(ext: Extensions) -> Result<Context, String> {
 }
 
 /// The compressed texture formats the raw texture calls can take on this machine, as the WebGL extensions that offer them: the
-/// ones the ANGLE context can be asked for. Empty unless `KINETOGRAPH_WEBGL=angle`, because the hand-written replay takes none.
+/// ones the ANGLE context can be asked for. Empty unless ANGLE is the WebGL replay, because the built-in replay takes none.
 pub fn compressed_formats() -> Vec<&'static str> {
     if !enabled() {
         return Vec::new();

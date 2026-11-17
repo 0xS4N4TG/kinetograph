@@ -1,7 +1,8 @@
 //! Scene graph and GPU compositor for Kinetograph.
 
 mod angle;
-pub use angle::compressed_formats as webgl_compressed_formats;
+pub use angle::{backend_report as webgl_backend, compressed_formats as webgl_compressed_formats};
+mod angle_select;
 mod angle_replay;
 pub mod anim;
 pub mod blur;

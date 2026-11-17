@@ -494,7 +494,7 @@ impl Compositor {
         }
     }
 
-    /// `glsl_draw` with ANGLE drawing (`KINETOGRAPH_WEBGL=angle`): the recording is replayed into an ANGLE context, and
+    /// `glsl_draw` with ANGLE drawing: the recording is replayed into an ANGLE context, and
     /// its RGBA8 rows are written into the drawing buffer the rest of the compositor places on the canvas.
     fn glsl_draw_angle(
         &mut self,
@@ -670,7 +670,7 @@ impl Compositor {
             }
             if op.clear_is_partial() {
                 return Err(render_error(
-                    "unsupported: a clear through a colour mask, a stencil mask or a scissor box (KINETOGRAPH_WEBGL=angle draws it)",
+                    "unsupported: a clear through a colour mask, a stencil mask or a scissor box (ANGLE draws it)",
                 ));
             }
             if let GlslOp::Upload(u) = op {
