@@ -255,6 +255,14 @@ pub fn chrome(name: &str, body: &str, w: u32, h: u32) -> Option<RgbaImage> {
         command
             .arg("--use-angle=swiftshader")
             .arg("--enable-unsafe-swiftshader");
+    } else if body.contains("getContext('webgpu") {
+        // WebGPU on SwiftShader's Vulkan, the same adapter on every machine. The page's promises settle after the load
+        // event, so the shot waits (virtual time) for the page to say it is done.
+        command
+            .arg("--enable-unsafe-webgpu")
+            .arg("--use-angle=swiftshader")
+            .arg("--enable-unsafe-swiftshader")
+            .arg("--virtual-time-budget=4000");
     } else {
         command.arg("--disable-gpu");
     }

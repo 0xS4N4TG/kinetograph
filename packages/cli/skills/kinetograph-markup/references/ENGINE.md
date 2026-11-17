@@ -705,7 +705,11 @@ flavour naga's GLSL frontend reads, then naga's IR goes to wgpu directly, with n
 not keep the uniform array strides), and `compositor/glsl.rs` replays the draws into an Rgba8 drawing buffer
 (`shaders/glsl_blit.wgsl` then places it on the canvas in linear light). Findings: naga cannot lay out a `matCx2` in a
 uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
-travel as `vec4`s; bools are not allowed in a block, so they travel as ints; wgpu bounds each vertex by a whole stride
+travel as `vec4`s; bools are not allowed in a block, so they travel as ints; a WebGL 2 uniform block is not given to naga at
+all (`glsl_blocks.rs`): its std140 bytes travel as a `uvec4` array at binding 512 + the block's index, and `main` fills
+private variables of the real types from the words, so the layout is the recorder's (`webgl-blocks.ts`), `instance.member`
+is read as a variable of its own (a struct would hold a `mat2` naga cannot lay out), and the device asks for 16 uniform
+buffers a stage; wgpu bounds each vertex by a whole stride
 from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
 What a framebuffer draws into is a second kind of target: colour (Rgba8, `Rgba8UnormSrgb` for `SRGB8_ALPHA8`, which draws write and blend in linear light and keep encoded as GL
 does, `R8Unorm` and `Rg8Unorm` for `R8` and `RG8`, or a float format, with mip levels when the
@@ -793,7 +797,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (stencil, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
@@ -815,9 +819,36 @@ page carries from frame to frame; the frame is then drawn from the replayed hist
 format against the layout's `sampleType` or storage format, one level for a storage texture), layout (storage formats and
 access, stages, counts against the limits) and dispatch (each dimension; at most 4096 dispatches and 2^26 workgroups in a
 frame), and `check_with` reads the workgroup size of each compute entry point with naga; the page side throws for the same.
-`device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
-the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
-filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with
+A render pass with no colour attachment is a `render` step with `depthOnly: true` and no `target` (without the flag a pass with no
+target is the canvas's), and a depth texture may be the whole-level source and destination of `copyTextureToTexture`, so a
+shadow map is made by a depth-only pass, copied, and read by a comparison sampler.
+A render pass with several colour attachments is a `render` step whose `target`, `resolve` and `clear` are the first and `more` the
+rest (each a level and layer with its own `clear` and `resolve`), all textures of one size and sample count, as many as
+`maxColorAttachments`; the canvas's texture cannot be one of several. `webgpu::validate` checks the sizes, samples, distinct
+levels and the count, and wgpu refuses a pass over `maxColorAttachmentBytesPerSample` (a warning and a transparent canvas).
+A texture may have array layers (`Texture.layers`, up to `maxTextureArrayLayers`, not multisampled). A view is a `2d` view of one
+layer or a `2d-array` view of a range (`baseLayer`, `layers`, `dimension`), a layout's `viewDimension` says which a binding
+takes, and a pass's target, resolve target and depth attachment, an upload and each corner of a copy name their `layer`. The
+log keys a level and layer (`<texture>:<mip>:<layer>`), so a layer nothing reads is not replayed; writes and copies of several
+layers are recorded one step a layer, and a storage texture binding takes a `2d` view of one layer.
+Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQuerySet`, `timestampWrites`, occlusion queries and
+`writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
+timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:
+three.js's Inspector sets `trackTimestamp` on the backend directly, so hiding the feature would not make it skip the path.
+An invalid call throws in the page, and every method of the device, queue, encoders, pipelines, texture and buffer, and the canvas's `configure` and `getCurrentTexture`, records the error on the
+device before it throws on (`webgpu-errors.ts`): the frame lists them in `WebGpuContent.errors` (32 different at most), which the
+painter reports as unsupported `webgpu` items (a warning, an error under `--strict`) even when the page caught the exception and
+carried on. `pushErrorScope` and `popErrorScope` keep a stack: the innermost `validation` scope keeps the first error raised
+inside it and `popErrorScope` resolves with it as a `GPUValidationError`, or null. Inside a `validation` scope the page's own call
+does not throw (a browser's does not): a RangeError or Error is kept by the scope and the call returns an invalid object that takes
+any call. A TypeError still throws, as does a call the engine does not draw. Outside a scope the call throws. There is no
+`uncapturederror` event, and `requestDevice` and a `getCurrentTexture` on a canvas that was never configured are not reported
+with the frame (no device holds them; the promise rejects or the call throws, as in a browser).
+`device.limits` and `adapter.limits` are the WebGPU default limits and the adapter's features the fixed list `float32-filterable`
+and `timestamp-query`, on every machine (the device the page sees does not depend on the GPU that renders), and a
+`requestDevice` for better limits or other features is refused. `webgpu::validate_with` checks against `Limits::advertised()`
+too, not against the host's device; the replay warns once for a host limit below the default or a host without
+`float32-filterable` (`webgpu::shortfalls`). A texture is made with
 `STORAGE_BINDING` only when the recording has a compute pipeline, a storage texture layout or a `texture_storage_` module,
 and only the usages its format allows. Atomics whose result depends on the order invocations run in are not made
 deterministic by the engine. HyperFrames' runtime

@@ -39,6 +39,16 @@ const isElement = (node: PNode): node is PElement => 'tagName' in node;
 const isText = (node: PNode): node is DefaultTreeAdapterMap['textNode'] => node.nodeName === '#text';
 const childrenOf = (node: PParent): PNode[] => (node as { childNodes?: PNode[] }).childNodes ?? [];
 const attrOf = (el: PElement, name: string): string | null => el.attrs.find((a) => a.name === name)?.value ?? null;
+/**
+ * A `<script>` of a type that is not JavaScript is a data block (a shader's source, a JSON blob): it never runs, and the
+ * page reads it by `getElementById(...).textContent`, so it stays in the document with its text.
+ */
+function dataBlock(el: PElement): HfNode | null {
+  const type = (attrOf(el, 'type') ?? '').trim().toLowerCase();
+  if (type === '' || type === 'module' || type === 'importmap' || type === 'text/javascript' || type === 'application/javascript') return null;
+  return { t: 'el', tag: 'script', attrs: el.attrs.map((a): [string, string] => [a.name, a.value]), children: [{ t: 'text', text: textOf(el) }] };
+}
+
 const textOf = (el: PElement): string => childrenOf(el).map((n) => (isText(n) ? n.value : '')).join('');
 
 /** Attributes that name a file the engine reads. */
@@ -388,7 +398,7 @@ class Builder {
     switch (tag) {
       case 'script':
         this.script(el, ctx);
-        return null;
+        return dataBlock(el);
       case 'style':
         this.style(el, ctx);
         return null;
@@ -706,8 +716,14 @@ export async function buildPlan(indexFile: string, options: PlanOptions = {}): P
   }
 
   // The head's styles, links and scripts come before the body's, in document order.
-  for (const node of head ? childrenOf(head) : []) if (isElement(node)) await builder.element(node, ctx, false);
-  const body = await builder.nodes(bodyEl ? childrenOf(bodyEl) : [], ctx, false);
+  // A data block of the head (a shader's source) stays in the document, ahead of the body's nodes, for `getElementById`.
+  const headBlocks: HfNode[] = [];
+  for (const node of head ? childrenOf(head) : []) {
+    if (!isElement(node)) continue;
+    const kept = await builder.element(node, ctx, false);
+    if (kept !== null) headBlocks.push(kept);
+  }
+  const body = [...headBlocks, ...(await builder.nodes(bodyEl ? childrenOf(bodyEl) : [], ctx, false))];
 
   const composition = rootComposition(body);
   const attr = (name: string): string | null => composition?.attrs.find(([n]) => n === name)?.[1] ?? null;

@@ -27,6 +27,8 @@ use naga::front::glsl::{Frontend, Options};
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::glsl_blocks::{self, UsedBlock};
+pub use crate::glsl_blocks::{BLOCK_BINDING, GlslBlock, GlslBlockMember, GlslBlockRange};
 use crate::glsl_cpp::Cpp;
 use crate::glsl_samplers::{expand_sampler_arrays, finish as finish_samplers, lower_sampler_parameters};
 
@@ -101,6 +103,9 @@ pub struct GlslProgram {
     /// shader's attributes.
     #[serde(default)]
     pub attributes: BTreeMap<String, u32>,
+    /// The uniform blocks of the two shaders in GL's block order, laid out as std140 by the recorder.
+    #[serde(default)]
+    pub blocks: Vec<GlslBlock>,
 }
 
 /// The picture of a video file at a time: what a `<video>` shows (`texImage2D` of one). The renderer decodes it with
@@ -481,6 +486,27 @@ pub enum GlslType {
     I16,
     #[serde(rename = "u32")]
     U32,
+    #[serde(rename = "i32")]
+    I32,
+}
+
+impl GlslType {
+    /// The bytes of one value.
+    pub fn size(self) -> u64 {
+        match self {
+            GlslType::U8 | GlslType::I8 => 1,
+            GlslType::U16 | GlslType::I16 => 2,
+            GlslType::F32 | GlslType::U32 | GlslType::I32 => 4,
+        }
+    }
+}
+
+/// What a vertex shader input is, with its components: the value a draw must feed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttrKind {
+    Float(u32),
+    Int(u32),
+    Uint(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -492,6 +518,10 @@ pub struct GlslAttribute {
     pub ty: GlslType,
     #[serde(default)]
     pub normalized: bool,
+    /// `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`); else as
+    /// floats, an integer type converted (or with `normalized`, scaled to 0..1, or -1..1 if signed).
+    #[serde(default)]
+    pub integer: bool,
     /// Bytes; 0 is tightly packed.
     #[serde(default)]
     pub stride: u32,
@@ -662,12 +692,21 @@ pub struct GlslDraw {
     /// the `[i]`).
     #[serde(default)]
     pub uniforms: BTreeMap<String, Vec<GlslUniform>>,
+    /// The bytes of the program's uniform blocks, by block name.
+    #[serde(default)]
+    pub blocks: BTreeMap<String, GlslBlockRange>,
     /// The texture units, by number.
     #[serde(default)]
     pub units: BTreeMap<String, GlslSampler>,
     /// `x, y, width, height`, y up from the bottom row.
     pub viewport: [i32; 4],
     pub scissor: Option<[i32; 4]>,
+    /// `SAMPLE_ALPHA_TO_COVERAGE` was on: it takes effect in a multisampled buffer only.
+    #[serde(default)]
+    pub alpha_to_coverage: bool,
+    /// `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter.
+    #[serde(default)]
+    pub float_linear: bool,
     pub blend: Option<GlslBlend>,
     #[serde(default = "all_true")]
     pub color_mask: [bool; 4],
@@ -737,12 +776,18 @@ fn type_locations(ty: &str) -> Option<u32> {
 
 /// The float components of an attribute type, or `None` for a type a vertex
 /// buffer cannot feed.
-fn float_components(ty: &str) -> Option<u32> {
-    match ty {
-        "float" => Some(1),
-        "vec2" => Some(2),
-        "vec3" => Some(3),
-        "vec4" => Some(4),
+fn attribute_kind(ty: &str) -> Option<AttrKind> {
+    let (head, n) = match ty {
+        "float" => return Some(AttrKind::Float(1)),
+        "int" => return Some(AttrKind::Int(1)),
+        "uint" => return Some(AttrKind::Uint(1)),
+        _ => ty.split_at(ty.len().checked_sub(1)?),
+    };
+    let n: u32 = n.parse().ok().filter(|n| (2..=4).contains(n))?;
+    match head {
+        "vec" => Some(AttrKind::Float(n)),
+        "ivec" => Some(AttrKind::Int(n)),
+        "uvec" => Some(AttrKind::Uint(n)),
         _ => None,
     }
 }
@@ -944,7 +989,7 @@ struct Rewritten {
     /// they travel as `vec4`s.
     packed: Vec<PackedArray>,
     /// Attribute name, location, float components.
-    attributes: Vec<(String, u32, Option<u32>)>,
+    attributes: Vec<(String, u32, Option<AttrKind>)>,
     /// The `mat2`, `mat3` and `mat4` attributes: name, size and first location. Each is read as that many `vecN` columns.
     mat_attributes: Vec<(String, u32, u32)>,
     /// The varyings the fragment shader declares and the vertex shader does not write: an error if it reads one.
@@ -957,6 +1002,8 @@ struct Rewritten {
     outputs: Vec<u32>,
     uses_frag_coord: bool,
     uses_point_coord: bool,
+    /// The uniform blocks this stage declares.
+    blocks: Vec<UsedBlock>,
 }
 
 struct RewriteInput<'a> {
@@ -970,6 +1017,8 @@ struct RewriteInput<'a> {
     points: bool,
     /// The program's sampler uniforms by name, in slot order; the first stage to declare one adds it.
     slots: &'a mut Vec<(String, SamplerDim)>,
+    /// The program's uniform blocks, which a declaration in the source finds by name.
+    blocks: &'a [GlslBlock],
 }
 
 /// What a word of code is renamed by: the stage and how the program is drawn.
@@ -1017,6 +1066,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         flip_y,
         points,
         slots,
+        blocks,
     } = input;
     let src = lower_sampler_parameters(&expand_sampler_arrays(&blank_qualifiers(&strip_comments(src))));
     let fragment = stage == ShaderStage::Fragment;
@@ -1039,6 +1089,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         outputs: Vec::new(),
         uses_frag_coord: false,
         uses_point_coord: false,
+        blocks: Vec::new(),
     };
     let mut body = String::new();
     let mut depth = 0i32;
@@ -1082,13 +1133,21 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
                     uses_point_size: &mut uses_point_size,
                     points,
                     slots,
+                    blocks,
                     defines: &defines,
                 },
             )?;
             let name = directive.trim_start();
             defines.directive(name)?;
-            if name.starts_with("version") || name.starts_with("extension") {
-                // Removed, keeping the lines.
+            let keyword = name.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("");
+            if matches!(
+                keyword,
+                "version" | "extension" | "if" | "ifdef" | "ifndef" | "elif" | "else" | "endif"
+            ) || !defines.active()
+            {
+                // Removed, keeping the lines. The conditionals are decided here, with `defined` and `GL_ES`
+                // as a GLSL ES compiler has them: the lines a branch leaves out are not given on, so naga's own
+                // preprocessor (which reads neither) never sees one, and neither does a `#define` of such a line.
                 body.push_str(&"\n".repeat(extra));
             } else {
                 body.push_str(&rewrite_directive(
@@ -1124,6 +1183,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             uses_point_size: &mut uses_point_size,
             points,
             slots,
+            blocks,
             defines: &defines,
         },
     )?;
@@ -1144,6 +1204,7 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         prelude.push_str(text);
     }
     prelude.push_str(&builtin_helpers(&body));
+    let body = order_functions(&body);
     let mut members = String::new();
     if fragment {
         members.push_str("float _k_fbh; ");
@@ -1184,6 +1245,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
         prelude.push_str(&format!(
             "layout(set=0, binding={binding}) uniform _KU {{ {members}}}; "
         ));
+    }
+    for used in &r.blocks {
+        prelude.push_str(&glsl_blocks::prelude(&blocks[used.slot], used));
     }
     for SamplerDecl { name, dim, slot } in &r.samplers {
         let b = 2 + 2 * slot;
@@ -1289,6 +1353,9 @@ fn rewrite(input: RewriteInput<'_>) -> std::result::Result<Rewritten, String> {
             "for (int _k_i = 0; _k_i < {len}; _k_i++) {{ {name}[_k_i] = {from}; }} "
         ));
     }
+    for used in &r.blocks {
+        wrapper.push_str(&glsl_blocks::loader(&blocks[used.slot], used)?);
+    }
     // A matrix attribute is made of its columns, which are the vertex inputs.
     for (name, n, _) in &r.mat_attributes {
         let columns: Vec<String> = (0..*n).map(|c| format!("_k_m_{name}_{c}")).collect();
@@ -1337,6 +1404,7 @@ struct Ctx<'b> {
     uses_point_size: &'b mut bool,
     points: bool,
     slots: &'b mut Vec<(String, SamplerDim)>,
+    blocks: &'b [GlslBlock],
     /// The macros defined so far, for the length of an array.
     defines: &'b Cpp,
 }
@@ -1370,6 +1438,147 @@ fn blank_qualifiers(code: &str) -> String {
     out
 }
 
+/// One top-level item of a shader: a function definition (its name, and the functions its body calls), or anything else.
+struct Item {
+    text: String,
+    function: Option<String>,
+    calls: Vec<String>,
+}
+
+/// `body` split into top-level items: a function definition ends at its closing brace, any other item at its semicolon.
+fn top_level_items(body: &str) -> Vec<Item> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut items = Vec::new();
+    let (mut start, mut depth, mut paren) = (0, 0usize, 0usize);
+    let mut header_end: Option<usize> = None;
+    let bytes: Vec<(usize, char)> = body.char_indices().collect();
+    for &(at, c) in &bytes {
+        match c {
+            '(' => paren += 1,
+            ')' => paren = paren.saturating_sub(1),
+            '{' => {
+                if depth == 0 {
+                    header_end = Some(at);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    // A function definition ends here; a struct or a block goes on to its semicolon.
+                    let header = body[start..header_end.unwrap_or(start)].trim_end();
+                    if header.ends_with(')') && !header.starts_with("struct") {
+                        items.push((start, at + 1, header_end));
+                        start = at + 1;
+                        header_end = None;
+                    }
+                }
+            }
+            ';' if depth == 0 && paren == 0 => {
+                items.push((start, at + 1, None));
+                start = at + 1;
+                header_end = None;
+            }
+            _ => {}
+        }
+    }
+    if start < body.len() {
+        items.push((start, body.len(), None));
+    }
+    items
+        .into_iter()
+        .map(|(from, to, header_end)| {
+            let text = body[from..to].to_string();
+            let Some(open) = header_end else {
+                return Item { text, function: None, calls: Vec::new() };
+            };
+            let header = &body[from..open];
+            let name: String = header
+                .trim_end()
+                .trim_end_matches(')')
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .trim_end()
+                .chars()
+                .rev()
+                .take_while(|c| word(*c))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let calls = body[open..to]
+                .match_indices('(')
+                .filter_map(|(paren, _)| {
+                    let before = body[open..open + paren].trim_end();
+                    let id: String = before.chars().rev().take_while(|c| word(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+                    (!id.is_empty()).then_some(id)
+                })
+                .collect();
+            Item { text, function: (!name.is_empty()).then_some(name), calls }
+        })
+        .collect()
+}
+
+/// `body` with its function definitions in an order naga reads: a function after the functions it calls. GLSL lets a
+/// shader declare a function first and define it after its caller; naga needs the callee defined first. The functions
+/// change places among the positions the definitions have; nothing else moves, and a body already in order is left as it is.
+fn order_functions(body: &str) -> String {
+    let items = top_level_items(body);
+    let slots: Vec<usize> = (0..items.len()).filter(|&i| items[i].function.is_some()).collect();
+    let by_name = |name: &str| -> Vec<usize> { slots.iter().copied().filter(|&i| items[i].function.as_deref() == Some(name)).collect() };
+    // Whether any function calls one that is defined after it.
+    let forward = slots.iter().any(|&i| items[i].calls.iter().any(|c| by_name(c).iter().any(|&j| j > i)));
+    if !forward {
+        return body.to_string();
+    }
+    let mut order: Vec<usize> = Vec::new();
+    let mut state = vec![0u8; items.len()];
+    fn visit(i: usize, items: &[Item], by_name: &dyn Fn(&str) -> Vec<usize>, state: &mut [u8], order: &mut Vec<usize>) -> bool {
+        match state[i] {
+            2 => return true,
+            1 => return false,
+            _ => {}
+        }
+        state[i] = 1;
+        for call in &items[i].calls {
+            for j in by_name(call) {
+                if j != i && !visit(j, items, by_name, state, order) {
+                    return false;
+                }
+            }
+        }
+        state[i] = 2;
+        order.push(i);
+        true
+    }
+    for &i in &slots {
+        if !visit(i, &items, &by_name, &mut state, &mut order) {
+            // A cycle is recursion, which GLSL does not have: leave it for naga to report.
+            return body.to_string();
+        }
+    }
+    let mut next = order.into_iter();
+    let mut out = String::with_capacity(body.len());
+    for (i, item) in items.iter().enumerate() {
+        if slots.contains(&i) {
+            out.push_str(&items[next.next().expect("one function for each slot")].text);
+        } else if !is_prototype(&item.text) {
+            out.push_str(&item.text);
+        }
+    }
+    out
+}
+
+/// Whether an item is a function prototype (`vec4 f(float v);`). naga gives a function its place where it is first
+/// declared, so a prototype that stays ahead of the definitions puts the function before the ones it calls: once the
+/// definitions are in order the prototypes are not needed.
+fn is_prototype(item: &str) -> bool {
+    let text = item.trim();
+    let Some(open) = text.find('(') else { return false };
+    text.ends_with(");") && !text[..open].contains('=') && text[..open].split_whitespace().count() >= 2
+}
+
 /// The built-in functions of GLSL ES 3.00 that naga's GLSL front end does not have, written in GLSL, for those `body`
 /// calls (renamed `_k_name`).
 fn builtin_helpers(body: &str) -> String {
@@ -1378,6 +1587,31 @@ fn builtin_helpers(body: &str) -> String {
         for ty in ["float", "vec2", "vec3", "vec4"] {
             out.push_str(&format!("{ty} _k_modf({ty} x, out {ty} i) {{ i = trunc(x); return x - i; }} "));
         }
+    }
+    // The Metal back end of naga has no matrix inverse: the cofactor expansion, as a driver does it.
+    if mentions(body, "_k_inverse") {
+        out.push_str(
+            "mat2 _k_inverse(mat2 m) { float d = m[0][0] * m[1][1] - m[1][0] * m[0][1]; \
+             return mat2(m[1][1], -m[0][1], -m[1][0], m[0][0]) / d; } \
+             mat3 _k_inverse(mat3 m) { \
+             float a00 = m[0][0], a01 = m[0][1], a02 = m[0][2], a10 = m[1][0], a11 = m[1][1], a12 = m[1][2], a20 = m[2][0], a21 = m[2][1], a22 = m[2][2]; \
+             float b01 = a22 * a11 - a12 * a21, b11 = -a22 * a10 + a12 * a20, b21 = a21 * a10 - a11 * a20; \
+             float det = a00 * b01 + a01 * b11 + a02 * b21; \
+             return mat3(b01, -a22 * a01 + a02 * a21, a12 * a01 - a02 * a11, \
+             b11, a22 * a00 - a02 * a20, -a12 * a00 + a02 * a10, \
+             b21, -a21 * a00 + a01 * a20, a11 * a00 - a01 * a10) / det; } \
+             mat4 _k_inverse(mat4 m) { \
+             float a00 = m[0][0], a01 = m[0][1], a02 = m[0][2], a03 = m[0][3], a10 = m[1][0], a11 = m[1][1], a12 = m[1][2], a13 = m[1][3], \
+             a20 = m[2][0], a21 = m[2][1], a22 = m[2][2], a23 = m[2][3], a30 = m[3][0], a31 = m[3][1], a32 = m[3][2], a33 = m[3][3]; \
+             float b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10, b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11, \
+             b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12, b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30, \
+             b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31, b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32; \
+             float id = 1.0 / (b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06); \
+             return mat4((a11 * b11 - a12 * b10 + a13 * b09) * id, (a02 * b10 - a01 * b11 - a03 * b09) * id, (a31 * b05 - a32 * b04 + a33 * b03) * id, (a22 * b04 - a21 * b05 - a23 * b03) * id, \
+             (a12 * b08 - a10 * b11 - a13 * b07) * id, (a00 * b11 - a02 * b08 + a03 * b07) * id, (a32 * b02 - a30 * b05 - a33 * b01) * id, (a20 * b05 - a22 * b02 + a23 * b01) * id, \
+             (a10 * b10 - a11 * b08 + a13 * b06) * id, (a01 * b08 - a00 * b10 - a03 * b06) * id, (a30 * b04 - a31 * b02 + a33 * b00) * id, (a21 * b02 - a20 * b04 - a23 * b00) * id, \
+             (a11 * b07 - a10 * b09 - a12 * b06) * id, (a00 * b09 - a01 * b07 + a02 * b06) * id, (a31 * b01 - a30 * b03 - a32 * b00) * id, (a20 * b03 - a21 * b01 + a22 * b00) * id); } ",
+        );
     }
     if mentions(body, "_k_matrixCompMult") {
         for (columns, rows) in [(2, 2), (3, 3), (4, 4), (2, 3), (2, 4), (3, 2), (3, 4), (4, 2), (4, 3)] {
@@ -1468,6 +1702,7 @@ fn rename(
         // naga's GLSL front end lacks these; `builtin_helpers` defines them.
         "modf" => "_k_modf".into(),
         "matrixCompMult" => "_k_matrixCompMult".into(),
+        "inverse" => "_k_inverse".into(),
         "texture2DLod" | "texture2DLodEXT" | "textureCubeLod" | "textureCubeLodEXT" => {
             "textureLod".into()
         }
@@ -1573,6 +1808,14 @@ fn rewrite_chunk(
             *last = t.end;
             let w = word(text, t);
             let prev = k.checked_sub(1).map(|p| word(text, &toks[p]));
+            if w == "."
+                && let Some(instance) = prev
+                && k.checked_sub(2).map(|p| word(text, &toks[p])) != Some(".")
+                && r.blocks.iter().any(|b| b.instance_prefix(instance).is_some())
+            {
+                k += 1;
+                continue;
+            }
             if t.kind == Kind::Ident {
                 if !fragment
                     && prev != Some(".")
@@ -1595,6 +1838,16 @@ fn rewrite_chunk(
                         continue;
                     }
                     out.push_str(w);
+                    k += 1;
+                    continue;
+                }
+                // `instance.member` of a uniform block is the variable that holds the member: the instance is
+                // renamed and the dot after it dropped (the tokens may come one at a time).
+                if prev != Some(".")
+                    && toks.get(k + 1).map(|t| word(text, t)) == Some(".")
+                    && let Some(name) = r.blocks.iter().find_map(|b| b.instance_prefix(w))
+                {
+                    out.push_str(&name);
                     k += 1;
                     continue;
                 }
@@ -1657,6 +1910,12 @@ fn rewrite_chunk(
         let mut end_kind = None;
         while j < toks.len() {
             match word(text, &toks[j]) {
+                // The qualifier of a block (`layout(std140) uniform B {`) is no function head.
+                "(" if j > start && word(text, &toks[j - 1]) == "layout" => {
+                    while j < toks.len() && word(text, &toks[j]) != ")" {
+                        j += 1;
+                    }
+                }
                 "(" => {
                     paren += 1;
                     has_paren = true;
@@ -1806,6 +2065,9 @@ fn declaration(
     let Some(storage) = storage else {
         return Ok(None);
     };
+    if has_body && storage == "uniform" {
+        return block_declaration(text, &stmt[k..], r, ctx.blocks);
+    }
     if has_body {
         return Err(unsupported(format!(
             "an interface block with `{storage}`; declare the variables one by one"
@@ -1946,6 +2208,7 @@ fn declaration(
                     });
                 } else if let Some((_, definition)) = r.structs.iter().find(|(n, _)| *n == ty) {
                     check_uniform_struct(&name, &ty, definition, &r.structs)?;
+                    pad_uniform_struct(&mut r.structs, &ty);
                     r.uniforms.push(UniformDecl {
                         name,
                         ty: ty.clone(),
@@ -1980,12 +2243,12 @@ fn declaration(
                     // A matrix cannot be a vertex input: its columns are, at consecutive locations, and the
                     // matrix is made of them at the start of `main`.
                     for column in 0..n {
-                        r.attributes.push((format!("{name}[{column}]"), at + column, Some(n)));
+                        r.attributes.push((format!("{name}[{column}]"), at + column, Some(AttrKind::Float(n))));
                     }
                     r.mat_attributes.push((name.clone(), n, at));
                     continue;
                 }
-                r.attributes.push((name.clone(), at, float_components(&ty)));
+                r.attributes.push((name.clone(), at, attribute_kind(&ty)));
                 text_out.push_str(&format!("layout(location={at}) in {ty} {name}; "));
             }
         }
@@ -2063,6 +2326,39 @@ fn declaration(
     Ok(Some(text_out))
 }
 
+/// A uniform block, `uniform B { .. } instance;` (`stmt` starts at `B`): its members are in the recording, which the
+/// prelude declares again; the declaration itself goes.
+fn block_declaration(
+    text: &str,
+    stmt: &[Tok],
+    r: &mut Rewritten,
+    blocks: &[GlslBlock],
+) -> std::result::Result<Option<String>, String> {
+    let name = word(text, &stmt[0]);
+    let Some(slot) = blocks.iter().position(|b| b.name == name) else {
+        return Err(format!(
+            "the uniform block `{name}` is not among the program's blocks in the recording"
+        ));
+    };
+    let close = stmt
+        .iter()
+        .rposition(|t| word(text, t) == "}")
+        .ok_or_else(|| format!("the uniform block `{name}` has no closing brace"))?;
+    let instance = match &stmt[close + 1..] {
+        [] => None,
+        [t] if t.kind == Kind::Ident => Some(word(text, t).to_string()),
+        _ => {
+            return Err(unsupported(format!(
+                "the uniform block `{name}` declared as an array of instances; declare one block, or several named blocks"
+            )));
+        }
+    };
+    if !r.blocks.iter().any(|b| b.slot == slot) {
+        r.blocks.push(UsedBlock { slot, instance });
+    }
+    Ok(Some(String::new()))
+}
+
 // ---- reflection ----
 
 /// The shape of a uniform block member, with where it sits.
@@ -2137,7 +2433,7 @@ pub struct Stage {
     pub uniform_size: u32,
     pub samplers: Vec<SamplerBinding>,
     /// Attribute name, location, float components.
-    pub attributes: Vec<(String, u32, Option<u32>)>,
+    pub attributes: Vec<(String, u32, Option<AttrKind>)>,
     /// The locations the fragment shader writes colour at (empty for the
     /// vertex stage).
     pub outputs: Vec<u32>,
@@ -2147,6 +2443,8 @@ pub struct Stage {
     /// The offset of the viewport's width and height (the vertex stage of a
     /// program that draws points).
     pub vp_offset: Option<u32>,
+    /// The program's uniform blocks (indices of `GlslProgram::blocks`) this stage declares.
+    pub blocks: Vec<usize>,
 }
 
 impl std::fmt::Debug for Stage {
@@ -2167,9 +2465,22 @@ pub struct Translated {
     pub fragment: Stage,
     /// The samplers either stage reads, in binding order, with the stages that read each.
     pub samplers: Vec<(SamplerBinding, SamplerStages)>,
+    /// The uniform blocks either stage declares, in GL's block order, with the stages that declare each.
+    pub blocks: Vec<(BlockBinding, SamplerStages)>,
 }
 
-/// Which stages of a program read a sampler.
+/// A uniform block of a program and where its bytes are bound.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockBinding {
+    pub name: String,
+    pub binding: u32,
+    /// The bytes of the buffer bound: the block's size rounded up to 16.
+    pub size: u32,
+    /// The bytes of the block itself (`UNIFORM_BLOCK_DATA_SIZE`).
+    pub data_size: u32,
+}
+
+/// Which stages of a program read a sampler or declare a block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SamplerStages {
     pub vertex: bool,
@@ -2303,6 +2614,7 @@ fn parse_stage(stage: ShaderStage, r: Rewritten) -> std::result::Result<Stage, S
         uses_frag_coord: r.uses_frag_coord,
         fbh_offset,
         vp_offset,
+        blocks: r.blocks.iter().map(|b| b.slot).collect(),
     })
 }
 
@@ -2337,6 +2649,84 @@ fn check_uniform_struct(
     Ok(())
 }
 
+/// The (alignment, size) of a GLSL type in a std140 block, or `None` for one this does not know (a macro length).
+fn std140_of(structs: &[(String, String)], ty: &str, array: Option<u32>) -> Option<(u32, u32)> {
+    let (align, size) = if let Some((_, definition)) = structs.iter().find(|(n, _)| n == ty) {
+        let (_, end) = std140_fields(structs, definition)?;
+        (16, end.div_ceil(16) * 16)
+    } else {
+        let base = ty.trim_start_matches(['i', 'u', 'b']);
+        match base {
+            "float" | "int" | "uint" | "bool" => (4, 4),
+            "vec2" => (8, 8),
+            "vec3" => (16, 12),
+            "vec4" => (16, 16),
+            "mat3" | "mat3x3" => (16, 48),
+            "mat4" | "mat4x4" => (16, 64),
+            "mat2x3" | "mat2x4" => (16, 32),
+            "mat3x4" => (16, 48),
+            "mat4x3" => (16, 64),
+            _ => return None,
+        }
+    };
+    Some(match array {
+        None => (align, size),
+        Some(n) => (16, size.div_ceil(16) * 16 * n),
+    })
+}
+
+/// The std140 end of a struct's fields (the offset after the last), and the largest alignment among them.
+fn std140_fields(structs: &[(String, String)], definition: &str) -> Option<(u32, u32)> {
+    let body = definition.split_once('{').and_then(|(_, rest)| rest.rsplit_once('}')).map(|(inside, _)| inside)?;
+    let mut end = 0u32;
+    let mut widest = 4u32;
+    for field in body.split(';').map(str::trim).filter(|f| !f.is_empty()) {
+        let mut words = field.split_whitespace().filter(|w| !matches!(*w, "highp" | "mediump" | "lowp"));
+        let ty = words.next()?;
+        let rest = words.collect::<Vec<_>>().join(" ");
+        for declarator in rest.split(',') {
+            let array = match declarator.split_once('[') {
+                Some((_, n)) => Some(n.trim_end_matches(|c: char| c == ']' || c.is_whitespace()).parse::<u32>().ok()?),
+                None => None,
+            };
+            let (align, size) = std140_of(structs, ty, array)?;
+            end = end.div_ceil(align) * align + size;
+            widest = widest.max(align);
+        }
+    }
+    Some((widest, end))
+}
+
+/// A struct that is a uniform gets trailing `float`s up to the 16 bytes a std140 block rounds it to. naga lays the
+/// block out with the struct as it is declared, and a back end that sizes the struct by its fields (Metal) would put
+/// what follows an array of them, or the next member of the block, where the page's bytes are not.
+fn pad_uniform_struct(structs: &mut [(String, String)], name: &str) {
+    let Some(at) = structs.iter().position(|(n, _)| n == name) else { return };
+    // The structs it holds first: its own size depends on theirs.
+    let nested: Vec<String> = structs[at]
+        .1
+        .split(['{', '}', ';'])
+        .filter_map(|f| f.split_whitespace().find(|w| !matches!(*w, "highp" | "mediump" | "lowp")))
+        .filter(|w| structs.iter().any(|(n, _)| n == w))
+        .map(str::to_string)
+        .collect();
+    for inner in nested {
+        if inner != name {
+            pad_uniform_struct(structs, &inner);
+        }
+    }
+    let Some((_, end)) = std140_fields(structs, &structs[at].1) else { return };
+    let missing = end.div_ceil(16) * 16 - end;
+    if missing == 0 || structs[at].1.contains("_k_pad") {
+        return;
+    }
+    let pads: String = (0..missing / 4).map(|i| format!("float _k_pad{i}; ")).collect();
+    let text = &mut structs[at].1;
+    if let Some(close) = text.rfind('}') {
+        text.insert_str(close, &pads);
+    }
+}
+
 /// The leaves of a struct uniform, or of an array of them, named as WebGL names them
 /// (`lights[1].color`).
 fn struct_leaves(
@@ -2360,6 +2750,9 @@ fn struct_leaves(
         T::Struct { members, .. } => {
             for m in members {
                 let field = m.name.clone().unwrap_or_default();
+                if field.starts_with("_k_pad") {
+                    continue;
+                }
                 struct_leaves(module, &format!("{name}.{field}"), offset + m.offset, m.ty, out)?;
             }
         }
@@ -2441,6 +2834,7 @@ pub fn translate(
         flip_y,
         points,
         slots: &mut slots,
+        blocks: &program.blocks,
     })?;
     let fr = rewrite(RewriteInput {
         src: &program.fragment,
@@ -2449,6 +2843,7 @@ pub fn translate(
         flip_y,
         points,
         slots: &mut slots,
+        blocks: &program.blocks,
     })?;
     let vertex = parse_stage(ShaderStage::Vertex, vr)?;
     let fragment = parse_stage(ShaderStage::Fragment, fr)?;
@@ -2471,10 +2866,33 @@ pub fn translate(
         }
     }
     samplers.sort_by_key(|(b, _)| b.texture);
+    let blocks = program
+        .blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, b)| {
+            let stages = SamplerStages {
+                vertex: vertex.blocks.contains(&slot),
+                fragment: fragment.blocks.contains(&slot),
+            };
+            (stages.vertex || stages.fragment).then(|| {
+                (
+                    BlockBinding {
+                        name: b.name.clone(),
+                        binding: BLOCK_BINDING + slot as u32,
+                        size: b.carrier_size(),
+                        data_size: b.size,
+                    },
+                    stages,
+                )
+            })
+        })
+        .collect();
     Ok(Translated {
         vertex,
         fragment,
         samplers,
+        blocks,
     })
 }
 
@@ -2834,6 +3252,49 @@ pub fn next_level(rgba: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
     (out, nw, nh)
 }
 
+/// The next mip level of float texels (`Texels::Rgba16F` or `Rgba32F` bytes): 2 x 2 blocks averaged in 32-bit floats
+/// (a side of one stays one), rounded back to the format of `texels`.
+pub fn next_level_float(texels: &Texels, width: u32, height: u32) -> (Texels, u32, u32) {
+    let (nw, nh) = ((width / 2).max(1), (height / 2).max(1));
+    let (bytes, half) = match texels {
+        Texels::Rgba16F(b) => (b, true),
+        Texels::Rgba32F(b) => (b, false),
+        Texels::Rgba8(_) => unreachable!("next_level_float is for float texels"),
+    };
+    let read = |at: usize, c: usize| -> f32 {
+        if half {
+            let i = (at + c) * 2;
+            half::f16::from_le_bytes([bytes[i], bytes[i + 1]]).to_f32()
+        } else {
+            let i = (at + c) * 4;
+            f32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]])
+        }
+    };
+    let mut out: Vec<u8> = Vec::with_capacity(nw as usize * nh as usize * if half { 8 } else { 16 });
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut sum = [0f32; 4];
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let sx = (x * 2 + dx).min(width - 1) as usize;
+                let sy = (y * 2 + dy).min(height - 1) as usize;
+                let at = (sy * width as usize + sx) * 4;
+                for (c, total) in sum.iter_mut().enumerate() {
+                    *total += read(at, c);
+                }
+            }
+            for total in sum {
+                let v = total / 4.0;
+                if half {
+                    out.extend(half::f16::from_f32(v).to_le_bytes());
+                } else {
+                    out.extend(v.to_le_bytes());
+                }
+            }
+        }
+    }
+    (if half { Texels::Rgba16F(out) } else { Texels::Rgba32F(out) }, nw, nh)
+}
+
 /// Translates every program of a layer, so that a scene with a shader naga
 /// cannot read fails when it loads.
 pub fn validate(layer_id: &str, content: &GlslContent) -> Result<()> {
@@ -2858,6 +3319,7 @@ mod tests {
             vertex: vertex.into(),
             fragment: fragment.into(),
             attributes: BTreeMap::new(),
+            blocks: Vec::new(),
         }
     }
 
@@ -2962,7 +3424,7 @@ mod tests {
              void main() { gl_FragColor = vec4(v_uv, 0.5 + 0.5 * sin(u_time), 1.0); }",
         ))
         .unwrap();
-        assert_eq!(t.vertex.attributes, vec![("a_pos".into(), 0, Some(2))]);
+        assert_eq!(t.vertex.attributes, vec![("a_pos".into(), 0, Some(AttrKind::Float(2)))]);
         let names: Vec<_> = t
             .fragment
             .uniforms
@@ -3023,6 +3485,32 @@ mod tests {
         assert_eq!(find("u_m").columns, 3);
         assert!(find("u_on").is_bool);
         assert_eq!(find("u_n").rows, 2);
+    }
+
+    #[test]
+    fn a_uniform_struct_is_padded_to_the_size_a_std140_block_gives_it() {
+        let t = translate(&program(
+            QUAD_ES1,
+            "precision mediump float;\nvarying vec2 v_uv;\n\
+             struct S { float a; }; struct Shadow { float i; float b; float n; float r; vec2 size; };\n\
+             uniform S u_s[2]; uniform Shadow u_h; uniform bool u_on;\n\
+             void main() { gl_FragColor = vec4(u_on ? 1.0 : 0.0, u_s[1].a, u_h.size.x, u_h.r); }",
+        ))
+        .unwrap();
+        let span_of = |name: &str| {
+            t.fragment
+                .module
+                .types
+                .iter()
+                .find_map(|(_, ty)| match (&ty.name, &ty.inner) {
+                    (Some(n), naga::TypeInner::Struct { span, .. }) if n == name => Some(*span),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no struct {name}"))
+        };
+        assert_eq!(span_of("S"), 16);
+        assert_eq!(span_of("Shadow"), 32);
+        assert!(t.fragment.uniforms.iter().all(|u| !u.name.contains("_k_pad")));
     }
 
     #[test]
@@ -3365,6 +3853,54 @@ mod tests {
     }
 
     #[test]
+    fn the_next_level_of_float_texels_averages_blocks_in_floats() {
+        let halves: Vec<u8> = [0.0f32, 1.0, 2.0, 4.0]
+            .into_iter()
+            .flat_map(|v| [v, 0.0, 0.0, 1.0])
+            .flat_map(|v| f32_to_f16(v).to_le_bytes())
+            .collect();
+        let (next, w, h) = next_level_float(&Texels::Rgba16F(halves), 2, 2);
+        assert_eq!((w, h), (1, 1));
+        let Texels::Rgba16F(bytes) = next else { panic!("a half-float level") };
+        let value = |i: usize| half::f16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]]).to_f32();
+        assert_eq!([value(0), value(3)], [1.75, 1.0]);
+        let full: Vec<u8> = [1.0f32, 3.0].into_iter().flat_map(|v| [v, 0.0, 0.0, 0.0]).flat_map(f32::to_le_bytes).collect();
+        let (next, w, h) = next_level_float(&Texels::Rgba32F(full), 2, 1);
+        assert_eq!((w, h), (1, 1));
+        let Texels::Rgba32F(bytes) = next else { panic!("a 32-bit level") };
+        assert_eq!(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]), 2.0);
+    }
+
+    #[test]
+    fn a_function_may_be_declared_first_and_defined_after_its_caller() {
+        // A ray marcher's shape: main calls cast_iso, which calls add_lighting, defined after it.
+        let t = es3_fragment(
+            "void cast_iso(vec3 s);\n\
+             vec4 add_lighting(float v);\n\
+             void main() { cast_iso(vec3(v_uv, 0.0)); }\n\
+             void cast_iso(vec3 s) { o = add_lighting(s.x); }\n\
+             vec4 add_lighting(float v) { return vec4(v); }",
+        );
+        assert!(t.is_ok(), "{t:?}");
+    }
+
+    #[test]
+    fn an_element_of_an_array_of_samplers_may_be_read_by_a_macro_that_is_a_number() {
+        // What three.js writes for a spot light's map: the index is a macro a #if chose the value of.
+        let t = es3_fragment(
+            "uniform sampler2D maps[2];\n\
+             void main() {\n\
+             #if ( 1 < 1 )\n#define MAP_INDEX 0\n#else\n#define MAP_INDEX ( 0 - 1 + 2 )\n#endif\n\
+             o = texture(maps[ MAP_INDEX ], v_uv);\n\
+             #undef MAP_INDEX\n\
+             }",
+        )
+        .unwrap();
+        let names: Vec<&str> = t.fragment.samplers.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"_k_sa_maps_1"), "{names:?}");
+    }
+
+    #[test]
     fn the_unit_of_an_element_of_an_array_of_samplers_comes_from_the_calls_of_the_array() {
         let calls = |index: u32, units: &[f64]| GlslUniform {
             kind: GlslUniformKind::Int,
@@ -3477,5 +4013,191 @@ mod tests {
              gl_FragColor = c * f(PI);\n}",
         ))
         .unwrap();
+    }
+
+    // ---- uniform blocks ----
+
+    const QUAD_ES3: &str = "#version 300 es\nin vec2 a_pos;\n";
+    const FRAGMENT_ES3: &str = "#version 300 es\nprecision highp float; out vec4 o; void main() { o = vec4(1.0); }";
+
+    fn member(name: &str, ty: &str, offset: u32) -> GlslBlockMember {
+        GlslBlockMember {
+            name: name.into(),
+            ty: ty.into(),
+            length: None,
+            offset,
+            stride: None,
+            fields: None,
+        }
+    }
+
+    fn array(mut m: GlslBlockMember, length: u32, stride: u32) -> GlslBlockMember {
+        (m.length, m.stride) = (Some(length), Some(stride));
+        m
+    }
+
+    fn block(name: &str, size: u32, members: Vec<GlslBlockMember>) -> GlslBlock {
+        GlslBlock {
+            name: name.into(),
+            size,
+            members,
+        }
+    }
+
+    fn with_blocks(vertex: &str, fragment: &str, blocks: Vec<GlslBlock>) -> GlslProgram {
+        GlslProgram {
+            blocks,
+            ..program(vertex, fragment)
+        }
+    }
+
+    #[test]
+    fn a_block_is_a_carrier_bound_after_the_loose_uniforms() {
+        let t = translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}layout(std140) uniform B {{ vec4 c; mat2 m; float a[3]; }} b;\n\
+                 void main() {{ gl_Position = b.c + vec4(b.m[1][1] + b.a[2]); }}"
+            ),
+            FRAGMENT_ES3,
+            vec![block(
+                "B",
+                96,
+                vec![
+                    member("c", "vec4", 0),
+                    member("m", "mat2", 16),
+                    array(member("a", "float", 48), 3, 16),
+                ],
+            )],
+        ))
+        .unwrap();
+        assert_eq!(t.blocks.len(), 1);
+        let (b, stages) = &t.blocks[0];
+        assert_eq!((b.name.as_str(), b.binding, b.size, b.data_size), ("B", BLOCK_BINDING, 96, 96));
+        assert_eq!(*stages, SamplerStages { vertex: true, fragment: false });
+        assert_eq!(t.vertex.blocks, vec![0]);
+        assert!(t.fragment.blocks.is_empty());
+    }
+
+    #[test]
+    fn a_block_both_stages_declare_is_one_binding_and_a_block_without_an_instance_name_has_bare_members() {
+        let t = translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}layout(std140) uniform Plain {{ vec4 c; mat4 mvp; }};\n\
+                 void main() {{ gl_Position = mvp * c; }}"
+            ),
+            "#version 300 es\nprecision highp float; out vec4 o;\n\
+             layout(std140) uniform Plain { vec4 c; mat4 mvp; };\n\
+             void main() { o = c; }",
+            vec![block("Plain", 80, vec![member("c", "vec4", 0), member("mvp", "mat4", 16)])],
+        ))
+        .unwrap();
+        assert_eq!(t.blocks.len(), 1);
+        assert_eq!(t.blocks[0].1, SamplerStages { vertex: true, fragment: true });
+    }
+
+    #[test]
+    fn a_block_has_structs_arrays_of_them_and_every_scalar_kind() {
+        let mut ls = array(member("ls", "L", 0), 2, 16);
+        ls.fields = Some(vec![member("p", "vec3", 0), member("r", "float", 12)]);
+        translate(&with_blocks(
+            &format!(
+                "{QUAD_ES3}struct L {{ vec3 p; float r; }};\n\
+                 layout(std140) uniform S {{ L ls[2]; }} s;\n\
+                 layout(std140) uniform K {{ ivec2 i; uint u; bool f; bvec2 bb; uvec3 w; mat3x2 n; mat2x4 q; }};\n\
+                 void main() {{ gl_Position = vec4(s.ls[1].p, s.ls[0].r + float(i.x) + float(u) \
+                 + float(f) + float(bb.y) + float(w.z) + n[2][1] + q[1][3]); }}"
+            ),
+            FRAGMENT_ES3,
+            vec![
+                block("S", 32, vec![ls]),
+                block(
+                    "K",
+                    160,
+                    vec![
+                        member("i", "ivec2", 0),
+                        member("u", "uint", 8),
+                        member("f", "bool", 12),
+                        member("bb", "bvec2", 16),
+                        member("w", "uvec3", 32),
+                        member("n", "mat3x2", 48),
+                        member("q", "mat2x4", 96),
+                    ],
+                ),
+            ],
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn the_loader_reads_std140_words_where_the_layout_says() {
+        let b = block(
+            "B",
+            96,
+            vec![member("c", "vec4", 0), member("m", "mat2", 16), array(member("a", "float", 48), 3, 16)],
+        );
+        let used = UsedBlock { slot: 2, instance: Some("b".into()) };
+        let text = glsl_blocks::loader(&b, &used).unwrap();
+        // The columns of a matrix are 16 bytes apart; an array's elements are a stride apart.
+        assert!(text.contains("_k_bi2_m = mat2(vec2(uintBitsToFloat(_k_w2(((0 + 16) + 0) + 0)), uintBitsToFloat(_k_w2(((0 + 16) + 0) + 4))), vec2(uintBitsToFloat(_k_w2(((0 + 16) + 16) + 0))"), "{text}");
+        assert!(text.contains("for (int _k_i0 = 0; _k_i0 < 3; _k_i0++) { _k_bi2_a[_k_i0] = uintBitsToFloat(_k_w2((0 + 48 + _k_i0 * 16) + 0)); }"), "{text}");
+        let prelude = glsl_blocks::prelude(&b, &used);
+        assert!(prelude.contains("binding=514) uniform _KB2 { uvec4 _k_ub2[6]; };"), "{prelude}");
+        assert!(prelude.contains("vec4 _k_bi2_c; mat2 _k_bi2_m; float _k_bi2_a[3];"), "{prelude}");
+    }
+
+    #[test]
+    fn a_block_the_recording_does_not_have_is_an_error() {
+        let e = translate(&program(
+            &format!("{QUAD_ES3}layout(std140) uniform B {{ vec4 c; }};\nvoid main() {{ gl_Position = c; }}"),
+            FRAGMENT_ES3,
+        ))
+        .unwrap_err();
+        assert!(e.contains("`B` is not among the program's blocks"), "{e}");
+        let e = translate(&with_blocks(
+            &format!("{QUAD_ES3}layout(std140) uniform B {{ vec4 c; }} b[2];\nvoid main() {{ gl_Position = b[1].c; }}"),
+            FRAGMENT_ES3,
+            vec![block("B", 16, vec![member("c", "vec4", 0)])],
+        ))
+        .unwrap_err();
+        assert!(e.starts_with("unsupported:") && e.contains("array of instances"), "{e}");
+    }
+
+    #[test]
+    fn conditionals_are_decided_with_gl_es_and_defined_before_naga_reads_the_source() {
+        // The prelude of a library that runs on desktop GL as well.
+        let t = translate(&program(
+            QUAD_ES1,
+            "#ifdef GL_ES\nprecision mediump float;\n#else\n#if !defined(lowp)\n#define lowp\n#endif\n\
+             #if !defined(mediump)\n#define mediump\n#endif\n#endif\n\
+             #define K 2\n#if defined(K) && K > 1 || defined(NOPE)\n#define SCALE 0.5\n#else\n#define SCALE 2.0\n#endif\n\
+             #ifdef NOPE\n#error not here\n#endif\n\
+             varying vec2 v_uv; void main() { gl_FragColor = vec4(v_uv * SCALE, 0.0, 1.0); }",
+        ))
+        .unwrap();
+        assert!(t.fragment.module.entry_points.len() == 1);
+        // An error in a branch that is left out is not read.
+        translate(&program(QUAD_ES1, "#if 0\nthis is not GLSL\n#endif\nvoid main() { gl_FragColor = vec4(1.0); }")).unwrap();
+    }
+
+    #[test]
+    fn integer_inputs_keep_their_type_and_bit_operations_read() {
+        let t = translate(&program(
+            "#version 300 es\nin vec2 a_pos; in uvec4 joints; in ivec2 shift; in uint flag; in int step_;\n\
+             void main() { uint j = (joints.x & 255u) | (joints.y << 8u); \
+             gl_Position = vec4(a_pos, float(j) + float(shift.x >> 1) + float(flag ^ 3u) + float(step_), 1.0); }",
+            FRAGMENT_ES3,
+        ))
+        .unwrap();
+        let kinds: Vec<_> = t.vertex.attributes.iter().map(|a| (a.0.as_str(), a.2)).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ("a_pos", Some(AttrKind::Float(2))),
+                ("joints", Some(AttrKind::Uint(4))),
+                ("shift", Some(AttrKind::Int(2))),
+                ("flag", Some(AttrKind::Uint(1))),
+                ("step_", Some(AttrKind::Int(1))),
+            ]
+        );
     }
 }

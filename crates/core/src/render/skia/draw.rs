@@ -84,6 +84,8 @@ pub struct Translator {
     /// The `images` key of each `ImageData` source a canvas layer draws, by the address of its text, so a picture drawn many times
     /// is hashed once for the layer.
     pixel_keys: HashMap<usize, (Arc<str>, String)>,
+    /// The newest version of each stored picture (`stored_pixels`) drawn so far, as an image.
+    stored_last: HashMap<Arc<str>, (u64, Option<Image>)>,
     typefaces: HashMap<(u64, u32, Vec<i16>), Option<Typeface>>,
     glyph_paths: HashMap<(skia_safe::typeface::TypefaceId, u32, u32, bool, u16), Option<Path>>,
     text_atlas: bool,
@@ -207,6 +209,7 @@ impl Translator {
             images: HashMap::new(),
             canvas_pictures: HashMap::new(),
             pixel_keys: HashMap::new(),
+            stored_last: HashMap::new(),
             typefaces: HashMap::new(),
             glyph_paths: HashMap::new(),
             text_atlas: std::env::var("KINETOGRAPH_SKIA_TEXT").is_ok_and(|v| v == "atlas"),

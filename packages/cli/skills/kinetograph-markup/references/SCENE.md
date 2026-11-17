@@ -585,10 +585,20 @@ which is also what Chrome reports on Apple silicon, ANGLE on Metal) centred on t
 volume is not drawn, and culling does not apply. `gl_VertexID` is the vertex's number (counting from `first`), and the
 point's number in a draw of points; `gl_InstanceID` the instance's. Instanced points are not drawn.
 
+Uniform buffers (WebGL 2): `bindBuffer`, `bufferData` and `bufferSubData` take `UNIFORM_BUFFER`, with `bindBufferBase`,
+`bindBufferRange`, `uniformBlockBinding`, `getUniformBlockIndex`, `getActiveUniformBlockParameter` and `Name`,
+`getUniformIndices`, `getActiveUniforms` and `getIndexedParameter`. A block is laid out as std140 and answers with
+the offsets, strides and sizes Chrome gives (the block's size is where its last member ends); every declared block is
+active, so a draw whose block has no buffer or less of one than it holds is refused (`INVALID_OPERATION`). Each draw
+records the bytes of each block's bound range as they were at that draw. Limits: `MAX_UNIFORM_BUFFER_BINDINGS` 24,
+`MAX_UNIFORM_BLOCK_SIZE` 65536, `UNIFORM_BUFFER_OFFSET_ALIGNMENT` 256, 12 blocks a stage and 24 in all.
+`row_major`, `shared` and `packed` layouts (WebGL allows std140 only), arrays of block instances and samplers in a block
+are `unsupported:`.
+
 Not drawn, and reported as `unsupported:` with what to do instead (never accepted and ignored):
 multisampled renderbuffers of 32-bit floats, `readPixels`, lines wider than one pixel, instanced points, integer attributes
 (`vertexAttribIPointer`, `vertexAttribI4i`), mipmaps of 3D and array textures, cube map levels above 0 with pixels (call `generateMipmap`), `texSubImage2D` of part of a cube face, cube faces of float pixels or depth, a cube with both uploaded and drawn faces, float textures from a picture, a float texture as a `texSubImage2D` target from a picture or with the unpack flip or premultiply on, pixels uploaded to
-texture levels other than 0 (call `generateMipmap`), uniform blocks, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
+texture levels other than 0 (call `generateMipmap`), pixel buffer objects, transform feedback buffers, struct uniforms with a `bool`, `mat2` or sampler field, array outputs, a framebuffer
 texture that is not of a renderable format or holds uploaded pixels, attachments of different sizes in one framebuffer, `drawImage` or `toDataURL` of a WebGL canvas. With `antialias: true` (the default) the canvas is
 4x multisampled, so the edges of what is drawn into it are smooth as in Chrome (a framebuffer of your own is
 multisampled when its renderbuffers are). A context that blits into the canvas, or copies its depth or stencil, is drawn without multisampling.

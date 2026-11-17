@@ -5,6 +5,7 @@ import type { Unsupported } from '@kinetographdev/scene';
 import { readFileSync } from 'node:fs';
 import { dirname, relative } from 'node:path';
 import type { UnsupportedImport } from '../bundle.js';
+import { dawnReport } from '../dawn.js';
 import { effectsReport } from '../effects.js';
 import { CliError } from '../errors.js';
 import { describeFailure, hintFor, probeInstall, relevantEnv, type ProbeResult } from '../doctor-probe.js';
@@ -147,9 +148,11 @@ async function probeApart(progress: Context['progress']): Promise<ProbeResult> {
 async function installReport(context: Context): Promise<{ data: object; text: string; exitCode?: number }> {
   const { addon, renderer, rendererReason, failure, adapters, trace } = nativeIsStub() ? probeHere() : await probeApart(context.progress);
   const updates = await updateReport(cliVersion());
+  const dawn = await dawnReport();
   const env = relevantEnv();
   const data = {
     node: process.version, platform: `${process.platform}-${process.arch}`, addon, renderer, rendererReason,
+    ...(dawn === null ? {} : { dawn: dawn.data }),
     ...(adapters ? { adapters } : {}), ...(trace ? { trace } : {}),
     ...(failure ? { failure: failure.kind === 'error' ? failure : { ...failure, hint: hintFor(failure) } } : {}), ...(env.length > 0 ? { env } : {}), ...updates,
   };
@@ -160,6 +163,7 @@ async function installReport(context: Context): Promise<{ data: object; text: st
     addon.loaded ? `renderer: ${renderer ?? 'could not start'}` : 'renderer: unknown (no addon)',
     // A renderer that threw says it once, below, as `why it could not start`.
     ...(rendererReason === null || (failure?.kind === 'error' && failure.message === rendererReason) ? [] : [`why not the GPU: ${rendererReason}`]),
+    ...(dawn?.lines ?? []),
     ...(adapters && (failure !== undefined || renderer === null) ? ['adapters wgpu found:', ...adapters.map((a) => `  ${a}`)] : []),
     ...(failure === undefined ? [] : describeFailure(failure)),
     ...(trace ? ['start-up trace (last lines):', ...trace.slice(-12).map((l) => `  ${l}`), '  (all of it is in --json)'] : []),
@@ -213,7 +217,8 @@ export const doctor: Command = {
       if (notes.length > 0) report.notes = notes;
       // The project's own @remotion/effects: its version against the one the parity run used, and the effects it uses that are not fully supported.
       const effects = source.worker === undefined ? null : effectsReport(dirname(source.entry), readFileSync(source.worker.bundleFile, 'utf8'));
-      const shown = withImports(report, formatReport(report));
+      const dawn = await dawnReport();
+      const shown = withImports(dawn === null ? report : { ...report, dawn: dawn.data }, `${formatReport(report)}${dawn === null ? '' : `\n\n${dawn.lines.join('\n')}`}`);
       const out = effects === null ? shown : { data: { ...shown.data, effects }, text: `${shown.text}\n\n${effects.lines.join('\n')}` };
       return { ...out, ...(report.renderErrors ? { exitCode: 1 } : {}) };
     } catch (error) {

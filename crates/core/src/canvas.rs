@@ -414,6 +414,15 @@ pub enum CanvasSource {
         height: u32,
         data: Arc<str>,
     },
+    /// A picture the host put in `stored_pixels` as bytes (the read-back of a GPU canvas), by key and version: the
+    /// renderer takes the bytes from there, as they were put (`StoredPicture`). Nothing is drawn if it is gone.
+    Stored {
+        key: Arc<str>,
+        version: u64,
+        /// The picture itself, filled when the layer is loaded (`resolve_sources`), so it outlives the store's copy.
+        #[serde(skip)]
+        held: crate::stored_pixels::Held,
+    },
     /// An entry of the layer's `sources` table, by index. Only the layer's own loading reads it: `CanvasLayer` swaps each
     /// one for the entry (`resolve_sources`), so a command that refers to a source and every other that does share one
     /// `Arc`, and the renderer decodes or records it once. What is left after loading (an index the table has no entry
@@ -660,6 +669,7 @@ fn sources_once(ops: &[CanvasOp], out: &mut Vec<String>, seen: &mut std::collect
             }
         }
         CanvasSource::Pixels { .. }
+        | CanvasSource::Stored { .. }
         | CanvasSource::Layer { .. }
         | CanvasSource::Video { .. }
         | CanvasSource::Ref { .. } => {}
@@ -692,6 +702,7 @@ pub fn layer_sources(ops: &[CanvasOp]) -> Vec<String> {
             CanvasSource::Canvas { commands, .. } => out.extend(layer_sources(commands)),
             CanvasSource::Src { .. }
             | CanvasSource::Pixels { .. }
+            | CanvasSource::Stored { .. }
             | CanvasSource::Video { .. }
             | CanvasSource::Ref { .. } => {}
         }
@@ -770,12 +781,38 @@ fn resolve_ops(ops: &mut [CanvasOp], table: &[CanvasSource]) -> std::result::Res
     Ok(())
 }
 
+/// Takes the pictures the `Stored` sources of `ops` name from `stored_pixels`, also in the canvases they draw (one that is shared,
+/// from the table, was done when it was made).
+fn hold_stored(ops: &mut [CanvasOp]) {
+    fn source(s: &mut CanvasSource) {
+        match s {
+            CanvasSource::Stored { key, version, held } => *held = crate::stored_pixels::hold(key, *version),
+            CanvasSource::Canvas { commands, .. } => {
+                if let Some(inner) = Arc::get_mut(&mut commands.0) {
+                    hold_stored(inner);
+                }
+            }
+            _ => {}
+        }
+    }
+    for op in ops {
+        match op {
+            CanvasOp::Image(i) => source(&mut i.source),
+            CanvasOp::Fill(FillOp { paint: CanvasPaint::Pattern { source: s, .. }, .. })
+            | CanvasOp::Stroke(StrokeOp { paint: CanvasPaint::Pattern { source: s, .. }, .. })
+            | CanvasOp::Text(TextOp { paint: CanvasPaint::Pattern { source: s, .. }, .. }) => source(s),
+            _ => {}
+        }
+    }
+}
+
 /// A layer's commands with the refs they hold swapped for the entries of `sources` (`CanvasSource::Ref`).
 pub fn resolve_sources(
     mut commands: Vec<CanvasOp>,
     sources: Vec<CanvasSource>,
 ) -> std::result::Result<CanvasOps, String> {
     if sources.is_empty() {
+        hold_stored(&mut commands);
         return Ok(CanvasOps(Arc::new(commands)));
     }
     let mut table: Vec<CanvasSource> = Vec::with_capacity(sources.len());
@@ -784,10 +821,14 @@ pub fn resolve_sources(
             return Err("a canvas source in the sources table cannot itself be a ref".into());
         }
         if let CanvasSource::Canvas { commands, .. } = &mut entry {
+            hold_stored(Arc::make_mut(&mut commands.0).as_mut_slice());
             resolve_ops(Arc::make_mut(&mut commands.0).as_mut_slice(), &table)?;
+        } else if let CanvasSource::Stored { key, version, held } = &mut entry {
+            *held = crate::stored_pixels::hold(key, *version);
         }
         table.push(entry);
     }
+    hold_stored(&mut commands);
     resolve_ops(&mut commands, &table)?;
     Ok(CanvasOps(Arc::new(commands)))
 }

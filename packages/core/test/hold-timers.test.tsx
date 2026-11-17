@@ -49,7 +49,27 @@ function root(children: React.ReactNode) {
   registerRoot(() => <Composition id="T" component={() => <>{children}</>} width={16} height={16} fps={30} durationInFrames={20} />);
 }
 
+/** Holds the frame until a 300 ms timeout, and polls with a 1 ms timeout that sets itself again (a page's `setTimeout(step, ...)` loop). */
+function Polling() {
+  useState(() => {
+    const handle = delayRender('waiting on a timeout');
+    const poll = () => {
+      log.push('poll');
+      setTimeout(poll, 1);
+    };
+    setTimeout(poll, 1);
+    setTimeout(() => continueRender(handle), 300);
+  });
+  return <Rect id="r" width={4} height={4} fill="#fff" />;
+}
+
 describe('a timeout set while the frame is held open', () => {
+  it('fires the timeout a hold timer sets with the frame clock, so a polling loop does not run for ever in a held frame', async () => {
+    root(<Polling />);
+    await createFrameRenderer('T').renderFrame(0);
+    expect(log.length).toBeLessThan(5);
+  });
+
   it('releases a hold that waits on a 300 ms timeout in the same frame, with no real waiting and the clock still', async () => {
     root(<Held delays={[300]} />);
     const started = process.hrtime.bigint();
@@ -83,5 +103,27 @@ describe('a timeout set while the frame is held open', () => {
     expect(log).toEqual([]);
     await renderer.renderFrame(3);
     expect(log).toEqual(['early']);
+  });
+
+  it('runs the animation frames a held frame asks for and fires the hold timers they set, in one frame', async () => {
+    // The release waits on a timeout that only an animation-frame callback sets (a repaint that schedules the next step):
+    // neither the frame callbacks alone nor the hold timers alone release it.
+    function Both() {
+      useState(() => {
+        const handle = delayRender('waiting on a frame callback and a timeout');
+        requestAnimationFrame(() => {
+          log.push('raf');
+          setTimeout(() => {
+            log.push('hold:300');
+            continueRender(handle);
+          }, 300);
+        });
+      });
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    }
+    root(<Both />);
+    await createFrameRenderer('T').renderFrame(0);
+    expect(log).toEqual(['raf', 'hold:300']);
+    expect(virtualNow()).toBe(0);
   });
 });

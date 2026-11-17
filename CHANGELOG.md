@@ -7,6 +7,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Added
 
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - `render --sequence` writes one PNG or JPEG per frame (`--image-format png|jpeg`), and honours `--range` and `--scale` (#103).
 - `still`, `strip` and `onion` take `--scale`, as `render` does (#108).
 - Video with transparency: ProRes 4444 (`.mov`) and VP9 (`.webm`) keep alpha. Codecs that cannot carry it (H.264, H.265, GIF, hardware encoders) are refused when alpha is asked for (#102).
@@ -37,9 +38,18 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `--input` sends scripted pointer, mouse, key and wheel events to an HTML page on the virtual clock; `doctor` says when a page waits for a click.
 - `DOMParser` parses XML as XML (namespaces, CDATA, comments, `parsererror`), and `XMLHttpRequest.responseXML` and `responseType = 'document'` return XML documents.
 - `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `KeyboardEvent` globals.
+- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
+- A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
+- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
+- WebGPU: depth-only passes, whole-level copies of depth textures, 2d texture arrays (layer views, `2d-array` bindings, render into one layer), passes with several colour attachments, and query sets (accepted; `resolveQuerySet` writes zeros).
 
 ### Changed
 
+- `navigator.gpu` has the WebGPU default limits and the features `float32-filterable` and `timestamp-query` on every machine, not the host GPU's.
+- A WebGPU call that is invalid is reported every frame (an error under `--strict`) even when the page catches it; `popErrorScope` resolves with the error.
+- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
+- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
+- Node's process warnings printed through `console.error` are no longer reported as page errors.
 - Kinetograph is open source under the Apache License 2.0. Versions 0.3.0 and earlier stay under PolyForm Small Business 1.0.0.
 - `doctor` says to use `loadFont` when a font family or a glyph is missing, and that system fonts are not used (#107).
 - A `--json` command keeps the page's logs off stdout.
@@ -71,6 +81,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.
 - XML elements pass `instanceof Element`, and SVG ones `instanceof SVGElement`.
 - Decoded page audio lives in the user's private cache folder and is checked by SHA-256 before use.
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - A `delayRender()` that was never cleared times out with its label (`DELAY_RENDER_TIMEOUT`) instead of ending `still`, `render` and `doctor` silently with exit code 13 (#101).
 - HyperFrames: a sub-composition's root is found by the id its file gave it, so its script's `getElementById` and `#id` selectors work and its timeline registers (#109).
 - A relative-URL `Request` resolves against the document.

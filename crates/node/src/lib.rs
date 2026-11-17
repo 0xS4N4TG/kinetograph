@@ -22,6 +22,7 @@ mod matte;
 mod media;
 mod preview;
 mod rive;
+mod stored;
 pub mod streams;
 pub mod track;
 
@@ -65,6 +66,16 @@ fn resolve_base(base_dir: Option<String>) -> PathBuf {
 
 fn parse_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
     Scene::from_json(scene_json, base_dir.to_path_buf()).map_err(from_core)
+}
+
+/// `parse_scene` for what draws frames in the order the host made them (the starter and pusher threads, `still`, `preview` and `rgba`): the
+/// pictures stored from before the ones the scene names are let go (`kinetograph_core::stored_pixels`), so that a sequence of stills holds
+/// one picture per canvas, not one per frame.
+fn parse_frame_scene(scene_json: &str, base_dir: &Path) -> Result<Scene> {
+    kinetograph_core::stored_pixels::begin_scene();
+    let scene = parse_scene(scene_json, base_dir);
+    kinetograph_core::stored_pixels::end_scene();
+    scene
 }
 
 // ---- CPU only ----
@@ -390,6 +401,37 @@ pub fn render_canvas(request_json: String) -> Result<Buffer> {
     canvas::render_canvas(&request_json)
 }
 
+/// Keeps the read-back of a GPU canvas as bytes, not text: `bytes` (rows of `rowBytes`, RGBA8 or, with `bgra`, BGRA8) as version `version`
+/// of the canvas `key`, with `alpha` `opaque`, `premultiplied` or `straight`. A canvas layer's commands name it as the source
+/// `{ "kind": "stored", "key", "version" }` and the painter takes the bytes as they are. Returns false, keeping nothing, when the
+/// newest version of `key` is the same picture: the caller keeps using that version.
+#[napi]
+#[allow(clippy::too_many_arguments)]
+pub fn put_canvas_pixels(
+    key: String,
+    version: f64,
+    width: u32,
+    height: u32,
+    row_bytes: u32,
+    bgra: bool,
+    alpha: String,
+    bytes: Buffer,
+) -> Result<bool> {
+    stored::put(&key, version, width, height, row_bytes, bgra, &alpha, &bytes)
+}
+
+/// The rows of version `version` of the canvas `key` as `putCanvasPixels` was given them, or `null` when that version is gone.
+#[napi]
+pub fn get_canvas_pixels(key: String, version: f64) -> Option<Buffer> {
+    stored::pixels(&key, version)
+}
+
+/// Forgets every version of the canvas `key` that `putCanvasPixels` kept.
+#[napi]
+pub fn release_canvas_pixels(key: String) {
+    stored::release(&key);
+}
+
 /// The pixels of part of a canvas that holds one decoded picture, read on the CPU
 /// (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas"): `{ width, height, commands, baseDir, rect: { x, y,
 /// width, height } }` as JSON in; straight-alpha RGBA of `rect` out when the commands are one plain `drawImage` of a
@@ -397,13 +439,6 @@ pub fn render_canvas(request_json: String) -> Result<Buffer> {
 #[napi]
 pub fn read_canvas_picture(request_json: String) -> Result<Option<Buffer>> {
     canvas::read_canvas_picture(&request_json)
-}
-
-/// The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
-/// (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
-#[napi]
-pub fn webgpu_device_info() -> Option<String> {
-    kinetograph_core::webgpu_device_info()
 }
 
 #[napi(object)]
@@ -785,7 +820,7 @@ fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
                     } => {
                         let started = (|| {
                             let timer = kinetograph_core::profile::start();
-                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            let scene = parse_frame_scene(&scene_json, &base_dir)?;
                             kinetograph_core::profile::add_since("parse", timer);
                             let mut gpu = shared.idle()?;
                             let timer = kinetograph_core::profile::start();
@@ -851,7 +886,7 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<Buffer> {
         let frame = count("frame", frame)?;
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let png = gpu
@@ -873,7 +908,7 @@ impl Renderer {
     ) -> Result<PreviewImage> {
         let frame = count("frame", frame)?;
         let options = options.unwrap_or_default();
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let rendered = gpu.render_frame(frame).map_err(from_core)?;
@@ -889,7 +924,7 @@ impl Renderer {
         base_dir: Option<String>,
     ) -> Result<RgbaFrame> {
         let frame = count("frame", frame)?;
-        let scene = parse_scene(&scene_json, &resolve_base(base_dir))?;
+        let scene = parse_frame_scene(&scene_json, &resolve_base(base_dir))?;
         let mut gpu = self.shared.idle()?;
         gpu.set_scene(scene).map_err(from_core)?;
         let rendered = gpu.render_frame(frame).map_err(from_core)?;
@@ -1130,7 +1165,7 @@ fn spawn_pusher(
                         }
                         let pushed = (|| {
                             let timer = kinetograph_core::profile::start();
-                            let scene = parse_scene(&scene_json, &base_dir)?;
+                            let scene = parse_frame_scene(&scene_json, &base_dir)?;
                             kinetograph_core::profile::add_since("parse", timer);
                             let mut writer = writer.lock().unwrap_or_else(|e| e.into_inner());
                             let writer = writer.as_mut().ok_or_else(|| {

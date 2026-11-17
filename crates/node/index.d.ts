@@ -207,6 +207,9 @@ export interface ExportPlan {
  */
 export declare function finishDomIsland(ticket: number): string
 
+/** The rows of version `version` of the canvas `key` as `putCanvasPixels` was given them, or `null` when that version is gone. */
+export declare function getCanvasPixels(key: string, version: number): Buffer | null
+
 /** The scene resolved at `frame`, as an `InspectResult` JSON string. */
 export declare function inspect(sceneJson: string, frame: number, baseDir?: string | undefined | null): string
 
@@ -290,10 +293,7 @@ export interface MattingSupport {
    * `ORT_DYLIB_PATH` names a library.
    */
   available: boolean
-  /**
-   * What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always
-   * runs on the CPU, at video speed (CoreML did not help it).
-   */
+  /** What `ben2-base` runs on: `coreml` (a Mac), `cuda` or `webgpu` (builds with them), else `cpu`. `modnet` always runs on the CPU, at video speed (CoreML did not help it). */
   backend: string
   /** Why `available` is false, or why the backend is `cpu`. */
   reason?: string
@@ -373,12 +373,23 @@ export declare function probeMedia(path: string, baseDir?: string | undefined | 
 export declare function probeStreams(path: string, baseDir?: string | undefined | null): MediaStreams
 
 /**
+ * Keeps the read-back of a GPU canvas as bytes, not text: `bytes` (rows of `rowBytes`, RGBA8 or, with `bgra`, BGRA8) as version `version`
+ * of the canvas `key`, with `alpha` `opaque`, `premultiplied` or `straight`. A canvas layer's commands name it as the source
+ * `{ "kind": "stored", "key", "version" }` and the painter takes the bytes as they are. Returns false, keeping nothing, when the
+ * newest version of `key` is the same picture: the caller keeps using that version.
+ */
+export declare function putCanvasPixels(key: string, version: number, width: number, height: number, rowBytes: number, bgra: boolean, alpha: string, bytes: Buffer): boolean
+
+/**
  * The pixels of part of a canvas that holds one decoded picture, read on the CPU
  * (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas"): `{ width, height, commands, baseDir, rect: { x, y,
  * width, height } }` as JSON in; straight-alpha RGBA of `rect` out when the commands are one plain `drawImage` of a
  * picture file or a video frame, `null` when only `renderCanvas` can draw them. Does not open the GPU.
  */
 export declare function readCanvasPicture(requestJson: string): Buffer | null
+
+/** Forgets every version of the canvas `key` that `putCanvasPixels` kept. */
+export declare function releaseCanvasPixels(key: string): void
 
 /**
  * A Canvas 2D context's commands drawn on a transparent canvas (packages/cli/skills/kinetograph-markup/references/SCENE.md,
@@ -712,9 +723,3 @@ export interface VideoOptions {
   encoder?: string
   export?: ExportOptions
 }
-
-/**
- * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
- * (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
- */
-export declare function webgpuDeviceInfo(): string | null

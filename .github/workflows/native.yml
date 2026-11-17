@@ -307,6 +307,40 @@ jobs:
           npm run build -w @kinetographdev/studio-ui
           npm run build -w @kinetographdev/studio
 
+      # WebGPU through Dawn (the `webgpu` npm package, KINETOGRAPH_WEBGPU=dawn): the adapter tests, the rendered cases on
+      # the built CLI and addon, and the goldens. These runners have no GPU, so Dawn takes its software adapter
+      # (`forceFallbackAdapter`, see packages/compat/src/shim/webgpu-dawn.ts): lavapipe on Linux (installed above), WARP
+      # on Windows. On macOS it asks Metal for the runner's own (virtual) GPU (a run of this job showed one there). The
+      # goldens are Metal's and skip off macOS, saying so. The tests skip when `webgpu` does not load, so the first step
+      # makes that a failure instead; the second prints which backend and adapter Dawn took.
+      - name: Dawn loads
+        shell: bash
+        working-directory: packages/cli
+        run: node -e "require('webgpu'); console.log('webgpu loads on', process.platform, process.arch)"
+
+      # Informational: `doctor` gives up on a renderer that has not started after a minute, and on Windows (Direct3D 12
+      # WARP) the renderer needs longer, so its exit code is not a result.
+      - name: Which adapter Dawn takes
+        shell: bash
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          KINETOGRAPH_WEBGPU: dawn
+        run: node packages/cli/dist/cli.js doctor
+
+      - name: Test WebGPU through Dawn
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          (cd packages/compat && npx vitest run test/webgpu-dawn-adapter.test.ts test/webgpu-dawn-copies.test.ts test/webgpu-dawn-load.test.ts)
+          # Every CLI process starts the engine's own renderer, which on Windows (WARP) takes minutes (the clean install and
+          # render step below takes most of an hour), so Windows runs the one rendered case that needs a single process.
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd packages/cli && npx vitest run --reporter=verbose -t drawImage test/webgpu-dawn.test.ts)
+          else
+            (cd packages/cli && npx vitest run --reporter=verbose test/webgpu-dawn.test.ts test/webgpu-dawn-golden.test.ts)
+          fi
+
       # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
       - name: Clean install and render
         run: node scripts/smoke/clean-install.mjs

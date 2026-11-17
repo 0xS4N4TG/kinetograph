@@ -18,12 +18,12 @@ import {
   type CanvasCommand,
   type CanvasContextOptions,
   type CanvasPicture,
-  type DeviceInfo,
   type LayerJson,
 } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { getDomEnvironment } from '../environment.js';
 import type { HostElement } from './host.js';
+import { DawnCanvasContext, dawnCommandsOf, dawnDependsOnHistory, dawnPictureSource, dawnReadCommands, dawnRequested } from './webgpu-dawn.js';
 
 export { CANVAS_SOURCE, CanvasContext2D, WebGLContext };
 
@@ -164,30 +164,10 @@ export { DEFAULT_HEIGHT, DEFAULT_WIDTH };
 const contexts = new WeakMap<object, CanvasContext2D>();
 /** The WebGL contexts of canvases in the tree (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"). */
 /** A WebGL or WebGPU context: what a canvas that is drawn by the GPU holds. */
-export type GlRecorder = WebGLContext | GPUCanvasContextShim;
+export type GlRecorder = WebGLContext | GPUCanvasContextShim | DawnCanvasContext;
 const glContexts = new WeakMap<object, GlRecorder>();
 /** Every context made, for `resetCanvasStates` (weakly: a canvas that is gone takes its context with it). */
 const live = new Set<WeakRef<CanvasContext2D | GlRecorder>>();
-
-let deviceInfo: DeviceInfo | null | undefined;
-
-/**
- * The limits and features of the engine's own GPU device, which a page's `navigator.gpu` reports (`webgpuDeviceInfo` of
- * the addon, asked once); null when the addon cannot say, and the recorder then reports the WebGPU defaults.
- */
-export function webgpuDeviceInfo(): DeviceInfo | null {
-  if (deviceInfo !== undefined) return deviceInfo;
-  deviceInfo = null;
-  try {
-    if (hasAddonFunction('webgpuDeviceInfo')) {
-      const json = addonFunction('webgpuDeviceInfo')();
-      if (json !== null) deviceInfo = JSON.parse(json) as DeviceInfo;
-    }
-  } catch {
-    deviceInfo = null;
-  }
-  return deviceInfo;
-}
 
 /** The pixels of a canvas texture: the commands drawn on a transparent canvas, straight alpha. */
 export function rasterizeCanvas(source: { width: number; height: number; commands: CanvasCommand[] }): Uint8Array | null {
@@ -206,9 +186,55 @@ function newGlContext(type: string, size: () => { width: number; height: number 
     version: type.endsWith('2') ? 2 : 1,
     attributes: typeof attributes === "object" && attributes !== null ? (attributes as Record<string, unknown>) : undefined,
     rasterize: rasterizeCanvas,
+    report: (what) => glReports.add(what),
   });
   live.add(new WeakRef(context));
   return context;
+}
+
+/** What the WebGL recordings of the frame being rendered left out where they are not drawn right (`takeGlReports`). */
+const glReports = new Set<string>();
+
+/** What the WebGL recordings made since the last call left out where they are not drawn right, each once. */
+export function takeGlReports(): string[] {
+  const out = [...glReports];
+  glReports.clear();
+  return out;
+}
+
+/** Whether a WebGL canvas holds render targets that were drawn into (`WebGLContext.holdsTargets`). */
+export function glHoldsTargets(): boolean {
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext && context.holdsTargets) return true;
+  }
+  return false;
+}
+
+/**
+ * The WebGL recordings' state as it is now, to put back with the function this returns (`WebGLContext.snapshot`). The
+ * frame loop puts it back after the sub-frames of a motion blur, so what they draw does not reach the next frame.
+ */
+export function snapshotGlStates(): () => void {
+  const undo: (() => void)[] = [];
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext) undo.push(context.snapshot());
+  }
+  return () => undo.forEach((restore) => restore());
+}
+
+/**
+ * Whether the frame just rendered depends on the frames before it (`WebGLContext.dependsOnHistory`: it makes a render
+ * target of a WebGL canvas from what it held, or reads what the frame before wrote), which the frame loop renders when a render skipped them.
+ */
+export function glDependsOnHistory(): boolean {
+  for (const ref of live) {
+    const context = ref.deref();
+    if (context instanceof WebGLContext && context.dependsOnHistory) return true;
+  }
+  // A Dawn page whose frame read what an earlier frame wrote (webgpu-dawn-carry.ts) is the same for the frame loop.
+  return dawnDependsOnHistory();
 }
 
 /** The 2D contexts of canvases in the tree (`contextOfHost`), the ones a frame's render draws on. */
@@ -222,6 +248,7 @@ const hosted = new WeakSet<CanvasContext2D>();
  * frame, and one outside the tree, keeps what is drawn (`resetState`).
  */
 export function resetCanvasStates(): void {
+  glReports.clear();
   for (const ref of live) {
     const context = ref.deref();
     if (context === undefined) live.delete(ref);
@@ -233,7 +260,7 @@ export function resetCanvasStates(): void {
 /** The WebGL recording of the canvas on `host`, or null when nothing was drawn on it. */
 export function glContentOf(host: object): ReturnType<WebGLContext['content']> | null {
   const context = glContexts.get(host);
-  return context === undefined || !context.drawn ? null : context.content();
+  return context === undefined || context instanceof DawnCanvasContext || !context.drawn ? null : context.content();
 }
 
 /**
@@ -259,7 +286,8 @@ function contextFor(
     if (store.has(key)) return null;
     let gpu = glStore.get(key);
     if (gpu === undefined) {
-      gpu = createGpuCanvasContext({ size, canvas });
+      // KINETOGRAPH_WEBGPU=dawn: Dawn's own device and a read-back canvas, in place of the recording.
+      gpu = dawnRequested() ? new DawnCanvasContext({ size, canvas }) : createGpuCanvasContext({ size, canvas });
       glStore.set(key, gpu);
       live.add(new WeakRef(gpu));
     }
@@ -297,6 +325,12 @@ export function withCanvasCommands(host: HostElement, props: Record<string, any>
   if (host.type !== 'canvas') return props;
   const gl = glContentOf(host);
   if (gl !== null) return { ...props, 'data-kg-webgl': JSON.stringify(gl) };
+  // A Dawn canvas is the pixels it was read back as, which the painter draws as it draws an `ImageData` put on a 2D canvas.
+  const dawn = glContexts.get(host);
+  if (dawn instanceof DawnCanvasContext) {
+    const drawn = dawnCommandsOf(dawn);
+    return drawn === null ? props : { ...props, 'data-kg-canvas': JSON.stringify(drawn) };
+  }
   const commands = canvasCommandsOf(host);
   if (commands === null) return props;
   // The pictures that more than one command draws are written once, in a table beside the commands.
@@ -306,15 +340,17 @@ export function withCanvasCommands(host: HostElement, props: Record<string, any>
 
 /** What `drawImage` and `createPattern` read from the canvas on `host`: the commands so far, in its bitmap's size. */
 export function canvasPictureOf(host: object, size: { width: number; height: number }): CanvasPicture | null {
+  const dawn = glContexts.get(host);
+  if (dawn instanceof DawnCanvasContext) return size.width > 0 && size.height > 0 ? { source: dawnPictureSource(dawn, size.width, size.height), ...size } : null;
   if (glContexts.has(host)) throw new WebGLUnsupportedError('drawing or sampling a WebGL canvas as a picture; draw into the shader\'s own canvas');
   if (!(size.width > 0 && size.height > 0)) return null;
   const context = contexts.get(host);
   return { source: context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', width: size.width, height: size.height, commands: [] }, width: size.width, height: size.height };
 }
 
-/** Throws when the canvas on `host` has a WebGL context: its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
+/** Throws when the canvas on `host` has a WebGL context (a WebGPU one of Dawn's is read back): its pixels are the GPU's, so it cannot be read back or drawn as a picture. */
 export function refuseGlPicture(host: object): void {
-  if (glContexts.has(host)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+  if (glContexts.has(host) && !(glContexts.get(host) instanceof DawnCanvasContext)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
 }
 
 /** Resets the context of the canvas on `host` (its `width` or `height` was set), which empties it. */
@@ -324,6 +360,12 @@ export function resetCanvasOf(host: object): void {
 }
 
 // ---- canvases outside the tree ----
+
+/** The commands that make the pixels of the canvas on `host`: its own, or the read-back of a Dawn canvas. */
+export function canvasReadCommandsOf(host: object): CanvasCommand[] {
+  const dawn = glContexts.get(host);
+  return dawn instanceof DawnCanvasContext ? dawnReadCommands(dawn) : canvasCommandsOf(host) ?? [];
+}
 
 /** The PNG of the commands, as a `data:` URL. */
 function pngDataUrl(commands: CanvasCommand[], size: { width: number; height: number }): string {
@@ -373,20 +415,26 @@ export class CanvasSurface {
     return contextFor(this.store, this.glStore, this, type, () => ({ width: this.widthValue, height: this.heightValue }), this, attributes);
   }
   private refuseGl(): void {
-    if (this.glStore.has(this)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+    if (this.glStore.has(this) && !(this.glStore.get(this) instanceof DawnCanvasContext)) throw new WebGLUnsupportedError('reading or drawing a WebGL canvas as a picture (toDataURL, toBlob, drawImage)');
+  }
+  private readCommands(): CanvasCommand[] {
+    const dawn = this.glStore.get(this);
+    return dawn instanceof DawnCanvasContext ? dawnReadCommands(dawn) : this.context?.commands ?? [];
   }
   toDataURL(): string {
     this.refuseGl();
-    return canvasToDataUrl(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue });
+    return canvasToDataUrl(this.readCommands(), { width: this.widthValue, height: this.heightValue });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
     this.refuseGl();
-    callback(canvasToBlob(this.context?.commands ?? [], { width: this.widthValue, height: this.heightValue }));
+    callback(canvasToBlob(this.readCommands(), { width: this.widthValue, height: this.heightValue }));
   }
   [CANVAS_SOURCE](): CanvasPicture | null {
     this.refuseGl();
     const size = { width: this.widthValue, height: this.heightValue };
     if (!(size.width > 0 && size.height > 0)) return null;
+    const dawn = this.glStore.get(this);
+    if (dawn instanceof DawnCanvasContext) return { source: dawnPictureSource(dawn, size.width, size.height), ...size };
     return { source: this.context?.pictureSource(size.width, size.height) ?? { kind: 'canvas', ...size, commands: [] }, ...size };
   }
 }

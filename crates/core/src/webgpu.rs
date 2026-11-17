@@ -51,6 +51,9 @@ pub struct WebGpuContent {
     /// Calls the page made that are not drawn.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Calls the page made that were invalid: each threw in the page, which may have caught the error and gone on.
+    #[serde(default)]
+    pub errors: Vec<String>,
     /// What the frame reads that earlier frames made (state a page carries): the frame is drawn, but it is not the same
     /// drawn alone, or by another worker, as in a sequence.
     #[serde(default)]
@@ -99,6 +102,9 @@ pub struct BindingLayout {
     /// Of a `storage-texture`: the format the shader declares.
     #[serde(default)]
     pub format: Option<String>,
+    /// Of a `texture`: `2d-array`, `cube` or `cube-array` for those bindings; none is `2d`.
+    #[serde(default)]
+    pub view_dimension: Option<String>,
 }
 
 /// A buffer the GPU writes: `size` bytes, zeroed until a step writes them.
@@ -187,6 +193,24 @@ pub struct Primitive {
     pub cull_mode: String,
 }
 
+/// A pipeline's depth state (the stencil is not drawn).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DepthState {
+    pub format: String,
+    #[serde(default)]
+    pub write: bool,
+    /// A `GPUCompareFunction`; `always` when left out.
+    #[serde(default)]
+    pub compare: Option<String>,
+    #[serde(default)]
+    pub bias: Option<f64>,
+    #[serde(default)]
+    pub bias_slope_scale: Option<f64>,
+    #[serde(default)]
+    pub bias_clamp: Option<f64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pipeline {
@@ -195,6 +219,8 @@ pub struct Pipeline {
     pub vertex: VertexState,
     pub fragment: Option<FragmentState>,
     pub primitive: Primitive,
+    #[serde(default)]
+    pub depth: Option<DepthState>,
     /// `multisample.count`.
     #[serde(default = "one")]
     pub samples: u32,
@@ -218,7 +244,7 @@ pub struct BindEntry {
     pub sampler: Option<String>,
 }
 
-/// A view of a texture: `mips` levels from `base_mip`.
+/// A view of a texture: `mips` levels from `base_mip`, and `layers` array layers from `base_layer`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureView {
@@ -227,18 +253,31 @@ pub struct TextureView {
     pub base_mip: u32,
     #[serde(default = "one")]
     pub mips: u32,
+    #[serde(default)]
+    pub base_layer: u32,
+    #[serde(default = "one")]
+    pub layers: u32,
+    /// `2d-array` for a view of an array, `cube` or `cube-array` for a cube map's six layers; none is a `2d` view of one layer.
+    #[serde(default)]
+    pub dimension: Option<String>,
 }
 
 fn one() -> u32 {
     1
 }
 
-/// A 2D texture. The recording never holds its contents: the steps that wrote it do.
+/// A 2D texture, or an array of them. The recording never holds its contents: the steps that wrote it do.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Texture {
     pub width: u32,
     pub height: u32,
+    /// The array layers (`depthOrArrayLayers`), or the depth of a `3d` texture.
+    #[serde(default = "one")]
+    pub layers: u32,
+    /// `3d` for a 3d texture, whose layers are slices that halve with each level; none is a 2d texture.
+    #[serde(default)]
+    pub dimension: Option<String>,
     #[serde(default = "one")]
     pub mips: u32,
     pub format: String,
@@ -247,7 +286,7 @@ pub struct Texture {
     pub samples: u32,
 }
 
-/// A `GPUSamplerDescriptor` without the comparison (depth textures are not drawn).
+/// A `GPUSamplerDescriptor`.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SamplerDesc {
@@ -269,6 +308,9 @@ pub struct SamplerDesc {
     pub lod_max_clamp: Option<f64>,
     #[serde(default)]
     pub max_anisotropy: Option<u32>,
+    /// A `GPUCompareFunction` of a comparison sampler.
+    #[serde(default)]
+    pub compare: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -321,6 +363,16 @@ pub enum Command {
         base: i32,
         first_instance: u32,
     },
+    /// An indirect draw of the arguments a pass wrote into `buffer` (a key of `gpu_buffers`): four u32 at `offset`.
+    DrawIndirect {
+        buffer: String,
+        offset: u64,
+    },
+    /// An indirect indexed draw: five words at `offset`.
+    DrawIndexedIndirect {
+        buffer: String,
+        offset: u64,
+    },
     #[serde(rename_all = "camelCase")]
     Viewport {
         x: f32,
@@ -341,13 +393,45 @@ pub enum Command {
     },
 }
 
-/// One mip level of a texture a render pass draws into.
+/// One mip level and array layer of a texture a render pass draws into.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PassTarget {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
+}
+
+/// A colour attachment of a pass after the first: a level and layer of a texture, with its own clear and resolve target.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorTarget {
+    pub texture: String,
+    #[serde(default)]
+    pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
+    /// The clear colour; none loads what the texture holds.
+    pub clear: Option<[f64; 4]>,
+    #[serde(default)]
+    pub resolve: Option<PassTarget>,
+}
+
+/// The depth attachment of a pass: a level of a depth texture of the target's size.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PassDepth {
+    pub texture: String,
+    #[serde(default)]
+    pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
+    /// The clear value; none loads what the texture holds.
+    pub clear: Option<f64>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -361,6 +445,14 @@ pub struct Pass {
     pub resolve: Option<PassTarget>,
     /// The clear colour; none loads what the canvas (or the texture) holds.
     pub clear: Option<[f64; 4]>,
+    /// The colour attachments after the first (several colour attachments), each a texture of the first one's size.
+    #[serde(default)]
+    pub more: Vec<ColorTarget>,
+    #[serde(default)]
+    pub depth: Option<PassDepth>,
+    /// A pass with no colour attachment (no `target`, and not the canvas's): it only writes `depth`.
+    #[serde(default)]
+    pub depth_only: bool,
     #[serde(default)]
     pub commands: Vec<Command>,
 }
@@ -389,6 +481,8 @@ pub struct Upload {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -413,6 +507,8 @@ pub struct Corner {
     pub texture: String,
     #[serde(default)]
     pub mip: u32,
+    #[serde(default)]
+    pub layer: u32,
     pub x: u32,
     pub y: u32,
 }
@@ -444,6 +540,11 @@ pub enum ComputeCommand {
         x: u32,
         y: u32,
         z: u32,
+    },
+    /// A dispatch of the counts a pass wrote into `buffer` (a key of `gpu_buffers`): three u32 at `offset`.
+    DispatchIndirect {
+        buffer: String,
+        offset: u64,
     },
 }
 
@@ -506,6 +607,8 @@ pub enum Step {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Limits {
     pub max_texture_dimension_2d: u32,
+    pub max_texture_array_layers: u32,
+    pub max_color_attachments: u32,
     pub max_bind_groups: u32,
     pub max_buffer_size: u64,
     pub max_uniform_buffer_binding_size: u64,
@@ -529,6 +632,8 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             max_texture_dimension_2d: 8192,
+            max_texture_array_layers: 256,
+            max_color_attachments: 8,
             max_bind_groups: 4,
             max_buffer_size: 256 << 20,
             max_uniform_buffer_binding_size: 65536,
@@ -548,74 +653,26 @@ impl Default for Limits {
     }
 }
 
-/// The limits of `device`, which the recording is checked against and the page side reports as `device.limits`.
-pub fn device_limits(device: &wgpu::Device) -> Limits {
-    let l = device.limits();
-    Limits {
-        max_texture_dimension_2d: l.max_texture_dimension_2d,
-        max_bind_groups: l.max_bind_groups,
-        max_buffer_size: l.max_buffer_size,
-        max_uniform_buffer_binding_size: l.max_uniform_buffer_binding_size,
-        max_storage_buffer_binding_size: l.max_storage_buffer_binding_size,
-        min_uniform_buffer_offset_alignment: u64::from(l.min_uniform_buffer_offset_alignment),
-        min_storage_buffer_offset_alignment: u64::from(l.min_storage_buffer_offset_alignment),
-        max_storage_buffers_per_shader_stage: l.max_storage_buffers_per_shader_stage,
-        max_storage_textures_per_shader_stage: l.max_storage_textures_per_shader_stage,
-        max_compute_workgroup_storage_size: l.max_compute_workgroup_storage_size,
-        max_compute_invocations_per_workgroup: l.max_compute_invocations_per_workgroup,
-        max_compute_workgroup_size_x: l.max_compute_workgroup_size_x,
-        max_compute_workgroup_size_y: l.max_compute_workgroup_size_y,
-        max_compute_workgroup_size_z: l.max_compute_workgroup_size_z,
-        max_compute_workgroups_per_dimension: l.max_compute_workgroups_per_dimension,
-        float32_filterable: device.features().contains(wgpu::Features::FLOAT32_FILTERABLE),
+impl Limits {
+    /// What `navigator.gpu` offers a page on every machine (`GPUAdapterShim`): the WebGPU defaults, and the
+    /// `float32-filterable` feature. The recording is checked against these, whatever device replays it, so a project
+    /// takes the same paths everywhere.
+    pub fn advertised() -> Self {
+        Limits { float32_filterable: true, ..Limits::default() }
     }
 }
 
-/// What `navigator.gpu` reports: the limits of the engine's device by their WebGPU names, and the WebGPU features it has
-/// that the recorder draws.
-pub fn device_info(device: &wgpu::Device) -> serde_json::Value {
-    let l = device_limits(device);
-    let w = device.limits();
-    let mut features = Vec::new();
-    if l.float32_filterable {
-        features.push("float32-filterable");
+/// What the device that replays lacks of what a page is told it has, one message each: a limit below the WebGPU
+/// default, and `float32-filterable`. The replay warns about them once.
+pub fn shortfalls(limits: &wgpu::Limits, features: wgpu::Features) -> Vec<String> {
+    let mut lacking = Vec::new();
+    wgpu::Limits::default().check_limits_with_fail_fn(limits, false, |name, advertised, host| {
+        lacking.push(format!("the device's {name} is {host}, below the WebGPU default {advertised} that a page is told it has"));
+    });
+    if !features.contains(wgpu::Features::FLOAT32_FILTERABLE) {
+        lacking.push("the device lacks float32-filterable, which a page is told it has: a 32-bit float texture bound as float will not be accepted".to_string());
     }
-    serde_json::json!({
-        "features": features,
-        "limits": {
-            "maxTextureDimension1D": w.max_texture_dimension_1d,
-            "maxTextureDimension2D": w.max_texture_dimension_2d,
-            "maxTextureDimension3D": w.max_texture_dimension_3d,
-            "maxTextureArrayLayers": w.max_texture_array_layers,
-            "maxBindGroups": w.max_bind_groups,
-            "maxBindingsPerBindGroup": w.max_bindings_per_bind_group,
-            "maxDynamicUniformBuffersPerPipelineLayout": w.max_dynamic_uniform_buffers_per_pipeline_layout,
-            "maxDynamicStorageBuffersPerPipelineLayout": w.max_dynamic_storage_buffers_per_pipeline_layout,
-            "maxSampledTexturesPerShaderStage": w.max_sampled_textures_per_shader_stage,
-            "maxSamplersPerShaderStage": w.max_samplers_per_shader_stage,
-            "maxStorageBuffersPerShaderStage": w.max_storage_buffers_per_shader_stage,
-            "maxStorageTexturesPerShaderStage": w.max_storage_textures_per_shader_stage,
-            "maxUniformBuffersPerShaderStage": w.max_uniform_buffers_per_shader_stage,
-            "maxUniformBufferBindingSize": w.max_uniform_buffer_binding_size,
-            "maxStorageBufferBindingSize": w.max_storage_buffer_binding_size,
-            "minUniformBufferOffsetAlignment": w.min_uniform_buffer_offset_alignment,
-            "minStorageBufferOffsetAlignment": w.min_storage_buffer_offset_alignment,
-            // The device may allow more (a `glsl` draw gives each attribute a vertex buffer); a page is told the
-            // default, so that it sees the same limit on every machine.
-            "maxVertexBuffers": wgpu::Limits::default().max_vertex_buffers,
-            "maxBufferSize": w.max_buffer_size,
-            "maxVertexAttributes": w.max_vertex_attributes,
-            "maxVertexBufferArrayStride": w.max_vertex_buffer_array_stride,
-            "maxColorAttachments": w.max_color_attachments,
-            "maxColorAttachmentBytesPerSample": w.max_color_attachment_bytes_per_sample,
-            "maxComputeWorkgroupStorageSize": w.max_compute_workgroup_storage_size,
-            "maxComputeInvocationsPerWorkgroup": w.max_compute_invocations_per_workgroup,
-            "maxComputeWorkgroupSizeX": w.max_compute_workgroup_size_x,
-            "maxComputeWorkgroupSizeY": w.max_compute_workgroup_size_y,
-            "maxComputeWorkgroupSizeZ": w.max_compute_workgroup_size_z,
-            "maxComputeWorkgroupsPerDimension": w.max_compute_workgroups_per_dimension,
-        },
-    })
+    lacking
 }
 
 /// Reads every module of the recording with naga. Returns what is wrong with each, as `module id: message`, for the
@@ -702,6 +759,8 @@ pub const MAX_STEPS: usize = 4096;
 /// The most dispatches, and the most workgroups all of them together launch, in one frame.
 pub const MAX_DISPATCHES: usize = 4096;
 pub const MAX_WORKGROUPS: u64 = 1 << 26;
+/// The workgroups charged to the frame's budget for a dispatch whose counts a pass wrote.
+pub const INDIRECT_WORKGROUPS: u64 = 1 << 16;
 
 /// How a texture of a format is read by a shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -712,6 +771,8 @@ pub enum Sample {
     Unfilterable,
     Uint,
     Sint,
+    /// A depth format: sampled as `depth` (with a comparison sampler) or as unfilterable float.
+    Depth,
 }
 
 /// What a storage binding of a format may do (without optional features).
@@ -732,7 +793,7 @@ pub struct FormatInfo {
 /// The texture formats that are drawn: the bytes of a texel, how a shader samples it, and the storage access it allows
 /// (WebGPU's table; the optional formats and features are not offered).
 pub fn format_info(format: &str) -> Option<FormatInfo> {
-    use Sample::{Float, Sint, Uint, Unfilterable};
+    use Sample::{Depth, Float, Sint, Uint, Unfilterable};
     use Storage::{No, ReadWrite, Write};
     let (bytes, sample, storage) = match format {
         "r8unorm" => (1, Float, No),
@@ -766,13 +827,15 @@ pub fn format_info(format: &str) -> Option<FormatInfo> {
         "rgba32uint" => (16, Uint, Write),
         "rgba32sint" => (16, Sint, Write),
         "rgba32float" => (16, Unfilterable, Write),
+        "depth16unorm" => (2, Depth, No),
+        "depth24plus" | "depth32float" => (4, Depth, No),
         _ => return None,
     };
     Some(FormatInfo { bytes, sample, storage })
 }
 
 /// The formats a texture may have, for the error that names them.
-pub const TEXTURE_FORMATS: &str = "r8unorm, r8uint, r8sint, rg8unorm, rg8uint, rg8sint, rgba8unorm, rgba8unorm-srgb, rgba8snorm, rgba8uint, rgba8sint, bgra8unorm, bgra8unorm-srgb, rgb10a2unorm, r16uint, r16sint, r16float, rg16uint, rg16sint, rg16float, rgba16uint, rgba16sint, rgba16float, r32uint, r32sint, r32float, rg32uint, rg32sint, rg32float, rgba32uint, rgba32sint and rgba32float";
+pub const TEXTURE_FORMATS: &str = "r8unorm, r8uint, r8sint, rg8unorm, rg8uint, rg8sint, rgba8unorm, rgba8unorm-srgb, rgba8snorm, rgba8uint, rgba8sint, bgra8unorm, bgra8unorm-srgb, rgb10a2unorm, r16uint, r16sint, r16float, rg16uint, rg16sint, rg16float, rgba16uint, rgba16sint, rgba16float, r32uint, r32sint, r32float, rg32uint, rg32sint, rg32float, rgba32uint, rgba32sint, rgba32float, depth16unorm, depth24plus and depth32float";
 
 /// The bytes of a texel of `format`, for the formats that are drawn.
 pub fn texel_bytes(format: &str) -> Option<u64> {
@@ -782,6 +845,11 @@ pub fn texel_bytes(format: &str) -> Option<u64> {
 /// The formats a picture is uploaded into: 8-bit with four channels, which a picture's RGBA converts to directly.
 pub fn is_picture_format(format: &str) -> bool {
     matches!(format, "rgba8unorm" | "rgba8unorm-srgb" | "bgra8unorm" | "bgra8unorm-srgb")
+}
+
+/// The depth formats: a pass's depth attachment, and textures that only passes write.
+pub fn is_depth_format(format: &str) -> bool {
+    matches!(format_info(format), Some(FormatInfo { sample: Sample::Depth, .. }))
 }
 
 /// A format without `-srgb`: formats that differ only in that can be copied between.
@@ -800,14 +868,38 @@ pub fn mip_extent(texture: &Texture, level: u32) -> (u32, u32) {
     ((texture.width >> shift).max(1), (texture.height >> shift).max(1))
 }
 
-/// What a texture holds with all its levels, if it is a texture the device makes: a known format, sides from 1 to
-/// `max_dim`, and a level count the size allows. Overflow is an error, not a wrap.
+/// Whether the texture is a 3d one.
+fn is_3d(texture: &Texture) -> bool {
+    texture.dimension.as_deref() == Some("3d")
+}
+
+/// The layers of level `level`: a 3d texture's depth halves with each level, an array's layers stay.
+pub fn mip_layers(texture: &Texture, level: u32) -> u32 {
+    if is_3d(texture) { (texture.layers >> level.min(31)).max(1) } else { texture.layers }
+}
+
+/// The most a side of a 3d texture may be (the WebGPU default limit, which every device here has).
+const MAX_DIMENSION_3D: u32 = 2048;
+
+/// What a texture holds with all its levels and layers, if it is a texture the device makes: a known format, sides from 1
+/// to `max_dim`, at least one layer, and a level count the size allows. Overflow is an error, not a wrap.
 pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
     let bytes = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}; the formats drawn are {TEXTURE_FORMATS}", texture.format))?;
+    let volume = is_3d(texture);
+    if texture.dimension.is_some() && !volume {
+        return Err(format!("a texture of dimension {}; the dimensions drawn are 2d and 3d", texture.dimension.as_deref().unwrap_or("")));
+    }
+    let max_dim = if volume { MAX_DIMENSION_3D } else { max_dim };
     if texture.width == 0 || texture.height == 0 || texture.width > max_dim || texture.height > max_dim {
         return Err(format!("a {} x {} texture; the sides run from 1 to {max_dim}", texture.width, texture.height));
     }
-    let most = max_mips(texture.width, texture.height);
+    if texture.layers == 0 {
+        return Err("a texture with no array layers".into());
+    }
+    if volume && (texture.layers > MAX_DIMENSION_3D || texture.samples != 1 || format_info(&texture.format).is_some_and(|f| f.sample == Sample::Depth)) {
+        return Err(format!("a 3d texture of depth {}, {} samples and format {}; it has up to {MAX_DIMENSION_3D} slices, one sample and a colour format", texture.layers, texture.samples, texture.format));
+    }
+    let most = max_mips(texture.width, texture.height).max(if volume { max_mips(texture.layers, 1) } else { 0 });
     if texture.mips == 0 || texture.mips > most {
         return Err(format!("{} mip levels for a {} x {} texture (at most {most})", texture.mips, texture.width, texture.height));
     }
@@ -817,10 +909,11 @@ pub fn texture_bytes(texture: &Texture, max_dim: u32) -> Result<u64, String> {
         let level_bytes = u64::from(w)
             .checked_mul(u64::from(h))
             .and_then(|n| n.checked_mul(bytes))
+            .and_then(|n| n.checked_mul(u64::from(if volume { mip_layers(texture, level) } else { 1 })))
             .ok_or("a texture's size overflows")?;
         total = total.checked_add(level_bytes).ok_or("a texture's size overflows")?;
     }
-    Ok(total)
+    if volume { Ok(total) } else { total.checked_mul(u64::from(texture.layers)).ok_or_else(|| "a texture's size overflows".into()) }
 }
 
 /// Whether the rectangle `x`, `y`, `width` x `height` lies inside a picture of `bounds`, without overflow.
@@ -848,6 +941,15 @@ pub fn base64_len(base64: &str) -> u64 {
     (base64.len() as u64 / 4 * 3).saturating_sub(padding)
 }
 
+/// The arguments of an indirect call: `bytes` at a multiple of 4 inside a buffer the GPU writes.
+fn indirect_checks(content: &WebGpuContent, call: &str, buffer: &str, offset: u64, bytes: u64) -> Result<(), String> {
+    let found = content.gpu_buffers.get(buffer).ok_or_else(|| format!("{call}: buffer {buffer} is not one the GPU writes"))?;
+    if offset % 4 != 0 || offset.checked_add(bytes).is_none_or(|end| end > found.size) {
+        return Err(format!("{call}: {bytes} bytes of arguments at {offset} in the buffer {buffer} of {} bytes", found.size));
+    }
+    Ok(())
+}
+
 fn texture_of<'a>(content: &'a WebGpuContent, id: &str) -> Result<&'a Texture, String> {
     content.textures.get(id).ok_or_else(|| format!("texture {id} is not in the recording"))
 }
@@ -857,6 +959,16 @@ fn level_of(texture: &Texture, id: &str, level: u32) -> Result<(u32, u32), Strin
         return Err(format!("mip level {level} of the texture {id}, which has {}", texture.mips));
     }
     Ok(mip_extent(texture, level))
+}
+
+/// A level and a layer of the texture: the extent of the level.
+fn subresource_of(texture: &Texture, id: &str, level: u32, layer: u32) -> Result<(u32, u32), String> {
+    let extent = level_of(texture, id, level)?;
+    let layers = mip_layers(texture, level);
+    if layer >= layers {
+        return Err(format!("array layer {layer} of the texture {id}, which has {layers} at this level"));
+    }
+    Ok(extent)
 }
 
 /// A view of the texture: its levels are the texture's.
@@ -869,7 +981,29 @@ fn view_of(content: &WebGpuContent, view: &TextureView) -> Result<(), String> {
     if view.mips == 0 || end > texture.mips {
         return Err(format!("a view of the levels {}..{end} of the texture {}, which has {}", view.base_mip, view.id, texture.mips));
     }
-    Ok(())
+    let layer_end = view.base_layer.checked_add(view.layers).ok_or("a view's layer range overflows")?;
+    if view.layers == 0 || layer_end > texture.layers {
+        return Err(format!("a view of the layers {}..{layer_end} of the texture {}, which has {}", view.base_layer, view.id, texture.layers));
+    }
+    if is_3d(texture) != (view.dimension.as_deref() == Some("3d")) {
+        return Err(format!("a {} view of the {} texture {}", view.dimension.as_deref().unwrap_or("2d"), if is_3d(texture) { "3d" } else { "2d" }, view.id));
+    }
+    match view.dimension.as_deref() {
+        Some("3d") if view.base_layer != 0 || view.layers != 1 => Err(format!("a 3d view of the texture {} at layer {} of {}; it has baseLayer 0 and one layer", view.id, view.base_layer, view.layers)),
+        Some("3d") => Ok(()),
+        None if view.layers != 1 => Err(format!("a 2d view of {} layers of the texture {}; a 2d view has one", view.layers, view.id)),
+        None | Some("2d-array") => Ok(()),
+        Some("cube") if view.layers != 6 => Err(format!("a cube view of {} layers of the texture {}; a cube has six", view.layers, view.id)),
+        Some("cube-array") if view.layers % 6 != 0 => Err(format!("a cube-array view of {} layers of the texture {}; it takes a multiple of six", view.layers, view.id)),
+        Some("cube" | "cube-array") if texture.width != texture.height => Err(format!("a cube view of the texture {}, which is {} x {}; it takes a square one", view.id, texture.width, texture.height)),
+        Some("cube" | "cube-array") => Ok(()),
+        Some(other) => Err(format!("a view of the texture {} of dimension {other}", view.id)),
+    }
+}
+
+/// A `GPUCompareFunction`.
+pub fn is_compare(name: &str) -> bool {
+    matches!(name, "never" | "less" | "equal" | "less-equal" | "greater" | "not-equal" | "greater-equal" | "always")
 }
 
 fn sampler_checks(id: &str, s: &SamplerDesc) -> Result<(), String> {
@@ -890,6 +1024,11 @@ fn sampler_checks(id: &str, s: &SamplerDesc) -> Result<(), String> {
     let (min, max) = (s.lod_min_clamp.unwrap_or(0.0), s.lod_max_clamp.unwrap_or(32.0));
     if !(min.is_finite() && max.is_finite() && min >= 0.0 && min <= max) {
         return Err(format!("sampler {id}: lodMinClamp {min} and lodMaxClamp {max} are not a range from 0 up"));
+    }
+    if let Some(c) = &s.compare
+        && !is_compare(c)
+    {
+        return Err(format!("sampler {id}: compare {c}"));
     }
     let anisotropy = s.max_anisotropy.unwrap_or(1);
     if !(1..=16).contains(&anisotropy) {
@@ -928,6 +1067,12 @@ pub fn validate_with(content: &WebGpuContent, limits: &Limits) -> Result<(), Str
     for (id, texture) in &content.textures {
         if texture.samples != 1 && (texture.samples != 4 || texture.mips != 1) {
             return Err(format!("texture {id}: {} samples and {} levels; a texture has 1 sample, or 4 and one level", texture.samples, texture.mips));
+        }
+        if !is_3d(texture) && texture.layers > limits.max_texture_array_layers {
+            return Err(format!("texture {id}: {} array layers; the device allows {}", texture.layers, limits.max_texture_array_layers));
+        }
+        if texture.samples != 1 && texture.layers != 1 {
+            return Err(format!("texture {id}: a multisampled texture has one array layer, not {}", texture.layers));
         }
         let bytes = texture_bytes(texture, max_dim)
             .map_err(|e| format!("texture {id}: {e}"))?
@@ -994,7 +1139,15 @@ fn layout_checks(id: &str, layout: &[BindingLayout], limits: &Limits) -> Result<
             return Err(format!("layout {id}: binding {} is visible to stages {} (the bits are 1, 2 and 4)", e.binding, e.visibility));
         }
         match e.ty.as_str() {
-            "uniform" | "read-only-storage" | "sampler" | "texture" => {}
+            "uniform" | "read-only-storage" | "sampler" => {}
+            "texture" => {
+                if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "2d-array" | "cube" | "cube-array" | "3d")) {
+                    return Err(format!("layout {id}: binding {} is a texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
+                }
+            }
+            "storage-texture" if !matches!(e.view_dimension.as_deref(), None | Some("2d" | "3d")) => {
+                return Err(format!("layout {id}: binding {} is a storage texture of view dimension {}", e.binding, e.view_dimension.as_deref().unwrap_or("")));
+            }
             "storage" => {
                 if e.visibility & 1 != 0 {
                     return Err(format!("layout {id}: binding {} is a read-write storage buffer visible to the vertex stage", e.binding));
@@ -1085,12 +1238,17 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
             let info = format_info(&texture.format).ok_or_else(|| format!("bind group {id}: a texture of format {}", texture.format))?;
             match l.ty.as_str() {
                 "texture" => {
+                    let (want, have) = (l.view_dimension.as_deref().unwrap_or("2d"), view.dimension.as_deref().unwrap_or("2d"));
+                    if want != have {
+                        return Err(format!("bind group {id}: binding {} is a {want} texture in the layout and the view is a {have} view", entry.binding));
+                    }
                     let wanted = l.sample_type.as_deref().unwrap_or("float");
                     let ok = match wanted {
                         "float" => info.sample == Sample::Float || (info.sample == Sample::Unfilterable && limits.float32_filterable),
-                        "unfilterable-float" => matches!(info.sample, Sample::Float | Sample::Unfilterable),
+                        "unfilterable-float" => matches!(info.sample, Sample::Float | Sample::Unfilterable | Sample::Depth),
                         "uint" => info.sample == Sample::Uint,
                         "sint" => info.sample == Sample::Sint,
+                        "depth" => info.sample == Sample::Depth,
                         other => return Err(format!("bind group {id}: texture sample type {other}")),
                     };
                     if !ok {
@@ -1105,6 +1263,10 @@ fn group_checks(content: &WebGpuContent, id: &str, group: &BindGroup, limits: &L
                 "storage-texture" => {
                     if view.mips != 1 {
                         return Err(format!("bind group {id}: binding {} is a storage texture and its view has {} levels; it takes one", entry.binding, view.mips));
+                    }
+                    let (want, have) = (l.view_dimension.as_deref().unwrap_or("2d"), view.dimension.as_deref().unwrap_or("2d"));
+                    if want != have {
+                        return Err(format!("bind group {id}: binding {} is a {want} storage texture in the layout and the view is a {have} view", entry.binding));
                     }
                     if l.format.as_deref() != Some(texture.format.as_str()) {
                         return Err(format!("bind group {id}: binding {} is a storage texture of {} in the layout and the view is of a {} texture", entry.binding, l.format.as_deref().unwrap_or("?"), texture.format));
@@ -1134,26 +1296,73 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
     match step {
         Step::Render(pass) => {
             if let Some(target) = &pass.target {
-                let texture = texture_of(content, &target.texture)?;
-                let (width, height) = level_of(texture, &target.texture, target.mip)?;
-                if let Some(resolve) = &pass.resolve {
-                    let to = texture_of(content, &resolve.texture)?;
-                    let (w, h) = level_of(to, &resolve.texture, resolve.mip)?;
-                    if texture.samples == 1 || to.samples != 1 || to.format != texture.format || (w, h) != (width, height) {
-                        return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
+                let (size, samples) = color_checks(content, target, pass.resolve.as_ref())?;
+                if !pass.more.is_empty() {
+                    if pass.more.len() + 1 > limits.max_color_attachments as usize {
+                        return Err(format!("a pass with {} colour attachments; the device allows {}", pass.more.len() + 1, limits.max_color_attachments));
                     }
+                    let mut drawn = vec![(target.texture.as_str(), target.mip, target.layer)];
+                    for m in &pass.more {
+                        let level = PassTarget { texture: m.texture.clone(), mip: m.mip, layer: m.layer };
+                        if color_checks(content, &level, m.resolve.as_ref())? != (size, samples) {
+                            return Err(format!("the colour attachment {} is not of the size and samples of the first, {}", m.texture, target.texture));
+                        }
+                        if m.clear.is_some_and(|c| !c.iter().all(|v| v.is_finite())) {
+                            return Err("a clear colour is not finite".into());
+                        }
+                        if drawn.contains(&(m.texture.as_str(), m.mip, m.layer)) {
+                            return Err(format!("the level and layer of {} are drawn into by two colour attachments", m.texture));
+                        }
+                        drawn.push((m.texture.as_str(), m.mip, m.layer));
+                    }
+                }
+            } else if !pass.more.is_empty() {
+                return Err("a pass with several colour attachments draws into textures, not the canvas".into());
+            } else if pass.depth_only {
+                if pass.resolve.is_some() || pass.clear.is_some() || pass.depth.is_none() {
+                    return Err("a pass with no colour attachment has a depth attachment, and no colour to clear or resolve".into());
                 }
             } else if pass.resolve.is_some() {
                 return Err("a pass resolves the canvas".into());
+            }
+            if pass.depth_only && pass.target.is_some() {
+                return Err("a depth-only pass has a colour attachment".into());
             }
             if let Some(clear) = pass.clear
                 && !clear.iter().all(|c| c.is_finite())
             {
                 return Err("the clear colour is not finite".into());
             }
+            if let Some(depth) = &pass.depth {
+                let texture = texture_of(content, &depth.texture)?;
+                let level = subresource_of(texture, &depth.texture, depth.mip, depth.layer)?;
+                if !is_depth_format(&texture.format) {
+                    return Err(format!("the depth attachment {} is a {} texture", depth.texture, texture.format));
+                }
+                let target = match &pass.target {
+                    Some(t) => {
+                        let color = texture_of(content, &t.texture)?;
+                        Some((mip_extent(color, t.mip), color.samples))
+                    }
+                    None => None,
+                };
+                if let Some((extent, samples)) = target
+                    && (extent != level || samples != texture.samples)
+                {
+                    return Err(format!("the depth attachment {} is not of the size and samples of the target {}", depth.texture, pass.target.as_ref().map_or("", |t| t.texture.as_str())));
+                }
+                if let Some(clear) = depth.clear
+                    && !(0.0..=1.0).contains(&clear)
+                {
+                    return Err(format!("the depth clear value {clear} is not from 0 to 1"));
+                }
+            }
             for command in &pass.commands {
-                if let Command::Bind { index, group, .. } = command {
-                    bind_checks(content, *index, group, limits)?;
+                match command {
+                    Command::Bind { index, group, .. } => bind_checks(content, *index, group, limits)?,
+                    Command::DrawIndirect { buffer, offset } => indirect_checks(content, "drawIndirect", buffer, *offset, 16)?,
+                    Command::DrawIndexedIndirect { buffer, offset } => indirect_checks(content, "drawIndexedIndirect", buffer, *offset, 20)?,
+                    _ => {}
                 }
             }
         }
@@ -1168,6 +1377,21 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
                         pipeline = true;
                     }
                     ComputeCommand::Bind { index, group, .. } => bind_checks(content, *index, group, limits)?,
+                    ComputeCommand::DispatchIndirect { buffer, offset } => {
+                        if !pipeline {
+                            return Err("dispatchWorkgroupsIndirect before setPipeline".into());
+                        }
+                        indirect_checks(content, "dispatchWorkgroupsIndirect", buffer, *offset, 12)?;
+                        // The counts are not known until a pass has written them: each is charged a fixed share of the budget.
+                        *dispatches += 1;
+                        *workgroups = workgroups.saturating_add(INDIRECT_WORKGROUPS);
+                        if *dispatches > MAX_DISPATCHES {
+                            return Err(format!("more than {MAX_DISPATCHES} dispatches in a frame"));
+                        }
+                        if *workgroups > MAX_WORKGROUPS {
+                            return Err(format!("the frame's dispatches launch more than {MAX_WORKGROUPS} workgroups"));
+                        }
+                    }
                     ComputeCommand::Dispatch { x, y, z } => {
                         if !pipeline {
                             return Err("dispatchWorkgroups before setPipeline".into());
@@ -1225,7 +1449,10 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         }
         Step::Upload(u) => {
             let texture = texture_of(content, &u.texture)?;
-            let extent = level_of(texture, &u.texture, u.mip)?;
+            if is_depth_format(&texture.format) {
+                return Err(format!("an upload into the depth texture {}; a render pass writes it", u.texture));
+            }
+            let extent = subresource_of(texture, &u.texture, u.mip, u.layer)?;
             rect_in("an upload", extent, u.x, u.y, u.width, u.height)?;
             let texel = texel_bytes(&texture.format).ok_or_else(|| format!("a texture of format {}", texture.format))?;
             match &u.source {
@@ -1259,19 +1486,40 @@ fn validate_step(content: &WebGpuContent, step: &Step, limits: &Limits, dispatch
         Step::Copy(c) => {
             let from = texture_of(content, &c.from.texture)?;
             let to = texture_of(content, &c.to.texture)?;
-            let from_extent = level_of(from, &c.from.texture, c.from.mip)?;
-            let to_extent = level_of(to, &c.to.texture, c.to.mip)?;
+            let from_extent = subresource_of(from, &c.from.texture, c.from.mip, c.from.layer)?;
+            let to_extent = subresource_of(to, &c.to.texture, c.to.mip, c.to.layer)?;
             rect_in("a copy's source", from_extent, c.from.x, c.from.y, c.width, c.height)?;
             rect_in("a copy's destination", to_extent, c.to.x, c.to.y, c.width, c.height)?;
+            // A depth texture is copied whole, a level at a time.
+            for (texture, corner, extent) in [(from, &c.from, from_extent), (to, &c.to, to_extent)] {
+                if is_depth_format(&texture.format) && ((corner.x, corner.y, c.width, c.height) != (0, 0, extent.0, extent.1)) {
+                    return Err(format!("a copy of part of the depth texture {}; a depth texture is copied whole, a level at a time", corner.texture));
+                }
+            }
             if linear_name(&from.format) != linear_name(&to.format) {
                 return Err(format!("a copy from {} to {}; the formats must be the same, or differ only in -srgb", from.format, to.format));
             }
-            if c.from.texture == c.to.texture && c.from.mip == c.to.mip {
-                return Err("a copy within one level of one texture".into());
+            if c.from.texture == c.to.texture && c.from.mip == c.to.mip && c.from.layer == c.to.layer {
+                return Err("a copy within one level and layer of one texture".into());
             }
         }
     }
     Ok(())
+}
+
+/// A colour attachment `target` (and the texture it resolves into): both exist, in range, and a resolve is from a
+/// multisampled level into a single-sampled one of its size and format. The size of the level, and its samples.
+fn color_checks(content: &WebGpuContent, target: &PassTarget, resolve: Option<&PassTarget>) -> Result<((u32, u32), u32), String> {
+    let texture = texture_of(content, &target.texture)?;
+    let size = subresource_of(texture, &target.texture, target.mip, target.layer)?;
+    if let Some(resolve) = resolve {
+        let to = texture_of(content, &resolve.texture)?;
+        let resolved = subresource_of(to, &resolve.texture, resolve.mip, resolve.layer)?;
+        if texture.samples == 1 || to.samples != 1 || to.format != texture.format || resolved != size {
+            return Err(format!("a pass resolves {} into {}: the first is multisampled and the second is not, of its size and format", target.texture, resolve.texture));
+        }
+    }
+    Ok((size, texture.samples))
 }
 
 /// A `setBindGroup`: a slot the device has, and a group the recording holds.
@@ -1292,6 +1540,40 @@ mod tests {
     const TRIANGLE: &str = "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { \
         let p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3)); return vec4f(p[i], 0, 1); } \
         @fragment fn fs() -> @location(0) vec4f { return vec4f(1, 0, 0, 1); }";
+
+    #[test]
+    fn the_advertised_limits_are_wgpus_webgpu_defaults_and_a_device_below_them_is_named() {
+        let w = wgpu::Limits::default();
+        let l = Limits::advertised();
+        assert!(l.float32_filterable);
+        assert_eq!(
+            (l.max_texture_dimension_2d, l.max_texture_array_layers, l.max_color_attachments, l.max_bind_groups, l.max_buffer_size),
+            (w.max_texture_dimension_2d, w.max_texture_array_layers, w.max_color_attachments, w.max_bind_groups, w.max_buffer_size)
+        );
+        assert_eq!(
+            (l.max_uniform_buffer_binding_size, l.max_storage_buffer_binding_size, l.min_uniform_buffer_offset_alignment, l.min_storage_buffer_offset_alignment),
+            (w.max_uniform_buffer_binding_size, w.max_storage_buffer_binding_size, u64::from(w.min_uniform_buffer_offset_alignment), u64::from(w.min_storage_buffer_offset_alignment))
+        );
+        assert_eq!(
+            (l.max_storage_buffers_per_shader_stage, l.max_storage_textures_per_shader_stage, l.max_compute_workgroup_storage_size, l.max_compute_invocations_per_workgroup),
+            (w.max_storage_buffers_per_shader_stage, w.max_storage_textures_per_shader_stage, w.max_compute_workgroup_storage_size, w.max_compute_invocations_per_workgroup)
+        );
+        assert_eq!(
+            (l.max_compute_workgroup_size_x, l.max_compute_workgroup_size_y, l.max_compute_workgroup_size_z, l.max_compute_workgroups_per_dimension),
+            (w.max_compute_workgroup_size_x, w.max_compute_workgroup_size_y, w.max_compute_workgroup_size_z, w.max_compute_workgroups_per_dimension)
+        );
+        let float = wgpu::Features::FLOAT32_FILTERABLE;
+        assert!(shortfalls(&w, float).is_empty());
+        // A device that has more is fine; one that has less, or a larger minimum alignment, is named; so is a missing feature.
+        assert!(shortfalls(&wgpu::Limits { max_texture_dimension_2d: 16384, ..w.clone() }, float).is_empty());
+        let lacking = shortfalls(&wgpu::Limits { max_texture_dimension_2d: 4096, max_bind_groups: 2, ..w.clone() }, float);
+        assert_eq!(lacking.len(), 2, "{lacking:?}");
+        assert!(lacking.iter().any(|m| m.contains("max_texture_dimension_2d is 4096") && m.contains("default 8192")), "{lacking:?}");
+        assert_eq!(shortfalls(&wgpu::Limits { min_uniform_buffer_offset_alignment: 512, ..w.clone() }, float).len(), 1);
+        let no_feature = shortfalls(&w, wgpu::Features::empty());
+        assert_eq!(no_feature.len(), 1);
+        assert!(no_feature[0].contains("float32-filterable"));
+    }
 
     #[test]
     fn a_valid_module_passes_and_a_broken_one_is_named() {
@@ -1325,6 +1607,8 @@ mod tests {
         Texture {
             width,
             height,
+            layers: 1,
+            dimension: None,
             mips,
             format: format.into(),
             samples: 1,
@@ -1344,6 +1628,7 @@ mod tests {
         Step::Upload(Upload {
             texture: texture.into(),
             mip,
+            layer: 0,
             x,
             y,
             width: w,
@@ -1367,7 +1652,7 @@ mod tests {
     fn a_texture_is_checked_for_format_size_levels_and_overflow() {
         assert_eq!(texture_bytes(&texture(8, 4, 3, "rgba8unorm"), 8192), Ok(8 * 4 * 4 + 4 * 2 * 4 + 2 * 4));
         assert_eq!(texture_bytes(&texture(1, 1, 1, "r8unorm"), 8192), Ok(1));
-        assert!(texture_bytes(&texture(8, 4, 1, "depth24plus"), 8192).unwrap_err().contains("format depth24plus"));
+        assert!(texture_bytes(&texture(8, 4, 1, "depth24plus-stencil8"), 8192).unwrap_err().contains("format depth24plus-stencil8"));
         assert!(texture_bytes(&texture(0, 4, 1, "rgba8unorm"), 8192).unwrap_err().contains("sides"));
         assert!(texture_bytes(&texture(8, 8193, 1, "rgba8unorm"), 8192).unwrap_err().contains("sides"));
         assert!(texture_bytes(&texture(8, 4, 0, "rgba8unorm"), 8192).unwrap_err().contains("mip levels"));
@@ -1463,6 +1748,7 @@ mod tests {
         let corner = |c: (&str, u32, u32, u32)| Corner {
             texture: c.0.into(),
             mip: c.1,
+            layer: 0,
             x: c.2,
             y: c.3,
         };
@@ -1500,9 +1786,9 @@ mod tests {
     #[test]
     fn a_multisampled_pass_resolves_into_a_texture_of_its_size_and_format() {
         let pass = |target: &str, resolve: Option<&str>| {
-            Step::Render(Pass {
-                target: Some(PassTarget { texture: target.into(), mip: 0 }),
-                resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0 }),
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(),
+                target: Some(PassTarget { texture: target.into(), mip: 0, layer: 0 }),
+                resolve: resolve.map(|r| PassTarget { texture: r.into(), mip: 0, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             })
@@ -1522,7 +1808,7 @@ mod tests {
         for step in [pass("r", Some("m")), pass("m", Some("small")), pass("m", Some("srgb")), pass("r", Some("r"))] {
             assert!(refuse(step).contains("resolves"));
         }
-        let canvas = Step::Render(Pass { target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0 }), clear: None, commands: Vec::new() });
+        let canvas = Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), target: None, resolve: Some(PassTarget { texture: "r".into(), mip: 0, layer: 0 }), clear: None, commands: Vec::new() });
         assert!(refuse(canvas).contains("resolves the canvas"));
         c.textures.insert("odd".into(), Texture { samples: 3, ..texture(8, 4, 1, "rgba8unorm") });
         assert!(validate(&c, 8192).unwrap_err().contains("3 samples"));
@@ -1531,30 +1817,30 @@ mod tests {
     #[test]
     fn a_pass_target_and_a_bound_view_name_levels_that_exist() {
         let mut c = recording();
-        c.passes.push(Step::Render(Pass { resolve: None,
-            target: Some(PassTarget { texture: "t".into(), mip: 2 }),
+        c.passes.push(Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
+            target: Some(PassTarget { texture: "t".into(), mip: 2, layer: 0 }),
             clear: Some([0.0; 4]),
             commands: Vec::new(),
         }));
         assert!(validate(&c, 8192).is_ok());
         refused(
-            Step::Render(Pass { resolve: None,
-                target: Some(PassTarget { texture: "t".into(), mip: 3 }),
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
+                target: Some(PassTarget { texture: "t".into(), mip: 3, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             }),
             "mip level 3",
         );
         refused(
-            Step::Render(Pass { resolve: None,
-                target: Some(PassTarget { texture: "gone".into(), mip: 0 }),
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
+                target: Some(PassTarget { texture: "gone".into(), mip: 0, layer: 0 }),
                 clear: None,
                 commands: Vec::new(),
             }),
             "texture gone",
         );
         refused(
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: None,
                 clear: Some([f64::NAN, 0.0, 0.0, 0.0]),
                 commands: Vec::new(),
@@ -1572,7 +1858,7 @@ mod tests {
                 sampler: sampler.map(String::from),
             }],
         };
-        let view = |base_mip, mips| Some(TextureView { id: "t".into(), base_mip, mips });
+        let view = |base_mip, mips| Some(TextureView { id: "t".into(), base_mip, mips, base_layer: 0, layers: 1, dimension: None });
         let mut ok = recording();
         ok.samplers.insert("s".into(), SamplerDesc::default());
         ok.bind_groups.insert("g".into(), group(view(1, 2), None, None));
@@ -1585,7 +1871,7 @@ mod tests {
             (group(None, Some("nope"), None), "sampler nope"),
             (group(None, None, None), "one of a buffer"),
             (group(view(0, 1), Some("s"), None), "one of a buffer"),
-            (group(Some(TextureView { id: "gone".into(), base_mip: 0, mips: 1 }), None, None), "texture gone"),
+            (group(Some(TextureView { id: "gone".into(), base_mip: 0, mips: 1, base_layer: 0, layers: 1, dimension: None }), None, None), "texture gone"),
         ] {
             let mut bad = ok.clone();
             bad.bind_groups.insert("x".into(), g);
@@ -1627,7 +1913,7 @@ mod tests {
     fn too_many_steps_are_refused() {
         let mut c = recording();
         for _ in 0..=MAX_STEPS {
-            c.passes.push(Step::Render(Pass { resolve: None, target: None, clear: None, commands: Vec::new() }));
+            c.passes.push(Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None, target: None, clear: None, commands: Vec::new() }));
         }
         assert!(validate(&c, 8192).unwrap_err().contains("steps in a frame"));
     }
@@ -1675,6 +1961,7 @@ mod tests {
                 sampler_type: None,
                 access: None,
                 format: Some("rgba8unorm".into()),
+                view_dimension: None,
             }],
         );
         c.compute_pipelines.insert(
@@ -1694,7 +1981,7 @@ mod tests {
                     buffer: None,
                     offset: 0,
                     size: 0,
-                    texture: Some(TextureView { id: "t".into(), base_mip: 0, mips: 1 }),
+                    texture: Some(TextureView { id: "t".into(), base_mip: 0, mips: 1, base_layer: 0, layers: 1, dimension: None }),
                     sampler: None,
                 }],
             },
@@ -1819,6 +2106,7 @@ mod tests {
             sampler_type: None,
             access: access.map(String::from),
             format: format.map(String::from),
+            view_dimension: None,
         };
         let layout_err = |entries: Vec<BindingLayout>| {
             let mut c = WebGpuContent::default();
@@ -1834,7 +2122,7 @@ mod tests {
         assert!(ok(vec![entry(0, 4, "storage-texture", Some("read-write"), Some("r32float"))]).is_ok());
         assert!(ok(vec![entry(0, 4, "storage-texture", Some("read-only"), Some("r32uint"))]).is_ok());
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, None)]).contains("without a format"));
-        assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("depth24plus"))]).contains("format depth24plus"));
+        assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("depth24plus-stencil8"))]).contains("format depth24plus-stencil8"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("rgba8unorm-srgb"))]).contains("cannot be a storage texture"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", None, Some("r8unorm"))]).contains("cannot be a storage texture"));
         assert!(layout_err(vec![entry(0, 4, "storage-texture", Some("read-write"), Some("rgba8unorm"))]).contains("optional feature"));
@@ -1882,6 +2170,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: None,
+            view_dimension: None,
         }
     }
 
@@ -1891,7 +2180,7 @@ mod tests {
             buffer: None,
             offset: 0,
             size: 0,
-            texture: Some(TextureView { id: id.into(), base_mip: 0, mips }),
+            texture: Some(TextureView { id: id.into(), base_mip: 0, mips, base_layer: 0, layers: 1, dimension: None }),
             sampler: None,
         }
     }
@@ -1925,6 +2214,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: Some(format.into()),
+            view_dimension: None,
         };
         assert!(validate(&group_with(layout("rgba8unorm"), view("t1", 1)), 8192).is_ok());
         assert!(validate(&group_with(layout("rgba32float"), view("f", 1)), 8192).is_ok());
@@ -1947,6 +2237,7 @@ mod tests {
             sampler_type: None,
             access: None,
             format: None,
+            view_dimension: None,
         };
         let bind = |buffer: &str, offset: u64, size: u64| BindEntry {
             binding: 0,
@@ -2092,7 +2383,8 @@ mod tests {
         assert_eq!(info("rgba8unorm-srgb").storage, Storage::No);
         assert_eq!(info("rgba8uint").sample, Sample::Uint);
         assert_eq!(info("rg32sint").sample, Sample::Sint);
-        assert!(format_info("depth24plus").is_none());
+        assert!(format_info("depth24plus-stencil8").is_none());
+        assert_eq!(format_info("depth24plus").map(|f| (f.bytes, f.sample, f.storage)), Some((4, Sample::Depth, Storage::No)));
         assert!(format_info("bc1-rgba-unorm").is_none());
         assert_eq!(texel_bytes("rgba32uint"), Some(16));
         assert_eq!(texture_bytes(&texture(4, 4, 1, "rgba32float"), 8192), Ok(256));
@@ -2114,7 +2406,7 @@ mod tests {
     fn a_render_pass_binds_groups_the_recording_holds() {
         let mut c = compute_recording();
         let bind = |index: u32, group: &str| {
-            Step::Render(Pass { resolve: None,
+            Step::Render(Pass { depth: None, depth_only: false, more: Vec::new(), resolve: None,
                 target: None,
                 clear: None,
                 commands: vec![Command::Bind { index, group: group.into(), offsets: vec![] }],

@@ -127,7 +127,12 @@ impl Compositor {
         base_dir: &Path,
         layers: &HashMap<String, wgpu::Texture>,
     ) -> Fail<()> {
-        let limits = wg::device_limits(&self.device);
+        // What the device lacks of what a page is told it has: warned once. The recording is checked against what the page
+        // was told, not against this machine.
+        for lacking in wg::shortfalls(&self.device.limits(), self.device.features()) {
+            self.webgpu_warn(&lacking);
+        }
+        let limits = wg::Limits::advertised();
         let problems = wg::check_with(recording, &limits);
         if let Some(first) = problems.first() {
             return Err(first.clone());
@@ -189,7 +194,7 @@ impl Compositor {
         };
         // Buffers, from the bytes of the recording.
         for (id, base64) in &recording.buffers {
-            let mut bytes = decode_blob(base64, max_blob_bytes(&self.device))
+            let mut bytes = decode_blob(base64, max_blob_bytes())
                 .map_err(|e| format!("buffer {id}: {e}"))?;
             while bytes.len() < 4 || bytes.len() % 4 != 0 {
                 bytes.push(0);
@@ -218,6 +223,7 @@ impl Compositor {
                         | wgpu::BufferUsages::STORAGE
                         | wgpu::BufferUsages::VERTEX
                         | wgpu::BufferUsages::INDEX
+                        | wgpu::BufferUsages::INDIRECT
                         | wgpu::BufferUsages::COPY_SRC
                         | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
@@ -260,11 +266,15 @@ impl Compositor {
                     size: wgpu::Extent3d {
                         width: t.width,
                         height: t.height,
-                        depth_or_array_layers: 1,
+                        depth_or_array_layers: t.layers,
                     },
                     mip_level_count: t.mips,
                     sample_count: t.samples,
-                    dimension: wgpu::TextureDimension::D2,
+                    dimension: if t.dimension.is_some() {
+                        wgpu::TextureDimension::D3
+                    } else {
+                        wgpu::TextureDimension::D2
+                    },
                     format,
                     usage,
                     view_formats: &[],
@@ -365,7 +375,7 @@ impl Compositor {
                             .blobs
                             .get(&w.data)
                             .ok_or("data that is not in the recording")?,
-                        max_blob_bytes(&device),
+                        max_blob_bytes(),
                     )?;
                     if !bytes.is_empty() {
                         let staging =
@@ -424,8 +434,8 @@ impl Compositor {
                         .get(copy.to.texture.as_str())
                         .ok_or("a copy to a texture that was not made")?;
                     encoder.copy_texture_to_texture(
-                        texel_info(from, copy.from.mip, copy.from.x, copy.from.y),
-                        texel_info(to, copy.to.mip, copy.to.x, copy.to.y),
+                        texel_info(from, copy.from.mip, copy.from.layer, copy.from.x, copy.from.y),
+                        texel_info(to, copy.to.mip, copy.to.layer, copy.to.x, copy.to.y),
                         extent(copy.width, copy.height),
                     );
                 }
@@ -445,7 +455,16 @@ impl Compositor {
         canvas_size: (u32, u32),
     ) -> Fail<()> {
         let (view, bounds) = match &pass.target {
-            None => (canvas_view.clone(), canvas_size),
+            // No colour attachment: the depth level is all the pass has to take its size from.
+            None if pass.depth_only => {
+                let d = pass.depth.as_ref().ok_or("a pass with no colour attachment has no depth attachment")?;
+                let described = recording
+                    .textures
+                    .get(&d.texture)
+                    .ok_or("a pass with a depth texture that is not in the recording")?;
+                (None, wg::mip_extent(described, d.mip))
+            }
+            None => (Some(canvas_view.clone()), canvas_size),
             Some(target) => {
                 let texture = res
                     .textures
@@ -455,44 +474,108 @@ impl Compositor {
                     .textures
                     .get(&target.texture)
                     .ok_or("a pass into a texture that is not in the recording")?;
-                let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                    base_mip_level: target.mip,
-                    mip_level_count: Some(1),
-                    ..Default::default()
-                });
-                (view, wg::mip_extent(described, target.mip))
+                let view = layer_view(texture, target.mip, target.layer);
+                (Some(view), wg::mip_extent(described, target.mip))
             }
         };
         let canvas = pass.target.is_none();
         // A multisampled target resolves into its texture's level.
         let resolve_view = match &pass.resolve {
             None => None,
-            Some(r) => Some(
-                res.textures
+            Some(r) => {
+                let texture = res
+                    .textures
                     .get(r.texture.as_str())
-                    .ok_or("a pass resolves into a texture that was not made")?
-                    .create_view(&wgpu::TextureViewDescriptor {
-                        base_mip_level: r.mip,
-                        mip_level_count: Some(1),
-                        ..Default::default()
-                    }),
-            ),
+                    .ok_or("a pass resolves into a texture that was not made")?;
+                Some(layer_view(texture, r.mip, r.layer))
+            }
         };
         let load = match pass.clear {
             Some(c) => wgpu::LoadOp::Clear(color(c)),
             None => wgpu::LoadOp::Load,
         };
+        let depth_view = match &pass.depth {
+            None => None,
+            Some(d) => {
+                let texture = res
+                    .textures
+                    .get(d.texture.as_str())
+                    .ok_or("a pass with a depth texture that was not made")?;
+                let described = recording
+                    .textures
+                    .get(&d.texture)
+                    .ok_or("a pass with a depth texture that is not in the recording")?;
+                if wg::mip_extent(described, d.mip) != bounds {
+                    return Err(format!("the depth texture {} is not the size of the pass's target", d.texture));
+                }
+                Some(layer_view(texture, d.mip, d.layer))
+            }
+        };
+        let depth_ops = pass.depth.as_ref().map(|d| wgpu::Operations {
+            load: match d.clear {
+                Some(v) => wgpu::LoadOp::Clear(v as f32),
+                None => wgpu::LoadOp::Load,
+            },
+            store: wgpu::StoreOp::Store,
+        });
+        // The colour attachments: the first, then the others of a pass with several, each with its own clear and resolve.
+        let mut colors = Vec::new();
+        if let Some(view) = view {
+            let slice = pass.target.as_ref().and_then(|t| {
+                res.textures
+                    .get(t.texture.as_str())
+                    .and_then(|texture| slice_of(texture, t.layer))
+            });
+            colors.push((view, resolve_view, load, slice));
+        }
+        for m in &pass.more {
+            let texture = res
+                .textures
+                .get(m.texture.as_str())
+                .ok_or("a pass into a texture that was not made")?;
+            let resolve = match &m.resolve {
+                None => None,
+                Some(r) => {
+                    let to = res
+                        .textures
+                        .get(r.texture.as_str())
+                        .ok_or("a pass resolves into a texture that was not made")?;
+                    Some(layer_view(to, r.mip, r.layer))
+                }
+            };
+            let load = match m.clear {
+                Some(c) => wgpu::LoadOp::Clear(color(c)),
+                None => wgpu::LoadOp::Load,
+            };
+            colors.push((layer_view(texture, m.mip, m.layer), resolve, load, slice_of(texture, m.layer)));
+        }
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("webgpu"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                depth_slice: None,
-                resolve_target: resolve_view.as_ref(),
-                ops: wgpu::Operations {
-                    load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
+            color_attachments: &colors
+                .iter()
+                .map(|(view, resolve, load, slice)| {
+                    Some(wgpu::RenderPassColorAttachment {
+                        view,
+                        depth_slice: *slice,
+                        resolve_target: resolve.as_ref(),
+                        ops: wgpu::Operations {
+                            load: *load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })
+                })
+                .collect::<Vec<_>>(),
+            depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                wgpu::RenderPassDepthStencilAttachment {
+                    view,
+                    depth_ops: if pass.depth.as_ref().is_some_and(|d| d.read_only) {
+                        None
+                    } else {
+                        depth_ops
+                    },
+                    stencil_ops: None,
+                }
+            }),
             ..Default::default()
         });
         let mut has_pipeline = false;
@@ -578,6 +661,18 @@ impl Compositor {
                         *first_instance..first_instance.saturating_add(*instances),
                     );
                 }
+                Command::DrawIndirect { buffer, offset } => {
+                    if !has_pipeline {
+                        return Err("drawIndirect before setPipeline".into());
+                    }
+                    rp.draw_indirect(buffer_in(res, buffer)?, *offset);
+                }
+                Command::DrawIndexedIndirect { buffer, offset } => {
+                    if !has_pipeline || index_size.is_none() {
+                        return Err("drawIndexedIndirect before setPipeline and setIndexBuffer".into());
+                    }
+                    rp.draw_indexed_indirect(buffer_in(res, buffer)?, *offset);
+                }
                 Command::Viewport {
                     x,
                     y,
@@ -655,8 +750,8 @@ impl Compositor {
                 };
                 wg::rect_in("an upload from a layer", size, u.sx, sy, u.width, u.height)?;
                 encoder.copy_texture_to_texture(
-                    texel_info(from, 0, u.sx, sy),
-                    texel_info(texture, u.mip, u.x, u.y),
+                    texel_info(from, 0, 0, u.sx, sy),
+                    texel_info(texture, u.mip, u.layer, u.x, u.y),
                     extent(u.width, u.height),
                 );
                 return Ok(());
@@ -667,7 +762,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("data that is not in the recording")?,
-                    max_blob_bytes(&self.device),
+                    max_blob_bytes(),
                 )?;
                 let want = wg::packed_len(u.width, u.height, texel)?;
                 if bytes.len() != want {
@@ -686,7 +781,7 @@ impl Compositor {
                         .blobs
                         .get(id)
                         .ok_or("pixels that are not in the recording")?,
-                    max_blob_bytes(&self.device),
+                    max_blob_bytes(),
                 )?;
                 let want = wg::packed_len(*width, *height, 4)?;
                 if all.len() != want {
@@ -727,7 +822,7 @@ impl Compositor {
                     rows_per_image: Some(u.height),
                 },
             },
-            texel_info(texture, u.mip, u.x, u.y),
+            texel_info(texture, u.mip, u.layer, u.x, u.y),
             extent(u.width, u.height),
         );
         Ok(())
@@ -745,7 +840,7 @@ impl Compositor {
             return Ok(p.clone());
         }
         let (rgba, width, height) = gl::decode_picture(Some(src), None, (0, 0), base_dir)?;
-        let limit = self.device.limits().max_texture_dimension_2d;
+        let limit = wg::Limits::default().max_texture_dimension_2d;
         if width > limit || height > limit {
             return Err(format!(
                 "a {width} x {height} picture; the device holds {limit} across"
@@ -834,6 +929,7 @@ impl Compositor {
             lod_min_clamp: s.lod_min_clamp.unwrap_or(0.0) as f32,
             lod_max_clamp: s.lod_max_clamp.unwrap_or(32.0) as f32,
             anisotropy_clamp: s.max_anisotropy.unwrap_or(1).clamp(1, 16) as u16,
+            compare: s.compare.as_deref().map(compare_function),
             ..Default::default()
         });
         self.glsl
@@ -910,7 +1006,7 @@ impl Compositor {
                             .as_deref()
                             .ok_or("a storage texture without a format")?,
                     )?,
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: view_dimension(e.view_dimension.as_deref())?,
                 },
                 "texture" => wgpu::BindingType::Texture {
                     sample_type: match e.sample_type.as_deref().unwrap_or("float") {
@@ -920,15 +1016,17 @@ impl Compositor {
                         }
                         "sint" => wgpu::TextureSampleType::Sint,
                         "uint" => wgpu::TextureSampleType::Uint,
+                        "depth" => wgpu::TextureSampleType::Depth,
                         other => return Err(format!("texture sample type {other}")),
                     },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: view_dimension(e.view_dimension.as_deref())?,
                     multisampled: false,
                 },
                 "sampler" => wgpu::BindingType::Sampler(
                     match e.sampler_type.as_deref().unwrap_or("filtering") {
                         "filtering" => wgpu::SamplerBindingType::Filtering,
                         "non-filtering" => wgpu::SamplerBindingType::NonFiltering,
+                        "comparison" => wgpu::SamplerBindingType::Comparison,
                         other => return Err(format!("sampler binding type {other}")),
                     },
                 ),
@@ -1099,7 +1197,7 @@ impl Compositor {
                     },
                     ..Default::default()
                 },
-                depth_stencil: None,
+                depth_stencil: spec.depth.as_ref().map(depth_stencil).transpose()?,
                 multisample: wgpu::MultisampleState {
                     count: spec.samples,
                     ..Default::default()
@@ -1205,7 +1303,9 @@ impl Compositor {
                     Some(texture.create_view(&wgpu::TextureViewDescriptor {
                         base_mip_level: v.base_mip,
                         mip_level_count: Some(v.mips),
-                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        base_array_layer: v.base_layer,
+                        array_layer_count: Some(v.layers),
+                        dimension: Some(view_dimension(v.dimension.as_deref())?),
                         ..Default::default()
                     }))
                 }
@@ -1285,6 +1385,12 @@ fn webgpu_compute(
                 }
                 cp.dispatch_workgroups(*x, *y, *z);
             }
+            wg::ComputeCommand::DispatchIndirect { buffer, offset } => {
+                if !has_pipeline {
+                    return Err("dispatchWorkgroupsIndirect before setPipeline".into());
+                }
+                cp.dispatch_workgroups_indirect(buffer_in(res, buffer)?, *offset);
+            }
         }
     }
     Ok(())
@@ -1318,15 +1424,52 @@ fn extent(width: u32, height: u32) -> wgpu::Extent3d {
 fn texel_info(
     texture: &wgpu::Texture,
     mip_level: u32,
+    layer: u32,
     x: u32,
     y: u32,
 ) -> wgpu::TexelCopyTextureInfo<'_> {
     wgpu::TexelCopyTextureInfo {
         texture,
         mip_level,
-        origin: wgpu::Origin3d { x, y, z: 0 },
+        origin: wgpu::Origin3d { x, y, z: layer },
         aspect: wgpu::TextureAspect::All,
     }
+}
+
+/// A recorded view dimension (none is `2d`).
+fn view_dimension(name: Option<&str>) -> Fail<wgpu::TextureViewDimension> {
+    use wgpu::TextureViewDimension as D;
+    Ok(match name {
+        None | Some("2d") => D::D2,
+        Some("2d-array") => D::D2Array,
+        Some("cube") => D::Cube,
+        Some("cube-array") => D::CubeArray,
+        Some("3d") => D::D3,
+        Some(other) => return Err(format!("a view of dimension {other}")),
+    })
+}
+
+/// A 2d view of one level and one array layer of `texture`, which a pass draws into; of a 3d texture, the view of the
+/// level (the slice is the attachment's `depth_slice`, `slice_of`).
+fn layer_view(texture: &wgpu::Texture, mip: u32, layer: u32) -> wgpu::TextureView {
+    let volume = texture.dimension() == wgpu::TextureDimension::D3;
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        base_mip_level: mip,
+        mip_level_count: Some(1),
+        base_array_layer: if volume { 0 } else { layer },
+        array_layer_count: Some(1),
+        dimension: Some(if volume {
+            wgpu::TextureViewDimension::D3
+        } else {
+            wgpu::TextureViewDimension::D2
+        }),
+        ..Default::default()
+    })
+}
+
+/// The slice of a 3d texture that a colour attachment draws into (`layer`); none for a 2d texture.
+fn slice_of(texture: &wgpu::Texture, layer: u32) -> Option<u32> {
+    (texture.dimension() == wgpu::TextureDimension::D3).then_some(layer)
 }
 
 fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
@@ -1364,7 +1507,39 @@ fn texture_format(name: &str) -> Fail<wgpu::TextureFormat> {
         "rgba32uint" => F::Rgba32Uint,
         "rgba32sint" => F::Rgba32Sint,
         "rgba32float" => F::Rgba32Float,
+        "depth16unorm" => F::Depth16Unorm,
+        "depth24plus" => F::Depth24Plus,
+        "depth32float" => F::Depth32Float,
         other => return Err(format!("a texture of format {other}")),
+    })
+}
+
+fn compare_function(name: &str) -> wgpu::CompareFunction {
+    use wgpu::CompareFunction as C;
+    match name {
+        "never" => C::Never,
+        "less" => C::Less,
+        "equal" => C::Equal,
+        "less-equal" => C::LessEqual,
+        "greater" => C::Greater,
+        "not-equal" => C::NotEqual,
+        "greater-equal" => C::GreaterEqual,
+        _ => C::Always,
+    }
+}
+
+/// The depth state of a pipeline; the stencil is left at its defaults (always, keep), which is not drawn.
+fn depth_stencil(d: &wg::DepthState) -> Fail<wgpu::DepthStencilState> {
+    Ok(wgpu::DepthStencilState {
+        format: texture_format(&d.format)?,
+        depth_write_enabled: Some(d.write),
+        depth_compare: Some(compare_function(d.compare.as_deref().unwrap_or("always"))),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState {
+            constant: d.bias.unwrap_or(0.0) as i32,
+            slope_scale: d.bias_slope_scale.unwrap_or(0.0) as f32,
+            clamp: d.bias_clamp.unwrap_or(0.0) as f32,
+        },
     })
 }
 
@@ -1377,10 +1552,10 @@ fn canvas_format(recording: &WebGpuContent) -> wgpu::TextureFormat {
     }
 }
 
-/// The most data one upload or buffer write may hold: one level of the biggest texture the device allows
+/// The most data one upload or buffer write may hold: one level of the biggest texture a page is told the device allows
 /// (`rgba32float`), which is more than its biggest buffer.
-fn max_blob_bytes(device: &wgpu::Device) -> u64 {
-    let side = u64::from(device.limits().max_texture_dimension_2d);
+fn max_blob_bytes() -> u64 {
+    let side = u64::from(wg::Limits::default().max_texture_dimension_2d);
     side * side * 16
 }
 
@@ -1750,6 +1925,8 @@ mod tests {
         let texture = |format: &str| wg::Texture {
             width: 4,
             height: 4,
+            layers: 1,
+            dimension: None,
             mips: 1,
             format: format.into(),
             samples: 1,
@@ -1757,6 +1934,7 @@ mod tests {
         let upload = |x, y, w, h, flip_y, premultiply| wg::Upload {
             texture: "t".into(),
             mip: 0,
+            layer: 0,
             x: 0,
             y: 0,
             width: w,
@@ -1865,7 +2043,8 @@ mod tests {
             texture_format("rgba16float"),
             Ok(wgpu::TextureFormat::Rgba16Float)
         );
-        assert!(texture_format("depth24plus").is_err());
+        assert!(texture_format("depth24plus-stencil8").is_err());
+        assert_eq!(texture_format("depth24plus").unwrap(), wgpu::TextureFormat::Depth24Plus);
         for name in wg::TEXTURE_FORMATS.replace(" and ", ", ").split(", ") {
             assert!(
                 wg::texel_bytes(name).is_some() && texture_format(name).is_ok(),

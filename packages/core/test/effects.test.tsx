@@ -361,7 +361,7 @@ describe('WebGPU', () => {
         onPaint={({ canvas }) => {
           const ctx = canvas.getContext('webgpu');
           ctx.configure({ device: new GPUDeviceShim(), format: 'rgba8unorm' });
-          ctx.getConfiguration().device.createQuerySet();
+          ctx.getConfiguration().device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 1, externalTexture: {} }] });
         }}
       >
         x

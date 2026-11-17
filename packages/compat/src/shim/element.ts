@@ -15,8 +15,8 @@ import { CANVAS_SOURCE, VIDEO_FRAME, fontKey, type CanvasContext2D, type CanvasP
 import type { GlRecorder } from './canvas.js';
 import {
   bitmapSide,
-  canvasCommandsOf,
   canvasPictureOf,
+  canvasReadCommandsOf,
   canvasToBlob,
   canvasToDataUrl,
   contextOfHost,
@@ -596,6 +596,7 @@ export class DomElement extends DomNodeBase {
     overlayOf(this.host, true)!.attrs.set(name, String(value));
     this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
+    if (name === 'src' && this.host.type === 'img') this.loadImage(String(value));
     if (name === 'src' && this.isMedia) this.player!.load();
   }
   removeAttribute(name: string): void {
@@ -1206,7 +1207,9 @@ export class DomElement extends DomNodeBase {
   get width(): number {
     if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('width'), DEFAULT_WIDTH);
     const attr = this.getAttribute('width');
-    return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetWidth;
+    if (attr !== null && Number.isFinite(parseFloat(attr))) return parseFloat(attr);
+    // An image that is not rendered (a script's, never attached) is as wide as its file.
+    return this.host.type === 'img' && this.box() === null ? this.naturalWidth : this.offsetWidth;
   }
   set width(value: number) {
     this.setAttribute('width', String(Math.max(0, Math.floor(Number(value)) || 0)));
@@ -1215,7 +1218,8 @@ export class DomElement extends DomNodeBase {
   get height(): number {
     if (this.host.type === 'canvas') return bitmapSide(this.getAttribute('height'), DEFAULT_HEIGHT);
     const attr = this.getAttribute('height');
-    return attr !== null && Number.isFinite(parseFloat(attr)) ? parseFloat(attr) : this.offsetHeight;
+    if (attr !== null && Number.isFinite(parseFloat(attr))) return parseFloat(attr);
+    return this.host.type === 'img' && this.box() === null ? this.naturalHeight : this.offsetHeight;
   }
   set height(value: number) {
     this.setAttribute('height', String(Math.max(0, Math.floor(Number(value)) || 0)));
@@ -1311,13 +1315,37 @@ export class DomElement extends DomNodeBase {
     else Object.defineProperty(this, name, { value, writable: true, enumerable: true, configurable: true });
   }
   get naturalWidth(): number {
-    return this.host.type === 'img' ? imageSize(this.rawSrc)?.width ?? 0 : 0;
+    return this.host.type === 'img' ? (imageLoads.get(this.host)?.size ?? imageSize(this.rawSrc))?.width ?? 0 : 0;
   }
   get naturalHeight(): number {
-    return this.host.type === 'img' ? imageSize(this.rawSrc)?.height ?? 0 : 0;
+    return this.host.type === 'img' ? (imageLoads.get(this.host)?.size ?? imageSize(this.rawSrc))?.height ?? 0 : 0;
   }
+  /** A script's `img.src = url` loads the file: false until `load` or `error` has fired for the `src` it set. */
   get complete(): boolean {
-    return true;
+    return imageLoads.get(this.host)?.state !== 'loading';
+  }
+  /**
+   * The load a script started by setting `src` (React sets props, not attributes, and has its own events). The file is read
+   * at once and `load` or `error` comes after the current task, as `new Image()` does it; a frame waits for it (`pendingImageLoads`).
+   */
+  private loadImage(src: string): void {
+    const load = newImageLoad();
+    imageLoads.get(this.host)?.finish('failed', 'The image source changed while it was loading');
+    imageLoads.set(this.host, load);
+    startImageLoad(src, 'img.src', (result) => {
+      if (imageLoads.get(this.host) !== load) return;
+      if ('error' in result) load.finish('failed', result.error.message);
+      else {
+        load.size = result.size;
+        load.finish('loaded', '');
+      }
+      const type = load.state === 'loaded' ? 'load' : 'error';
+      const event = new Event(type);
+      Object.defineProperties(event, { target: { value: this }, currentTarget: { value: this } });
+      const handler = (this as unknown as Record<string, unknown>)[`on${type}`];
+      if (typeof handler === 'function') handler.call(this, event);
+      this.dispatchEvent(event);
+    });
   }
   // `<video>` and `<audio>`: a player on the virtual clock (media.ts); the file's header gives the size and duration.
   private get isMedia(): boolean {
@@ -1515,7 +1543,12 @@ export class DomElement extends DomNodeBase {
   cancelVideoFrameCallback(id: number): void {
     this.player?.cancelVideoFrameCallback(id);
   }
-  async decode(): Promise<void> {}
+  async decode(): Promise<void> {
+    const load = imageLoads.get(this.host);
+    if (load === undefined) return;
+    await load.settled;
+    if (load.state === 'failed') throw new DOMExceptionShim(load.message, 'EncodingError', 0);
+  }
   // `<canvas>`: the 2D context records what is drawn, and the painter draws it (packages/cli/skills/kinetograph-markup/references/SCENE.md, "canvas").
   getContext(type: string, attributes?: unknown): CanvasContext2D | GlRecorder | null {
     if (this.host.type !== 'canvas') throw new TypeError(`getContext is not a function: <${this.host.type}> is not a canvas`);
@@ -1523,11 +1556,11 @@ export class DomElement extends DomNodeBase {
   }
   toDataURL(): string {
     refuseGlPicture(this.host);
-    return canvasToDataUrl(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height });
+    return canvasToDataUrl(canvasReadCommandsOf(this.host), { width: this.width, height: this.height });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
     refuseGlPicture(this.host);
-    callback(canvasToBlob(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height }));
+    callback(canvasToBlob(canvasReadCommandsOf(this.host), { width: this.width, height: this.height }));
   }
   /**
    * What `queue.copyExternalImageToTexture` reads of a `<video>`: its file and the instant `currentTime` names, so that the
@@ -2060,6 +2093,39 @@ export function affineOf(transform: string | null): [number, number, number, num
 }
 
 // ---- image sizes (for `img.naturalWidth` and `new Image()`) ----
+
+/** What a script's `img.src = url` started on an element, by its host. */
+interface ImageLoad {
+  state: 'loading' | 'loaded' | 'failed';
+  message: string;
+  size: { width: number; height: number } | null;
+  settled: Promise<void>;
+  finish: (state: 'loaded' | 'failed', message: string) => void;
+}
+function newImageLoad(): ImageLoad {
+  let release!: () => void;
+  const load: ImageLoad = {
+    state: 'loading',
+    message: '',
+    size: null,
+    settled: new Promise<void>((resolve) => (release = resolve)),
+    finish(state, message) {
+      if (load.state !== 'loading') return;
+      load.state = state;
+      load.message = message;
+      release();
+    },
+  };
+  return load;
+}
+const imageLoads = new WeakMap<HostElement, ImageLoad>();
+
+let startImageLoad: (src: string, who: string, done: (result: { size: { width: number; height: number } } | { error: Error }) => void) => void = () => {};
+
+/** The web-API module hands over how an image file is read and its `load` timed (the one `new Image()` uses). */
+export function setImageLoader(fn: typeof startImageLoad): void {
+  startImageLoad = fn;
+}
 
 let imageSizeOf: (src: string) => { width: number; height: number } | null = () => null;
 let pictureOfImage: (src: string) => CanvasPicture | null = () => null;

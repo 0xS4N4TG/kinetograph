@@ -11,9 +11,11 @@
 // `WebGLUnsupportedError` whose message starts with "unsupported:" and says what to do instead; a call is never
 // accepted and then ignored where it would change the picture.
 
-import type { CanvasSource, GlslContent, GlslDraw, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform, GlslVideo } from './types.js';
+import type { CanvasSource, GlslContent, GlslDraw, GlslProgram, GlslLayer, GlslOp, GlslOutput, GlslPatch, GlslSampler, GlslStencil, GlslStencilFace, GlslTexture, GlslUniform, GlslVideo } from './types.js';
 import { CANVAS_SOURCE, pictureOf, type CanvasPicture } from './canvas.js';
 import { preprocess } from './glsl-cpp.js';
+import { parseBlocks, type BlockInfo, type BlockUniform } from './webgl-blocks.js';
+import { carriedFor, carryOn, dependsOnHistory, emptyCarry, isCanvasOp, MAX_OPS_PER_TARGET, namedBy, pick, readsLastFrame, type Resources } from './webgl-carry.js';
 
 /** The method a picture of another layer answers a texture upload with (`layerPicture`). */
 export const LAYER_SOURCE: unique symbol = Symbol.for('kinetograph.layerSource');
@@ -152,6 +154,7 @@ export const GL = {
   FRAGMENT_SHADER: 0x8b30,
   VERTEX_SHADER: 0x8b31,
   MAX_VERTEX_ATTRIBS: 0x8869,
+  MAX_RENDERBUFFER_SIZE: 0x84e8,
   MAX_VERTEX_UNIFORM_VECTORS: 0x8dfb,
   MAX_VARYING_VECTORS: 0x8dfc,
   MAX_COMBINED_TEXTURE_IMAGE_UNITS: 0x8b4d,
@@ -343,6 +346,41 @@ export const GL2 = {
   SAMPLER_2D_ARRAY: 0x8dc1,
   MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
   UNIFORM_BUFFER: 0x8a11,
+  MAX_VARYING_COMPONENTS: 0x8b4b,
+  MAX_ELEMENT_INDEX: 0x8d6b,
+  MAX_PROGRAM_TEXEL_OFFSET: 0x8905,
+  MIN_PROGRAM_TEXEL_OFFSET: 0x8904,
+  MAX_VERTEX_UNIFORM_COMPONENTS: 0x8b4a,
+  MAX_FRAGMENT_UNIFORM_COMPONENTS: 0x8b49,
+  MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS: 0x8a31,
+  MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS: 0x8a33,
+  MAX_VERTEX_OUTPUT_COMPONENTS: 0x9122,
+  MAX_FRAGMENT_INPUT_COMPONENTS: 0x9125,
+  UNIFORM_BUFFER_BINDING: 0x8a28,
+  UNIFORM_BUFFER_START: 0x8a29,
+  UNIFORM_BUFFER_SIZE: 0x8a2a,
+  MAX_VERTEX_UNIFORM_BLOCKS: 0x8a2b,
+  MAX_FRAGMENT_UNIFORM_BLOCKS: 0x8a2d,
+  MAX_COMBINED_UNIFORM_BLOCKS: 0x8a2e,
+  MAX_UNIFORM_BUFFER_BINDINGS: 0x8a2f,
+  MAX_UNIFORM_BLOCK_SIZE: 0x8a30,
+  UNIFORM_BUFFER_OFFSET_ALIGNMENT: 0x8a34,
+  ACTIVE_UNIFORM_BLOCKS: 0x8a36,
+  UNIFORM_TYPE: 0x8a37,
+  UNIFORM_SIZE: 0x8a38,
+  UNIFORM_BLOCK_INDEX: 0x8a3a,
+  UNIFORM_OFFSET: 0x8a3b,
+  UNIFORM_ARRAY_STRIDE: 0x8a3c,
+  UNIFORM_MATRIX_STRIDE: 0x8a3d,
+  UNIFORM_IS_ROW_MAJOR: 0x8a3e,
+  UNIFORM_BLOCK_BINDING: 0x8a3f,
+  UNIFORM_BLOCK_DATA_SIZE: 0x8a40,
+  UNIFORM_BLOCK_ACTIVE_UNIFORMS: 0x8a42,
+  UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: 0x8a43,
+  UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER: 0x8a44,
+  UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER: 0x8a46,
+  INVALID_INDEX: 0xffffffff,
+  TRANSFORM_FEEDBACK_BUFFER: 0x8c8e,
   PIXEL_UNPACK_BUFFER: 0x88ec,
   PIXEL_PACK_BUFFER: 0x88eb,
   UNPACK_ROW_LENGTH: 0xcf2,
@@ -422,11 +460,49 @@ const FLOAT_FORMATS: Record<number, { channels: number; format: number; bits: 16
 /** `MAX_VERTEX_ATTRIBS`. */
 const MAX_VERTEX_ATTRIBS = 16;
 
+/**
+ * The uniform buffer limits, which are what the replay does: a block is read from a buffer of its own, up to wgpu's
+ * `max_uniform_buffer_binding_size` (64 KiB) at offsets `min_uniform_buffer_offset_alignment` (at most 256) apart, and
+ * a stage reads the most uniform buffers of the device (the ES 3.0 minimums, 12 a stage and 24 in all, with the one the
+ * loose uniforms use besides).
+ */
+const MAX_UNIFORM_BUFFER_BINDINGS = 24;
+const MAX_UNIFORM_BLOCK_SIZE = 65536;
+const UNIFORM_BUFFER_OFFSET_ALIGNMENT = 256;
+const MAX_STAGE_UNIFORM_BLOCKS = 12;
+/**
+ * The fixed limits WebGL 2 adds, as the replay has them: `MAX_*_UNIFORM_VECTORS` are 256 a stage, and a block adds its
+ * 64 KiB, 12 of them, to the components a stage reads; a varying is one of the 15 `vec4`s a stage passes; the texel
+ * offset of `textureOffset` is wgpu's (-8 to 7), and an index of `drawElements` is up to 32 bits.
+ */
+const FIXED_LIMITS: Record<number, number> = {
+  [GL2.MAX_VARYING_COMPONENTS]: 60,
+  [GL2.MAX_VERTEX_OUTPUT_COMPONENTS]: 60,
+  [GL2.MAX_FRAGMENT_INPUT_COMPONENTS]: 60,
+  [GL2.MAX_ELEMENT_INDEX]: 0xffffffff,
+  [GL2.MAX_PROGRAM_TEXEL_OFFSET]: 7,
+  [GL2.MIN_PROGRAM_TEXEL_OFFSET]: -8,
+  [GL2.MAX_VERTEX_UNIFORM_COMPONENTS]: 1024,
+  [GL2.MAX_FRAGMENT_UNIFORM_COMPONENTS]: 1024,
+  [GL2.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS]: 1024 + (12 * 65536) / 4,
+  [GL2.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS]: 1024 + (12 * 65536) / 4,
+};
+const UNIFORM_BUFFER_LIMITS: Record<number, number> = {
+  [GL2.MAX_UNIFORM_BUFFER_BINDINGS]: MAX_UNIFORM_BUFFER_BINDINGS,
+  [GL2.MAX_UNIFORM_BLOCK_SIZE]: MAX_UNIFORM_BLOCK_SIZE,
+  [GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT]: UNIFORM_BUFFER_OFFSET_ALIGNMENT,
+  [GL2.MAX_VERTEX_UNIFORM_BLOCKS]: MAX_STAGE_UNIFORM_BLOCKS,
+  [GL2.MAX_FRAGMENT_UNIFORM_BLOCKS]: MAX_STAGE_UNIFORM_BLOCKS,
+  [GL2.MAX_COMBINED_UNIFORM_BLOCKS]: 2 * MAX_STAGE_UNIFORM_BLOCKS,
+};
+
 /** What a disabled attribute array reads until `vertexAttrib*` sets it. */
 const DEFAULT_ATTRIBUTE: readonly [number, number, number, number] = [0, 0, 0, 1];
 
 /** `MAX_3D_TEXTURE_SIZE`: the longest side of a 3D texture. */
 const MAX_3D_TEXTURE_SIZE = 2048;
+/** `MAX_TEXTURE_SIZE`: the longest side of a 2D texture, and of a layer of a 2D array texture. */
+const MAX_TEXTURE_SIZE = 8192;
 
 /** The pixel format of each 8-bit internal format a 3D or array texture takes. */
 const FORMATS_8BIT_3D: Record<number, number> = { [GL2.RGBA8]: GL.RGBA, [GL.RGBA]: GL.RGBA, [GL2.RGB8]: GL.RGB, [GL.RGB]: GL.RGB, [GL2.RG8]: GL2.RG, [GL2.R8]: GL2.RED };
@@ -577,6 +653,8 @@ export class WebGLShaderPrecisionFormat {
 
 interface VertexAttribute {
   enabled: boolean;
+  /** Set by `vertexAttribIPointer`: the shader reads integers. */
+  integer: boolean;
   buffer: WebGLBuffer | null;
   size: number;
   type: number;
@@ -587,7 +665,7 @@ interface VertexAttribute {
 }
 
 function newAttribute(): VertexAttribute {
-  return { enabled: false, buffer: null, size: 4, type: GL.FLOAT, normalized: false, stride: 0, offset: 0, divisor: 0 };
+  return { enabled: false, integer: false, buffer: null, size: 4, type: GL.FLOAT, normalized: false, stride: 0, offset: 0, divisor: 0 };
 }
 
 interface Declaration {
@@ -595,6 +673,8 @@ interface Declaration {
   type: string;
   length: number;
   location: number | null;
+  /** Declared with `[n]`, even `[1]`: a browser lists it as `name[0]`, which a library reads to tell an array from a single value. */
+  array?: boolean;
 }
 
 interface UniformCall {
@@ -615,6 +695,12 @@ export class WebGLProgram extends WebGLObject {
   attributeDeclarations: Declaration[] = [];
   /** The uniform values set so far, by name. */
   uniforms = new Map<string, UniformCall[]>();
+  /** The uniform blocks of the two shaders in GL's order, with the stages that declare each. */
+  blocks: (BlockInfo & { vertex: boolean; fragment: boolean })[] = [];
+  /** The binding point of each block (`uniformBlockBinding`; 0 after a link). */
+  blockBindings: number[] = [];
+  /** Why the link failed, when it did for a reason other than a missing shader. */
+  linkLog = '';
 }
 
 // ---- reading the source for names ----
@@ -697,10 +783,16 @@ function declarations(source: string, keywords: string[]): Declaration[] {
         out.push(...uniformLeaves(d[1]!, m[3]!, d[2] === undefined ? null : length, structs));
         continue;
       }
-      out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null });
+      out.push({ name: d[1]!, type: m[3]!, length, location: location ? Number(location[1]) : null, ...(d[2] === undefined ? {} : { array: true }) });
     }
   }
   return out;
+}
+
+/** The uniform blocks a shader declares (WebGL 2). */
+function blocksOf(source: string): BlockInfo[] {
+  const { code, length } = preprocess(source);
+  return parseBlocks(code, length, structsOf(code, length));
 }
 
 /** The columns (and locations) of a `mat2`, `mat3` or `mat4` attribute, which is read a column at a time; undefined for other types. */
@@ -846,6 +938,8 @@ export interface WebGLContextOptions {
   attributes?: WebGLContextAttributesLike;
   /** The straight-alpha RGBA8 pixels of a canvas drawn into a texture, or null when they cannot be had. */
   rasterize?: (source: Extract<CanvasSource, { kind: 'canvas' }>) => Uint8Array | null;
+  /** Told what a recording leaves out where the engine does not draw it right (the frame reports it as unsupported). */
+  report?: (what: string) => void;
 }
 
 interface Capability {
@@ -855,6 +949,7 @@ interface Capability {
   depth: boolean;
   stencil: boolean;
   polygonOffset: boolean;
+  alphaToCoverage: boolean;
 }
 
 /** The depth functions, by the name the recording uses. */
@@ -935,12 +1030,18 @@ interface BlendState {
 }
 
 const UNSUPPORTED_CAPS = new Map<number, string>([
-  [GL.SAMPLE_ALPHA_TO_COVERAGE, 'alpha to coverage'],
   [GL.SAMPLE_COVERAGE, 'sample coverage'],
 ]);
 
 /** `MAX_SAMPLES`: what a multisampled renderbuffer has, as the canvas with `antialias` does (Chrome on Apple GPUs). */
 const MAX_SAMPLES = 4;
+
+/**
+ * A uniform value as JSON holds it: an infinity (three.js sets a transmissive material's `attenuationDistance` to one) is
+ * a number past what a 32-bit float holds, which the replay reads back as the infinity, where JSON.stringify would write
+ * null and the scene would not load. A NaN is 0.
+ */
+const jsonNumber = (v: number): number => (Number.isNaN(v) ? 0 : v === Infinity ? 1e39 : v === -Infinity ? -1e39 : v);
 
 /** The largest point drawn (`ALIASED_POINT_SIZE_RANGE`): `gl_PointSize` is clamped to 1 to this (crates/core/src/glsl.rs, `MAX_POINT_SIZE`). */
 const POINT_SIZE_MAX = 511;
@@ -961,12 +1062,6 @@ const COLOR_TARGETS: Record<number, NonNullable<GlslTexture['colorFormat']>> = {
 /** Formats of a texture that colour cannot be drawn into. */
 const NOT_RENDERABLE = new Set<number>([GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA, GL.DEPTH_COMPONENT]);
 
-/** Whether an op goes to the canvas: its drawing buffer, or its depth and stencil buffer. */
-function isCanvasOp(op: GlslOp): boolean {
-  if (op.op === 'upload') return false;
-  return op.target === undefined && (op.op === 'blit' || (op.outputs === undefined && op.depthStencil === undefined));
-}
-
 /**
  * `WebGLRenderingContext` (and, with `version: 2`, the `WebGL2RenderingContext` calls shader pages use) as a recorder.
  * `content()` is what the `glsl` layer is made of. A context keeps its objects (programs, buffers, textures) and its
@@ -979,12 +1074,17 @@ export class WebGLContext {
   private readonly options: WebGLContextOptions;
   private readonly attributes: Required<Pick<WebGLContextAttributesLike, 'alpha' | 'premultipliedAlpha' | 'preserveDrawingBuffer' | 'antialias' | 'depth' | 'stencil'>>;
   private ops: GlslOp[] = [];
+  /** What the frames before drew into render targets (`webgl-carry.ts`); a frame's recording opens with what its ops read of it. */
+  private carry = emptyCarry();
   /** The next draw or clear starts a fresh drawing buffer. */
   private stale = false;
   private error: number = GL.NO_ERROR;
 
   private program: WebGLProgram | null = null;
   private arrayBuffer: WebGLBuffer | null = null;
+  /** `UNIFORM_BUFFER`'s generic binding, and the indexed ones the blocks read (`size` 0 is the whole buffer). */
+  private uniformBuffer: WebGLBuffer | null = null;
+  private readonly uniformBindings: ({ buffer: WebGLBuffer; offset: number; size: number } | null)[] = Array.from({ length: MAX_UNIFORM_BUFFER_BINDINGS }, () => null);
   private defaultVao = new WebGLVertexArrayObject();
   /** What `vertexAttrib*` set: the value each disabled attribute array reads (a context's, not a vertex array object's). */
   private readonly currentAttributes: [number, number, number, number][] = [];
@@ -999,7 +1099,7 @@ export class WebGLContext {
   private readonly unitsArray = new Map<number, WebGLTexture>();
   /** What each unit holds at `TEXTURE_CUBE_MAP`. */
   private readonly unitsCube = new Map<number, WebGLTexture>();
-  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false };
+  private caps: Capability = { blend: false, cull: false, scissor: false, depth: false, stencil: false, polygonOffset: false, alphaToCoverage: false };
   private depthFuncValue: number = GL.LESS;
   private depthMaskValue = true;
   private clearDepthValue = 1;
@@ -1010,6 +1110,8 @@ export class WebGLContext {
   private clearStencilValue = 0;
   /** `drawBuffers` of the canvas: BACK, or NONE. */
   private canvasDrawBuffer: number = GL.BACK;
+  /** `getExtension('OES_texture_float_linear')` was called: a 32-bit float texture may be read with a linear filter. */
+  private floatLinear = false;
   /** `getExtension('EXT_float_blend')` was called: draws may blend into 32-bit float targets, as in a browser. */
   private floatBlend = false;
   private renderbuffer: WebGLRenderbuffer | null = null;
@@ -1025,7 +1127,7 @@ export class WebGLContext {
   private unpackAlignment = 4;
 
   // What the ops refer to, by id.
-  private readonly programs = new Map<string, { vertex: string; fragment: string; attributes: Record<string, number> }>();
+  private readonly programs = new Map<string, GlslProgram>();
   private readonly buffers = new Map<string, string>();
   private readonly textures = new Map<string, GlslTexture>();
 
@@ -1050,16 +1152,64 @@ export class WebGLContext {
 
   /** The recording: what the `glsl` layer holds. */
   content(): GlslContent {
+    const known = this.known();
+    const { ops: carried, incomplete } = carriedFor(this.carry.ops, this.carry.lost, this.ops, known);
+    for (const id of incomplete) {
+      this.options.report?.(`a render target is drawn into by more than ${MAX_OPS_PER_TARGET} ops that each read what the frames before left (feedback), so its oldest are dropped and it is not what the page drew (${id})`);
+    }
+    const named = namedBy(carried, known.textures);
     return {
       premultipliedAlpha: this.attributes.premultipliedAlpha,
       alpha: this.attributes.alpha,
       ...(this.attributes.depth ? {} : { depth: false }),
       ...(this.attributes.stencil ? { stencil: true } : {}),
       ...(this.attributes.antialias ? { antialias: true } : {}),
-      programs: Object.fromEntries(this.programs),
-      buffers: Object.fromEntries(this.buffers),
-      textures: Object.fromEntries(this.textures),
-      ops: this.ops,
+      programs: Object.fromEntries(new Map([...pick(named.programs, this.carry.programs), ...this.programs])),
+      buffers: Object.fromEntries(new Map([...pick(named.buffers, this.carry.buffers), ...this.buffers])),
+      textures: Object.fromEntries(new Map([...pick(named.textures, this.carry.textures), ...this.textures])),
+      ops: carried.length === 0 ? this.ops : [...carried, ...this.ops],
+    };
+  }
+
+  /** What the carried ops and this frame's name, the frame's own entries over the carried ones. */
+  private known(): Resources {
+    return {
+      programs: new Map([...this.carry.programs, ...this.programs]),
+      buffers: new Map([...this.carry.buffers, ...this.buffers]),
+      textures: new Map([...this.carry.textures, ...this.textures]),
+    };
+  }
+
+  /**
+   * Whether this frame depends on the frames before it (`webgl-carry.ts`): it makes a render target from what it held
+   * (a trail), reads one before covering it that it writes later, or reads one the frame before it wrote.
+   */
+  get dependsOnHistory(): boolean {
+    const known = this.known();
+    return dependsOnHistory(this.ops, known) || readsLastFrame(this.carry, this.ops, known);
+  }
+
+  /** Whether render targets hold what was drawn into them (carried, or drawn this frame). */
+  get holdsTargets(): boolean {
+    return this.carry.ops.length > 0 || this.ops.some((op) => !isCanvasOp(op));
+  }
+
+  /**
+   * The state a frame's recording is made from, to put back with the function it returns. The frame loop takes it
+   * before it renders the sub-frames of a motion blur and puts it back after them: what a sub-frame draws is its own,
+   * and the frame after the frame is the same whether or not the sub-frames were rendered.
+   */
+  snapshot(): () => void {
+    const { carry, ops, stale } = this;
+    const [programs, buffers, textures] = [new Map(this.programs), new Map(this.buffers), new Map(this.textures)];
+    return () => {
+      this.carry = carry;
+      this.ops = ops;
+      this.stale = stale;
+      for (const [held, kept] of [[this.programs, programs], [this.buffers, buffers], [this.textures, textures]] as const) {
+        held.clear();
+        for (const [id, value] of kept as Map<string, unknown>) (held as Map<string, unknown>).set(id, value);
+      }
     };
   }
 
@@ -1070,18 +1220,41 @@ export class WebGLContext {
 
   /**
    * The frame loop calls this before each frame: the drawing buffer is emptied, so a frame is what its own draws
-   * make, whichever frame was rendered before (a frame is a function of its number, and the frames of one render
-   * may be made in any order or by different processes). It holds with `preserveDrawingBuffer` too, which in a page
-   * keeps the picture from one presented frame to the next; here each frame is a new context's first. A frame that
-   * draws nothing draws nothing.
+   * make, whichever frame was rendered before. It holds with `preserveDrawingBuffer` too, which in a page keeps the
+   * picture from one presented frame to the next; here each frame is a new context's first. A frame that draws
+   * nothing draws nothing. What was drawn into render targets stays: it is what a texture holds, and a page that drew
+   * a texture once (an environment map prefiltered when the scene was built) reads it in every frame. A target a
+   * frame reads before it overwrites it then depends on the frames before that one (`webgl-carry.ts`).
    */
   resetState(): void {
+    this.keepTargets();
     this.stale = true;
     this.ops = [];
   }
 
+  /** Carries the render-target ops of the frame that ends, with the programs, buffers and textures they name. */
+  private keepTargets(): void {
+    if (this.ops.length === 0) {
+      this.carry = { ...this.carry, last: new Set() };
+      return;
+    }
+    const known = this.known();
+    const { ops, lost, last } = carryOn(this.carry.ops, this.ops, known);
+    const named = namedBy(ops, known.textures);
+    this.carry = {
+      ops,
+      programs: pick(named.programs, this.programs, this.carry.programs),
+      buffers: pick(named.buffers, this.buffers, this.carry.buffers),
+      textures: pick(named.textures, this.textures, this.carry.textures),
+      lost: new Set([...this.carry.lost, ...lost]),
+      last,
+    };
+  }
+
   /** Empties the drawing buffer (`canvas.width` was set). */
   reset(): void {
+    // Framebuffer objects, and what was drawn into their textures, outlive a resize.
+    this.keepTargets();
     this.ops = [];
     this.programs.clear();
     this.buffers.clear();
@@ -1102,6 +1275,8 @@ export class WebGLContext {
   }
 
   private fail(code: number): void {
+    this.refusals += 1;
+    this.lastRefusal = code;
     if (this.error === GL.NO_ERROR) this.error = code;
   }
 
@@ -1126,7 +1301,7 @@ export class WebGLContext {
     return e;
   }
   getSupportedExtensions(): string[] {
-    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    return this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_standard_derivatives', 'OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
   }
   getExtension(name: string): object | null {
     // Derivatives are always available in the translated shaders, and depth textures (core in WebGL 2) in the replay.
@@ -1136,6 +1311,11 @@ export class WebGLContext {
     if (name === 'EXT_color_buffer_half_float' && this.version === 2) return { RGBA16F_EXT: 0x881a, RGB16F_EXT: 0x881b, FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE_EXT: 0x8211, UNSIGNED_NORMALIZED_EXT: 0x8c17 };
     if (name === 'EXT_float_blend' && this.version === 2) {
       this.floatBlend = true;
+      return {};
+    }
+    // 32-bit float textures read with a linear filter; without the call such a texture is incomplete, as in a browser.
+    if (name === 'OES_texture_float_linear' && this.version === 2) {
+      this.floatLinear = true;
       return {};
     }
     if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
@@ -1152,7 +1332,11 @@ export class WebGLContext {
       case GL.SHADING_LANGUAGE_VERSION:
         return this.version === 2 ? 'WebGL GLSL ES 3.00 (Kinetograph)' : 'WebGL GLSL ES 1.0 (Kinetograph)';
       case GL.MAX_TEXTURE_SIZE:
+        return MAX_TEXTURE_SIZE;
+      case GL.MAX_RENDERBUFFER_SIZE:
         return 8192;
+      case GL.SUBPIXEL_BITS:
+        return 4;
       case GL.MAX_VIEWPORT_DIMS:
         return new Int32Array([8192, 8192]);
       case GL.MAX_VERTEX_ATTRIBS:
@@ -1191,6 +1375,18 @@ export class WebGLContext {
         return this.arrayBuffer;
       case GL.ELEMENT_ARRAY_BUFFER_BINDING:
         return this.vao.element;
+      case GL2.UNIFORM_BUFFER_BINDING:
+      case GL2.MAX_UNIFORM_BUFFER_BINDINGS:
+      case GL2.MAX_UNIFORM_BLOCK_SIZE:
+      case GL2.UNIFORM_BUFFER_OFFSET_ALIGNMENT:
+      case GL2.MAX_VERTEX_UNIFORM_BLOCKS:
+      case GL2.MAX_FRAGMENT_UNIFORM_BLOCKS:
+      case GL2.MAX_COMBINED_UNIFORM_BLOCKS:
+        if (this.version !== 2) {
+          this.fail(GL.INVALID_ENUM);
+          return null;
+        }
+        return pname === GL2.UNIFORM_BUFFER_BINDING ? this.uniformBuffer : UNIFORM_BUFFER_LIMITS[pname]!;
       case GL2.VERTEX_ARRAY_BINDING:
         if (this.version === 2) return this.vao === this.defaultVao ? null : this.vao;
         this.fail(GL.INVALID_ENUM);
@@ -1241,6 +1437,8 @@ export class WebGLContext {
         return this.caps.stencil;
       case GL.POLYGON_OFFSET_FILL:
         return this.caps.polygonOffset;
+      case GL.SAMPLE_ALPHA_TO_COVERAGE:
+        return this.caps.alphaToCoverage;
       case GL.DEPTH_FUNC:
         return this.depthFuncValue;
       case GL.DEPTH_WRITEMASK:
@@ -1303,6 +1501,7 @@ export class WebGLContext {
       case GL.SAMPLE_BUFFERS:
         return this.samplesOf(this.drawFramebuffer) > 0 ? 1 : 0;
       default:
+        if (this.version === 2 && FIXED_LIMITS[pname] !== undefined) return FIXED_LIMITS[pname];
         if (this.version === 2 && pname >= GL2.DRAW_BUFFER0 && pname < GL2.DRAW_BUFFER0 + MAX_DRAW_BUFFERS) {
           const i = pname - GL2.DRAW_BUFFER0;
           if (this.drawFramebuffer === null) return i === 0 ? this.canvasDrawBuffer : GL.NONE;
@@ -1498,6 +1697,9 @@ export class WebGLContext {
         break;
       case GL.POLYGON_OFFSET_FILL:
         this.caps.polygonOffset = on;
+        break;
+      case GL.SAMPLE_ALPHA_TO_COVERAGE:
+        this.caps.alphaToCoverage = on;
         break;
       case GL.DITHER:
         break;
@@ -1818,6 +2020,9 @@ export class WebGLContext {
     program.linked = vertex !== undefined && fragment !== undefined && vertex.source !== '' && fragment.source !== '';
     program.attributes = new Map();
     program.uniforms.clear();
+    program.blocks = [];
+    program.blockBindings = [];
+    program.linkLog = '';
     if (!program.linked) return;
     program.vertex = vertex!.source;
     program.fragment = fragment!.source;
@@ -1828,6 +2033,7 @@ export class WebGLContext {
       seen.add(d.name);
       return true;
     });
+    this.linkBlocks(program);
     // Explicit locations and `bindAttribLocation` first; the rest take the lowest free locations in order.
     const taken = new Set<number>();
     const take = (at: number, width: number) => {
@@ -1850,6 +2056,21 @@ export class WebGLContext {
       take(next, width);
     }
   }
+  /** The program's uniform blocks, in GL's order: the vertex shader's, then the fragment shader's that it does not declare. */
+  private linkBlocks(program: WebGLProgram): void {
+    if (this.version !== 2) return;
+    for (const [source, stage] of [[program.vertex, 'vertex'], [program.fragment, 'fragment']] as const) {
+      for (const b of blocksOf(source)) {
+        const held = program.blocks.find((h) => h.name === b.name);
+        if (held === undefined) program.blocks.push({ ...b, vertex: stage === 'vertex', fragment: stage === 'fragment' });
+        else if (held.named !== b.named || JSON.stringify(held.members) !== JSON.stringify(b.members)) {
+          program.linked = false;
+          program.linkLog = `uniform block '${b.name}' is declared differently in the vertex and fragment shaders`;
+        } else held[stage] = true;
+      }
+    }
+    program.blockBindings = program.blocks.map(() => 0);
+  }
   validateProgram(): void {}
   getProgramParameter(program: WebGLProgram, pname: number): unknown {
     switch (pname) {
@@ -1864,14 +2085,18 @@ export class WebGLContext {
       case GL.ACTIVE_ATTRIBUTES:
         return program.attributeDeclarations.length;
       case GL.ACTIVE_UNIFORMS:
-        return program.uniformDeclarations.length;
+        return program.uniformDeclarations.length + this.blockUniforms(program).length;
+      case GL2.ACTIVE_UNIFORM_BLOCKS:
+        if (this.version === 2) return program.blocks.length;
+        this.fail(GL.INVALID_ENUM);
+        return null;
       default:
         this.fail(GL.INVALID_ENUM);
         return null;
     }
   }
   getProgramInfoLog(program: WebGLProgram): string {
-    return program.linked ? '' : 'a program needs a vertex shader and a fragment shader, both with source';
+    return program.linked ? '' : program.linkLog || 'a program needs a vertex shader and a fragment shader, both with source';
   }
   deleteProgram(program: WebGLProgram | null): void {
     if (program) program.deleted = true;
@@ -1889,8 +2114,105 @@ export class WebGLContext {
   }
   getActiveUniform(program: WebGLProgram, index: number): WebGLActiveInfo | null {
     const d = program.uniformDeclarations[index];
-    return d === undefined ? null : new WebGLActiveInfo(d.length > 1 ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
+    if (d !== undefined) return new WebGLActiveInfo(d.length > 1 || d.array ? `${d.name}[0]` : d.name, d.length, TYPE_CODES[d.type] ?? 0);
+    const u = this.blockUniforms(program)[index - program.uniformDeclarations.length];
+    return u === undefined ? null : new WebGLActiveInfo(u.name, u.length, TYPE_CODES[u.type] ?? 0);
   }
+
+  // ---- uniform blocks (WebGL 2) ----
+  //
+  // A uniform is listed after the loose uniforms: the block's uniforms in the order the blocks and their members are
+  // declared. A block is read from the buffer bound at its binding point, laid out as std140 (`webgl-blocks.ts`); every
+  // block a shader declares is active, as in a browser's.
+
+  /** The uniforms the blocks hold, with the index of the block of each. */
+  private blockUniforms(program: WebGLProgram): (BlockUniform & { block: number })[] {
+    return program.blocks.flatMap((b, block) => b.uniforms.map((u) => ({ ...u, block })));
+  }
+  getUniformBlockIndex(program: WebGLProgram, name: string): number {
+    const at = program.blocks.findIndex((b) => b.name === name);
+    return at < 0 ? GL2.INVALID_INDEX : at;
+  }
+  getActiveUniformBlockName(program: WebGLProgram, index: number): string | null {
+    const block = program.blocks[index];
+    if (block === undefined) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    return block.name;
+  }
+  getActiveUniformBlockParameter(program: WebGLProgram, index: number, pname: number): unknown {
+    const block = program.blocks[index];
+    if (block === undefined) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    switch (pname) {
+      case GL2.UNIFORM_BLOCK_BINDING:
+        return program.blockBindings[index];
+      case GL2.UNIFORM_BLOCK_DATA_SIZE:
+        return block.size;
+      case GL2.UNIFORM_BLOCK_ACTIVE_UNIFORMS:
+        return block.uniforms.length;
+      case GL2.UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: {
+        const first = program.uniformDeclarations.length + program.blocks.slice(0, index).reduce((n, b) => n + b.uniforms.length, 0);
+        return new Uint32Array(block.uniforms.map((_, i) => first + i));
+      }
+      case GL2.UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+        return block.vertex;
+      case GL2.UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+        return block.fragment;
+      default:
+        this.fail(GL.INVALID_ENUM);
+        return null;
+    }
+  }
+  uniformBlockBinding(program: WebGLProgram, index: number, binding: number): void {
+    if (!(index >= 0 && index < program.blocks.length) || !(binding >= 0 && binding < MAX_UNIFORM_BUFFER_BINDINGS)) return this.fail(GL.INVALID_VALUE);
+    program.blockBindings[index] = binding;
+  }
+  /** The index of each uniform name, a name or the first element of an array (`Block.member`), or `INVALID_INDEX`. */
+  getUniformIndices(program: WebGLProgram, names: string[]): number[] {
+    const listed = [...program.uniformDeclarations.map((d) => (d.length > 1 || d.array ? `${d.name}[0]` : d.name)), ...this.blockUniforms(program).map((u) => u.name)];
+    return names.map((name) => {
+      const at = listed.findIndex((n) => n === name || n === `${name}[0]`);
+      return at < 0 ? GL2.INVALID_INDEX : at;
+    });
+  }
+  getActiveUniforms(program: WebGLProgram, indices: number[], pname: number): number[] | boolean[] | null {
+    const loose = program.uniformDeclarations.length;
+    const blockUniforms = this.blockUniforms(program);
+    const kinds = [GL2.UNIFORM_TYPE, GL2.UNIFORM_SIZE, GL2.UNIFORM_BLOCK_INDEX, GL2.UNIFORM_OFFSET, GL2.UNIFORM_ARRAY_STRIDE, GL2.UNIFORM_MATRIX_STRIDE, GL2.UNIFORM_IS_ROW_MAJOR];
+    if (!(kinds as number[]).includes(pname)) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    const list = Array.from(indices);
+    if (list.some((i) => !(i >= 0 && i < loose + blockUniforms.length))) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    if (pname === GL2.UNIFORM_IS_ROW_MAJOR) return list.map(() => false);
+    return list.map((i) => {
+      const d = program.uniformDeclarations[i];
+      const u = d === undefined ? blockUniforms[i - loose]! : undefined;
+      switch (pname) {
+        case GL2.UNIFORM_TYPE:
+          return TYPE_CODES[(d ?? u!).type] ?? 0;
+        case GL2.UNIFORM_SIZE:
+          return (d ?? u!).length;
+        case GL2.UNIFORM_BLOCK_INDEX:
+          return u?.block ?? -1;
+        case GL2.UNIFORM_OFFSET:
+          return u?.offset ?? -1;
+        case GL2.UNIFORM_ARRAY_STRIDE:
+          return u?.arrayStride ?? -1;
+        default:
+          return u?.matrixStride ?? -1;
+      }
+    });
+  }
+
   getUniformLocation(program: WebGLProgram, name: string): WebGLUniformLocation | null {
     // A struct field is named in full (`lights[1].color`); an array element is the array and an index.
     const whole = program.uniformDeclarations.find((u) => u.name === name);
@@ -1906,8 +2228,9 @@ export class WebGLContext {
 
   // ---- uniforms ----
 
-  private setUniform(location: WebGLUniformLocation | null, kind: 'f' | 'i' | 'm', value: ArrayLike<number>, components: number): void {
-    if (location === null) return;
+  private setUniform(location: WebGLUniformLocation | null | undefined, kind: 'f' | 'i' | 'm', value: ArrayLike<number>, components: number): void {
+    // WebGL ignores a null location, and a library hands in undefined for a uniform the program lacks.
+    if (location === null || location === undefined) return;
     const program = this.program;
     if (program === null) return this.fail(GL.INVALID_OPERATION);
     if (location.program !== program) return this.fail(GL.INVALID_OPERATION);
@@ -1919,85 +2242,85 @@ export class WebGLContext {
     else calls.push(call);
     program.uniforms.set(location.name, calls);
   }
-  uniform1f(l: WebGLUniformLocation | null, x: number): void {
+  uniform1f(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'f', [x], 1);
   }
-  uniform2f(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2f(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'f', [x, y], 2);
   }
-  uniform3f(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3f(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'f', [x, y, z], 3);
   }
-  uniform4f(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4f(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'f', [x, y, z, w], 4);
   }
-  uniform1i(l: WebGLUniformLocation | null, x: number): void {
+  uniform1i(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'i', [x], 1);
   }
-  uniform2i(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2i(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'i', [x, y], 2);
   }
-  uniform3i(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3i(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'i', [x, y, z], 3);
   }
-  uniform4i(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4i(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'i', [x, y, z, w], 4);
   }
-  uniform1ui(l: WebGLUniformLocation | null, x: number): void {
+  uniform1ui(l: WebGLUniformLocation | null | undefined, x: number): void {
     this.setUniform(l, 'i', [x], 1);
   }
-  uniform2ui(l: WebGLUniformLocation | null, x: number, y: number): void {
+  uniform2ui(l: WebGLUniformLocation | null | undefined, x: number, y: number): void {
     this.setUniform(l, 'i', [x, y], 2);
   }
-  uniform3ui(l: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+  uniform3ui(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number): void {
     this.setUniform(l, 'i', [x, y, z], 3);
   }
-  uniform4ui(l: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+  uniform4ui(l: WebGLUniformLocation | null | undefined, x: number, y: number, z: number, w: number): void {
     this.setUniform(l, 'i', [x, y, z, w], 4);
   }
-  uniform1fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 1);
   }
-  uniform2fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 2);
   }
-  uniform3fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 3);
   }
-  uniform4fv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4fv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'f', v, 4);
   }
-  uniform1iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 1);
   }
-  uniform2iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 2);
   }
-  uniform3iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 3);
   }
-  uniform4iv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4iv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 4);
   }
-  uniform1uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform1uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 1);
   }
-  uniform2uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform2uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 2);
   }
-  uniform3uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform3uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 3);
   }
-  uniform4uiv(l: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+  uniform4uiv(l: WebGLUniformLocation | null | undefined, v: ArrayLike<number>): void {
     this.setUniform(l, 'i', v, 4);
   }
-  uniformMatrix2fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix2fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 2), 4);
   }
-  uniformMatrix3fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix3fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 3), 9);
   }
-  uniformMatrix4fv(l: WebGLUniformLocation | null, transpose: boolean, v: ArrayLike<number>): void {
+  uniformMatrix4fv(l: WebGLUniformLocation | null | undefined, transpose: boolean, v: ArrayLike<number>): void {
     this.setUniform(l, 'm', this.matrixValue(transpose, v, 4), 16);
   }
   private matrixValue(transpose: boolean, v: ArrayLike<number>, n: number): ArrayLike<number> {
@@ -2013,7 +2336,7 @@ export class WebGLContext {
     return out;
   }
   /** A uniform set by kind and values, without the component check of the `uniform*` calls (for `glslShader`). */
-  setUniformCall(location: WebGLUniformLocation | null, kind: 'f' | 'i' | 'm', value: ArrayLike<number>): void {
+  setUniformCall(location: WebGLUniformLocation | null | undefined, kind: 'f' | 'i' | 'm', value: ArrayLike<number>): void {
     this.setUniform(location, kind, value, 1);
   }
   /** Makes `texture` (bound) an image file of the scene. */
@@ -2038,7 +2361,12 @@ export class WebGLContext {
     return new WebGLBuffer();
   }
   deleteBuffer(buffer: WebGLBuffer | null): void {
-    if (buffer) buffer.deleted = true;
+    if (buffer === null) return;
+    buffer.deleted = true;
+    if (this.uniformBuffer === buffer) this.uniformBuffer = null;
+    this.uniformBindings.forEach((b, i) => {
+      if (b?.buffer === buffer) this.uniformBindings[i] = null;
+    });
   }
   isBuffer(buffer: unknown): boolean {
     return buffer instanceof WebGLBuffer && !buffer.deleted;
@@ -2046,13 +2374,46 @@ export class WebGLContext {
   bindBuffer(target: number, buffer: WebGLBuffer | null): void {
     if (target === GL.ARRAY_BUFFER) this.arrayBuffer = buffer;
     else if (target === GL.ELEMENT_ARRAY_BUFFER) this.vao.element = buffer;
-    else if (this.version === 2 && (target === GL2.PIXEL_UNPACK_BUFFER || target === GL2.PIXEL_PACK_BUFFER || target === GL2.UNIFORM_BUFFER)) {
-      if (buffer !== null) throw new WebGLUnsupportedError('a pixel or uniform buffer object; set uniforms one by one and upload textures from arrays or images');
+    else if (this.version === 2 && target === GL2.UNIFORM_BUFFER) this.uniformBuffer = buffer;
+    else if (this.version === 2 && (target === GL2.PIXEL_UNPACK_BUFFER || target === GL2.PIXEL_PACK_BUFFER)) {
+      if (buffer !== null) throw new WebGLUnsupportedError('a pixel buffer object; upload textures from arrays or images');
     } else this.fail(GL.INVALID_ENUM);
+  }
+  /** `bindBufferBase`: a uniform buffer (WebGL 2) bound whole at an index, and as the generic binding. */
+  bindBufferBase(target: number, index: number, buffer: WebGLBuffer | null): void {
+    this.bindIndexed(target, index, buffer, 0, 0);
+  }
+  /** `bindBufferRange`: `size` bytes from `offset`, which is a multiple of `UNIFORM_BUFFER_OFFSET_ALIGNMENT`. */
+  bindBufferRange(target: number, index: number, buffer: WebGLBuffer | null, offset: number, size: number): void {
+    if (buffer !== null && this.version === 2 && target === GL2.UNIFORM_BUFFER && (!(size > 0) || !(offset >= 0) || offset % UNIFORM_BUFFER_OFFSET_ALIGNMENT !== 0)) return this.fail(GL.INVALID_VALUE);
+    this.bindIndexed(target, index, buffer, offset, size);
+  }
+  private bindIndexed(target: number, index: number, buffer: WebGLBuffer | null, offset: number, size: number): void {
+    if (this.version === 2 && target === GL2.TRANSFORM_FEEDBACK_BUFFER) throw new WebGLUnsupportedError('transform feedback buffers; compute the values in the vertex shader or in your own code');
+    if (this.version !== 2 || target !== GL2.UNIFORM_BUFFER) return this.fail(GL.INVALID_ENUM);
+    if (!(index >= 0 && index < MAX_UNIFORM_BUFFER_BINDINGS)) return this.fail(GL.INVALID_VALUE);
+    if (buffer?.deleted) return this.fail(GL.INVALID_OPERATION);
+    this.uniformBuffer = buffer;
+    this.uniformBindings[index] = buffer === null ? null : { buffer, offset, size };
+  }
+  /** The buffer and range bound at an index of `UNIFORM_BUFFER` (`getIndexedParameter`). */
+  getIndexedParameter(target: number, index: number): WebGLBuffer | number | null {
+    const bound = this.uniformBindings[index];
+    if (this.version !== 2 || (target !== GL2.UNIFORM_BUFFER_BINDING && target !== GL2.UNIFORM_BUFFER_START && target !== GL2.UNIFORM_BUFFER_SIZE)) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    if (!(index >= 0 && index < MAX_UNIFORM_BUFFER_BINDINGS)) {
+      this.fail(GL.INVALID_VALUE);
+      return null;
+    }
+    if (target === GL2.UNIFORM_BUFFER_BINDING) return bound?.buffer ?? null;
+    return (target === GL2.UNIFORM_BUFFER_START ? bound?.offset : bound?.size) ?? 0;
   }
   private target(target: number): WebGLBuffer | null {
     if (target === GL.ARRAY_BUFFER) return this.arrayBuffer;
     if (target === GL.ELEMENT_ARRAY_BUFFER) return this.vao.element;
+    if (this.version === 2 && target === GL2.UNIFORM_BUFFER) return this.uniformBuffer;
     this.fail(GL.INVALID_ENUM);
     return null;
   }
@@ -2109,10 +2470,16 @@ export class WebGLContext {
     const a = this.attribute(index);
     if (a === null) return;
     if (this.arrayBuffer === null) return this.fail(GL.INVALID_OPERATION);
-    Object.assign(a, { buffer: this.arrayBuffer, size, type, normalized: Boolean(normalized), stride, offset });
+    Object.assign(a, { buffer: this.arrayBuffer, integer: false, size, type, normalized: Boolean(normalized), stride, offset });
   }
-  vertexAttribIPointer(): never {
-    throw new WebGLUnsupportedError('integer attributes (vertexAttribIPointer); use float attributes');
+  /** WebGL 2's `vertexAttribPointer` for integer inputs (`ivecN`, `uvecN`): the values reach the shader as they are. */
+  vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
+    const a = this.attribute(index);
+    if (a === null) return;
+    if (![GL.BYTE, GL.UNSIGNED_BYTE, GL.SHORT, GL.UNSIGNED_SHORT, GL.INT, GL.UNSIGNED_INT].includes(type as never)) return this.fail(GL.INVALID_ENUM);
+    if (!(size >= 1 && size <= 4) || !(stride >= 0) || !(offset >= 0)) return this.fail(GL.INVALID_VALUE);
+    if (this.arrayBuffer === null) return this.fail(GL.INVALID_OPERATION);
+    Object.assign(a, { buffer: this.arrayBuffer, integer: true, size, type, normalized: false, stride, offset });
   }
   vertexAttribDivisor(index: number, divisor: number): void {
     const a = this.attribute(index);
@@ -2150,7 +2517,7 @@ export class WebGLContext {
     this.vertexAttrib4f(index, x, count > 1 ? y : 0, count > 2 ? z : 0, count > 3 ? w : 1);
   }
   vertexAttribI4i(): never {
-    throw new WebGLUnsupportedError('integer attributes (vertexAttribI4i, vertexAttribI4ui and their v forms); use float attributes');
+    throw new WebGLUnsupportedError('the current value of an integer attribute (vertexAttribI4i, vertexAttribI4ui and their v forms); give the attribute an array (vertexAttribIPointer)');
   }
   vertexAttribI4iv(): never {
     return this.vertexAttribI4i();
@@ -2291,7 +2658,18 @@ export class WebGLContext {
     if (!texture.uploaded || kindOf(texture.format) !== 'color') return this.fail(GL.INVALID_OPERATION);
     if (target === GL2.TEXTURE_3D || target === GL2.TEXTURE_2D_ARRAY) throw new WebGLUnsupportedError('generateMipmap of a 3D or array texture; sample it with LINEAR or NEAREST');
     if (texture.drawnAt === texture.version) return this.mipmapDrawn([texture], texture.baseLevel);
-    if (texture.floats !== null) throw new WebGLUnsupportedError('generateMipmap of a float texture; sample it with NEAREST');
+    if (texture.floats !== null) {
+      // The mipmaps of an empty texture are empty: three.js calls generateMipmap on a render target's texture as it makes it,
+      // before anything is drawn in. The chain is storage a framebuffer can draw in; there is nothing to compute.
+      if (texture.blank) {
+        if (!texture.immutable) texture.levels = Math.floor(Math.log2(Math.max(texture.width, texture.height))) + 1;
+        return;
+      }
+      // A float texture with texels: the replay makes its chain (2 x 2 blocks averaged).
+      texture.mipmaps = true;
+      texture.version += 1;
+      return;
+    }
     texture.mipmaps = true;
     texture.version += 1;
   }
@@ -2379,14 +2757,8 @@ export class WebGLContext {
     texture.version += 1;
   }
 
-  /** A 2D texture of a float format (`R32F`, `RGBA16F`, ...) from an array of floats, or empty. */
-  private specifyFloat(texture: WebGLTexture, internalformat: number, float: { channels: number; format: number; bits: 16 | 32 }, [width, height]: [number, number], [format, type, source]: [number, number, unknown]): void {
-    if (source !== null && source !== undefined && !ArrayBuffer.isView(source)) throw new WebGLUnsupportedError('a float texture from this source; use an array of floats or null');
-    if (!(Number.isInteger(width) && Number.isInteger(height) && width >= 0 && height >= 0 && width <= 8192 && height <= 8192)) return this.fail(GL.INVALID_VALUE);
-    if (width === 0 || height === 0) throw new WebGLUnsupportedError('a float texture without texels');
-    const floats = this.floatTexels(float, format, type, width * height, source as ArrayBufferView | null | undefined, 0);
-    if (floats === null) return;
-    // UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL apply to the floats as they do to bytes.
+  /** UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL apply to the floats of an upload as they do to bytes. */
+  private unpackFloats(floats: Float32Array, width: number, height: number): void {
     if (this.flipY) {
       const row = width * 4;
       const turned = new Float32Array(floats.length);
@@ -2398,6 +2770,15 @@ export class WebGLContext {
         for (let c = 0; c < 3; c += 1) floats[i * 4 + c]! *= floats[i * 4 + 3]!;
       }
     }
+  }
+  /** A 2D texture of a float format (`R32F`, `RGBA16F`, ...) from an array of floats, or empty. */
+  private specifyFloat(texture: WebGLTexture, internalformat: number, float: { channels: number; format: number; bits: 16 | 32 }, [width, height]: [number, number], [format, type, source]: [number, number, unknown]): void {
+    if (source !== null && source !== undefined && !ArrayBuffer.isView(source)) throw new WebGLUnsupportedError('a float texture from this source; use an array of floats or null');
+    if (!(Number.isInteger(width) && Number.isInteger(height) && width >= 0 && height >= 0 && width <= 8192 && height <= 8192)) return this.fail(GL.INVALID_VALUE);
+    if (width === 0 || height === 0) throw new WebGLUnsupportedError('a float texture without texels');
+    const floats = this.floatTexels(float, format, type, width * height, source as ArrayBufferView | null | undefined, 0);
+    if (floats === null) return;
+    this.unpackFloats(floats, width, height);
     const empty = source === null || source === undefined;
     // What a format has no alpha for reads as 1, in a texture with nothing in it as in one with pixels.
     if (empty && float.channels < 4) for (let i = 0; i < width * height; i += 1) floats[i * 4 + 3] = 1;
@@ -2418,7 +2799,12 @@ export class WebGLContext {
     const cube = this.bound(GL.TEXTURE_CUBE_MAP);
     const face = cube?.faces?.[faceIndex(target)];
     if (cube === null || face === undefined) return;
-    if (level !== 0) throw new WebGLUnsupportedError('a cube map face above level 0; call generateMipmap');
+    if (level !== 0) {
+      // An empty level is storage a framebuffer can draw in (`specify2d` keeps what a level above 0 may hold); pixels are not drawn.
+      this.specify2d(face, level, internalformat, rest);
+      cube.version += 1;
+      return;
+    }
     // A float face is a render target: empty until a framebuffer draws in it.
     const empty = rest.length >= 6 && (rest[5] === null || rest[5] === undefined);
     if (kindOf(internalformat) !== 'color' || (FLOAT_FORMATS[internalformat] !== undefined && !empty)) throw new WebGLUnsupportedError('a cube map face of a depth format, or of float pixels; use RGBA8 or SRGB8_ALPHA8, or an empty float face to draw in');
@@ -2581,7 +2967,8 @@ export class WebGLContext {
   }
 
   /** The bound texture of a `texImage3D`, `texSubImage3D` or `texStorage3D` target, and the most layers it can have; null after the error. */
-  private bound3d(target: number): { texture: WebGLTexture; limit: number } | null {
+  /** The bound texture of a 3D or array target, the most layers or depth it has, and the longest side: an array's width and height are those of a 2D texture. */
+  private bound3d(target: number): { texture: WebGLTexture; limit: number; side: number } | null {
     if (this.version !== 2) {
       this.fail(GL.INVALID_OPERATION);
       return null;
@@ -2591,17 +2978,17 @@ export class WebGLContext {
       return null;
     }
     const texture = this.bound(target);
-    return texture === null ? null : { texture, limit: target === GL2.TEXTURE_3D ? MAX_3D_TEXTURE_SIZE : MAX_ARRAY_TEXTURE_LAYERS };
+    return texture === null ? null : target === GL2.TEXTURE_3D ? { texture, limit: MAX_3D_TEXTURE_SIZE, side: MAX_3D_TEXTURE_SIZE } : { texture, limit: MAX_ARRAY_TEXTURE_LAYERS, side: MAX_TEXTURE_SIZE };
   }
 
   /** WebGL 2's `texImage3D(target, level, internalformat, width, height, depth, border, format, type, pixels, srcOffset)` of a `TEXTURE_3D` or `TEXTURE_2D_ARRAY`. */
   texImage3D(target: number, level: number, internalformat: number, width: number, height: number, depth: number, border: number, format: number, type: number, source?: unknown, srcOffset = 0): void {
     const bound = this.bound3d(target);
     if (bound === null) return;
-    const { texture, limit } = bound;
+    const { texture, limit, side } = bound;
     if (level !== 0) throw new WebGLUnsupportedError('texImage3D above level 0; a 3D or array texture has one level');
     const sides = [width, height, depth];
-    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
+    if (border !== 0 || !sides.every((v) => Number.isInteger(v) && v >= 0) || Math.max(width, height) > side || depth > limit) return this.fail(GL.INVALID_VALUE);
     // WebGL refuses the flip and the premultiply for these textures.
     if (this.flipY || this.premultiply) return this.fail(GL.INVALID_OPERATION);
     if (sides.some((v) => v === 0)) throw new WebGLUnsupportedError('a 3D or array texture without texels');
@@ -2637,10 +3024,11 @@ export class WebGLContext {
   texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
     const bound = this.bound3d(target);
     if (bound === null) return;
-    const { texture, limit } = bound;
+    const { texture, limit, side } = bound;
+    levels = Math.trunc(levels); // a GLsizei argument is converted to an integer
     if (!(Number.isInteger(levels) && levels >= 1)) return this.fail(GL.INVALID_VALUE);
     const sides = [width, height, depth];
-    if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > MAX_3D_TEXTURE_SIZE || depth > limit) return this.fail(GL.INVALID_VALUE);
+    if (!sides.every((v) => Number.isInteger(v) && v >= 1) || Math.max(width, height) > side || depth > limit) return this.fail(GL.INVALID_VALUE);
     if (levels > 1) throw new WebGLUnsupportedError('texStorage3D of more than one level; a 3D or array texture has one level');
     const float = FLOAT_FORMATS[internalformat];
     const format = float?.format ?? FORMATS_8BIT_3D[internalformat];
@@ -2660,7 +3048,6 @@ export class WebGLContext {
   private subFloats(texture: WebGLTexture, xoffset: number, yoffset: number, rest: unknown[]): void {
     const float = FLOAT_FORMATS[texture.format]!;
     if (rest.length < 5) throw new WebGLUnsupportedError('texSubImage2D into a float texture from a picture; use an array of floats');
-    if (this.flipY || this.premultiply) throw new WebGLUnsupportedError('texSubImage2D into a float texture with UNPACK_FLIP_Y_WEBGL or UNPACK_PREMULTIPLY_ALPHA_WEBGL on');
     if (texture.drawnAt === texture.version) throw new WebGLUnsupportedError('texSubImage2D into a float texture a framebuffer drew in; draw into it, or upload the whole texture again');
     const [width, height, format, type, source, srcOffset = 0] = rest as [number, number, number, number, ArrayBufferView | null, number | undefined];
     const numbers = [xoffset, yoffset, width, height];
@@ -2668,6 +3055,7 @@ export class WebGLContext {
     if (source === null || source === undefined) return this.fail(GL.INVALID_VALUE);
     const floats = this.floatTexels(float, format, type, width * height, source, Number(srcOffset));
     if (floats === null) return;
+    this.unpackFloats(floats, width, height);
     const held = texture.floats!;
     for (let y = 0; y < height; y += 1) held.set(floats.subarray(y * width * 4, (y + 1) * width * 4), ((yoffset + y) * texture.width + xoffset) * 4);
     texture.blank = false;
@@ -2751,6 +3139,7 @@ export class WebGLContext {
   texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
     const texture = this.bound(target);
     if (texture === null) return;
+    levels = Math.trunc(levels); // a GLsizei argument is converted to an integer: three passes log2(size) + 1
     if (!(levels >= 1 && levels <= 16)) return this.fail(GL.INVALID_VALUE);
     if (target === GL.TEXTURE_CUBE_MAP) {
       // Each of the six faces is given the storage, as a 2D texture is.
@@ -2820,6 +3209,8 @@ export class WebGLContext {
       throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
     } else if (s.kind === 'ref') {
       throw new WebGLUnsupportedError('a texture from a sources table entry (only a written scene holds one)');
+    } else if (s.kind === 'stored') {
+      throw new WebGLUnsupportedError('a texture from the read-back of a WebGPU canvas');
     } else {
       const pixels = this.rasterized(s, picture.width, picture.height);
       if (pixels === null) throw new WebGLUnsupportedError(`a texture from a ${s.kind} here (its pixels need the addon)`);
@@ -3192,6 +3583,22 @@ export class WebGLContext {
     const a = [...framebuffer.colors, framebuffer.depth, framebuffer.stencil].find((a) => a !== null && a !== undefined);
     return a !== undefined && a !== null && 'renderbuffer' in a ? a.renderbuffer.samples : 0;
   }
+  /**
+   * `getInternalformatParameter(RENDERBUFFER, format, SAMPLES)`: the one count `renderbufferStorageMultisample` has (a format it
+   * does not draw multisampled, the 32-bit floats, has none). Formats that cannot be a renderbuffer's are an error, as in GL.
+   */
+  getInternalformatParameter(target: number, internalformat: number, pname: number): Int32Array | null {
+    if (this.version !== 2) {
+      this.fail(GL.INVALID_OPERATION);
+      return null;
+    }
+    const known = (kindOf(internalformat) !== 'color' || COLOR_RENDERBUFFER.has(internalformat)) && internalformat !== GL.DEPTH_COMPONENT;
+    if (target !== GL.RENDERBUFFER || pname !== GL.SAMPLES || !known) {
+      this.fail(GL.INVALID_ENUM);
+      return null;
+    }
+    return new Int32Array(FLOAT_FORMATS[internalformat]?.bits === 32 ? [] : [MAX_SAMPLES]);
+  }
   getRenderbufferParameter(target: number, pname: number): number | null {
     if (target !== GL.RENDERBUFFER) {
       this.fail(GL.INVALID_ENUM);
@@ -3245,7 +3652,22 @@ export class WebGLContext {
     return type === GL.UNSIGNED_BYTE ? 'u8' : type === GL.UNSIGNED_SHORT ? 'u16' : type === GL.UNSIGNED_INT ? 'u32' : null;
   }
 
+  /** How many calls WebGL refused with a GL error: a draw that adds some and records nothing was not drawn. */
+  private refusals = 0;
+  private lastRefusal = 0;
+
+  /** A draw call; one that WebGL refuses (a GL error, silent in a page) is said, as it draws nothing the page shows. */
   private draw(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
+    const before = this.refusals;
+    const ops = this.ops.length;
+    this.drawNow(mode, first, count, indexed, instances);
+    if (this.refusals !== before && this.ops.length === ops) {
+      const names: Record<number, string> = { [GL.INVALID_ENUM]: 'INVALID_ENUM', [GL.INVALID_VALUE]: 'INVALID_VALUE', [GL.INVALID_OPERATION]: 'INVALID_OPERATION', [GL.INVALID_FRAMEBUFFER_OPERATION]: 'INVALID_FRAMEBUFFER_OPERATION' };
+      this.options.report?.(`a draw call was refused with a GL error (${names[this.lastRefusal] ?? this.lastRefusal}) and is not drawn, as in a browser, where it shows in the console: a program whose sampler reads a texture of the wrong type or an unfinished framebuffer is a common cause`);
+    }
+  }
+
+  private drawNow(mode: number, first: number, count: number, indexed: { type: 'u8' | 'u16' | 'u32'; offset: number } | null, instances = 1): void {
     const modes: Record<number, GlslDraw['mode']> = { [GL.POINTS]: 'points', [GL.TRIANGLES]: 'triangles', [GL.TRIANGLE_STRIP]: 'triangleStrip', [GL.TRIANGLE_FAN]: 'triangleFan', [GL.LINES]: 'lines', [GL.LINE_STRIP]: 'lineStrip', [GL.LINE_LOOP]: 'lineLoop' };
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.fail(GL.INVALID_ENUM);
     const program = this.program;
@@ -3269,7 +3691,10 @@ export class WebGLContext {
     for (const [name, at] of program.attributes) attributes[name] = at;
     const programKey = JSON.stringify([program.vertex, program.fragment, attributes]);
     const programId = `p${hashOf(programKey)}`;
-    if (!this.programs.has(programId)) this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes });
+    if (!this.programs.has(programId)) {
+      const blocks = program.blocks.map(({ name, size, members }) => ({ name, size, members }));
+      this.programs.set(programId, { vertex: program.vertex, fragment: program.fragment, attributes, ...(blocks.length > 0 ? { blocks } : {}) });
+    }
 
     // Vertex data.
     const draw: GlslDraw = {
@@ -3301,9 +3726,9 @@ export class WebGLContext {
       }
       if (a.buffer === null) continue;
       if (a.divisor >= 1 && named === 'points') throw new WebGLUnsupportedError('instanced attributes of points');
-      const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];
-      if (type === undefined) throw new WebGLUnsupportedError(`the attribute "${d.name}" has type 0x${a.type.toString(16)}; use FLOAT, or a normalised byte or short`);
-      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, stride: a.stride, offset: a.offset, ...(a.divisor >= 1 ? { divisor: a.divisor } : {}) };
+      const type = ({ [GL.FLOAT]: 'f32', [GL.UNSIGNED_BYTE]: 'u8', [GL.BYTE]: 'i8', [GL.UNSIGNED_SHORT]: 'u16', [GL.SHORT]: 'i16', [GL.INT]: 'i32', [GL.UNSIGNED_INT]: 'u32' } as Record<number, GlslDraw['attributes'][string]['type']>)[a.type];
+      if (type === undefined) throw new WebGLUnsupportedError(`the attribute "${d.name}" has type 0x${a.type.toString(16)}; use FLOAT, BYTE, UNSIGNED_BYTE, SHORT, UNSIGNED_SHORT, INT or UNSIGNED_INT`);
+      draw.attributes[d.name] = { buffer: this.bufferId(a.buffer), size: a.size, type, normalized: a.normalized, ...(a.integer ? { integer: true } : {}), stride: a.stride, offset: a.offset, ...(a.divisor >= 1 ? { divisor: a.divisor } : {}) };
     }
     if (indexed !== null) {
       const element = this.vao.element;
@@ -3312,9 +3737,19 @@ export class WebGLContext {
       draw.first = 0;
     }
 
+    // Each uniform block reads the range bound at its binding point as the draw finds it: a draw is refused when a
+    // block has no buffer, or one that holds less than the block does (WebGL 2, as in a browser).
+    for (const [i, block] of program.blocks.entries()) {
+      const bound = this.uniformBindings[program.blockBindings[i]!];
+      // The bytes from its offset, to the end of the buffer or of the range, whichever comes first (a whole-buffer binding has size 0).
+      const available = bound === null || bound === undefined ? 0 : Math.max(0, Math.min(bound.size === 0 ? Infinity : bound.size, bound.buffer.data.length - bound.offset));
+      if (bound === null || bound === undefined || available < block.size) return this.fail(GL.INVALID_OPERATION);
+      (draw.blocks ??= {})[block.name] = { buffer: this.bufferId(bound.buffer), offset: bound.offset, size: available };
+    }
+
     // Uniforms and the texture units the samplers name.
     for (const [name, calls] of program.uniforms) {
-      draw.uniforms[name] = calls.map((c): GlslUniform => ({ kind: c.kind, value: [...c.value], ...(c.index === 0 ? {} : { index: c.index }) }));
+      draw.uniforms[name] = calls.map((c): GlslUniform => ({ kind: c.kind, value: c.value.map(jsonNumber), ...(c.index === 0 ? {} : { index: c.index }) }));
     }
     const fb = this.drawFramebuffer;
     const attached = fb === null ? [] : [...fb.colors, fb.depth, fb.stencil].flatMap((a) => (a !== null && a !== undefined && 'texture' in a ? [a.texture] : []));
@@ -3345,6 +3780,8 @@ export class WebGLContext {
 
     // State.
     if (this.caps.scissor) draw.scissor = this.scissorNow();
+    if (this.caps.alphaToCoverage) draw.alphaToCoverage = true;
+    if (this.floatLinear) draw.floatLinear = true;
     if (this.caps.blend) {
       const into32 = this.drawFramebuffer !== null && this.outputsOf(this.drawFramebuffer).some((a) => a !== null && FLOAT_FORMATS[('texture' in a ? a.texture.format : a.renderbuffer.format) ?? 0]?.bits === 32);
       // As in a browser, without EXT_float_blend enabled such a draw is refused.
@@ -3460,6 +3897,7 @@ export class WebGLContext {
             height: texture.height,
             ...(texture.depth > 0 ? { depth: texture.depth } : {}),
             ...(texture.target === GL2.TEXTURE_2D_ARRAY ? { array: true } : {}),
+            ...(texture.mipmaps ? { mipmaps: true } : {}),
           }
         : {
         ...(texture.layer !== null

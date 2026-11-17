@@ -1,0 +1,52 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="64" data-height="64" data-duration="12" style="position:relative;width:64px;height:64px;overflow:hidden"><canvas id="c" width="64" height="64"></canvas>
+<script type="module">
+// A ping-pong the page fills at mount: texture A with a clear pass, texture B with writeTexture. Each frame reads one and writes the
+// other, so frame N is N steps of it. Nothing is read before it is written, so a frame jumped to cannot see by the textures alone
+// that the frames before it are missing.
+const canvas = document.getElementById('c');
+const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+const context = canvas.getContext('webgpu');
+context.configure({ device, format: 'rgba8unorm', alphaMode: 'opaque' });
+const SIZE = 64;
+const module = device.createShaderModule({ code: `
+  struct U { step: f32, pad: vec3f }
+  @group(0) @binding(0) var src: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @group(0) @binding(2) var<uniform> u: U;
+  @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f { var p = array<vec2f,3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3)); return vec4f(p[i], 0, 1); }
+  @fragment fn fade(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let uv = pos.xy / 64.0; let prev = textureSample(src, smp, uv);
+    let c = vec2f(0.5 + 0.3 * cos(u.step * 0.4), 0.5 + 0.3 * sin(u.step * 0.4));
+    return vec4f(prev.rgb * 0.95 + vec3f(1.0, 0.5, 0.2) * smoothstep(0.12, 0.0, distance(uv, c)), 1.0); }
+  @fragment fn show(@builtin(position) pos: vec4f) -> @location(0) vec4f { return vec4f(textureSample(src, smp, pos.xy / 64.0).rgb, 1.0); }` });
+const bgl = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} }, { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: {} }] });
+const layout = device.createPipelineLayout({ bindGroupLayouts: [bgl] });
+const mk = (entry) => device.createRenderPipeline({ layout, vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: entry, targets: [{ format: 'rgba8unorm' }] } });
+const fade = mk('fade'), show = mk('show');
+const tex = [0, 1].map(() => device.createTexture({ size: [SIZE, SIZE], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
+const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
+const step = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const binds = tex.map((t) => device.createBindGroup({ layout: bgl, entries: [{ binding: 0, resource: t.createView() }, { binding: 1, resource: sampler }, { binding: 2, resource: { buffer: step } }] }));
+// Mount: A is cleared by a pass, B is written from data.
+{
+  const enc = device.createCommandEncoder();
+  enc.beginRenderPass({ colorAttachments: [{ view: tex[0].createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.2, g: 0.1, b: 0.4, a: 1 } }] }).end();
+  device.queue.submit([enc.finish()]);
+  const data = new Uint8Array(SIZE * SIZE * 4);
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) data.set([x * 4, y * 4, 128, 255], (y * SIZE + x) * 4);
+  device.queue.writeTexture({ texture: tex[1] }, data, { bytesPerRow: SIZE * 4 }, [SIZE, SIZE]);
+}
+let n = 0, cur = 0;
+function frame() {
+  device.queue.writeBuffer(step, 0, new Float32Array([n, 0, 0, 0]));
+  const enc = device.createCommandEncoder();
+  const fp = enc.beginRenderPass({ colorAttachments: [{ view: tex[1 - cur].createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+  fp.setPipeline(fade); fp.setBindGroup(0, binds[cur]); fp.draw(3); fp.end();
+  const sp = enc.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+  sp.setPipeline(show); sp.setBindGroup(0, binds[1 - cur]); sp.draw(3); sp.end();
+  device.queue.submit([enc.finish()]);
+  cur = 1 - cur; n++;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></div></body></html>

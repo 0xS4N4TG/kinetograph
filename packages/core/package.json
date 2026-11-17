@@ -166,6 +166,10 @@
       "types": "./dist/determinism-install.d.ts",
       "default": "./dist/determinism-install.js"
     },
+    "./three": {
+      "types": "./dist/three.d.ts",
+      "default": "./dist/three.js"
+    },
     "./web/install": {
       "types": "./dist/web-install.d.ts",
       "default": "./dist/web-install.js"
@@ -190,10 +194,18 @@
     "react-reconciler": "0.34.0"
   },
   "peerDependencies": {
+    "@react-three/fiber": "^9.0.0",
     "react": "^19.3.0",
+    "three": ">=0.160.0",
     "zod": "^4.6.7"
   },
   "peerDependenciesMeta": {
+    "@react-three/fiber": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    },
     "zod": {
       "optional": true
     }

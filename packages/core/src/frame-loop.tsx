@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { pendingFetches, resetCanvasStates } from '@kinetographdev/compat/shim';
+import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, pendingReadbacks, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -33,14 +33,15 @@ import {
   setHistoryMode,
   transitionWindowSeconds,
 } from '@kinetographdev/compat/dom';
-import { DELAY_RENDER_TIMEOUT, rejectRenderWaits, renderFailure, whenRenderIdle, openRenderHandles } from './assets.js';
+import { DELAY_RENDER_TIMEOUT, onlyPageLoadOpen, rejectRenderWaits, renderFailure, renderHandlesMade, whenRenderIdle, openRenderHandles } from './assets.js';
 import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposition } from './compositions.js';
-import { fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
+import { animationFramesQueued, fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
 import { pageAudioNotes, takePageAudioOps } from './page-audio.js';
 import { takePageErrors } from './page-errors.js';
 import { frameReplay, type FrameReplay } from './frame-replay.js';
+import { drawSettled } from './canvas-draws.js';
 import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
 import { takeMediaIssues } from '@kinetographdev/compat/shim';
 
@@ -67,30 +68,68 @@ export interface FrameRenderer {
 
 const tick = () => new Promise<void>((resolve) => realTimers.setImmediate(resolve));
 
-/** Whether something the frame waits for is open: a delayRender handle, a font still loading. */
-const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0;
+/** Whether something the frame waits for is open: a delayRender handle, a font or an image still loading. */
+const heldOpen = (): boolean => openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || loadsSettled() !== seenLoads;
 setHoldProbe(heldOpen);
+
+/**
+ * The loads the frame has run what they set going for. While a load has finished that has not been (`loadsSettled` is
+ * ahead), the frame is held: a Suspense whose texture or model has arrived reveals after React's throttle, a timeout
+ * made once nothing is loading any more, and it is a hold timer then, fired at once (`runAfterLoads`).
+ */
+let seenLoads = 0;
+
+/** Lets React reveal what the loads that finished since `seenLoads` were for. */
+async function runAfterLoads(): Promise<void> {
+  for (let quiet = 0; quiet < 2; ) {
+    await tick();
+    quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+    if (quiet >= 2 && fireHoldTimer()) quiet = 0;
+  }
+  seenLoads = loadsSettled();
+}
 
 /**
  * Resolves when no delayRender handle is open; rejects with the recorded failure.
  *
  * The clock only moves between frames, so a handle whose release waits on a timeout (React holds a revealed Suspense
  * boundary back for 300 ms with `setTimeout`) would wait for ever. The rule: a `setTimeout` made while the frame is held
- * open (`heldOpen`) is a hold timer. When the frame is still held and nothing else is moving (no fetch or font is
+ * open (`heldOpen`) is a hold timer. When the frame is still held and nothing else is moving (no fetch, image or font is
  * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
  * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
  */
-async function whenReleased(): Promise<void> {
+/** Real milliseconds a page-load hold may sit still before the page's callbacks run in it. */
+const PAGE_LOAD_STUCK_MS = 2000;
+
+/** Real time (the project's clocks are the frame's). */
+const realMs = (): number => Number(process.hrtime.bigint() / 1_000_000n);
+
+async function whenReleased(animationFrames = false): Promise<void> {
   let quiet = 0;
+  let quietSince = 0;
+  const stuck = (): boolean => quiet >= 2 && realMs() - quietSince >= PAGE_LOAD_STUCK_MS;
   while (openRenderHandles() > 0) {
     // A waiter for the release; a new one once that has been released and a handle was opened again.
     const idle = whenRenderIdle();
     let released = false;
     idle.then(() => (released = true), () => (released = true));
     while (!released && openRenderHandles() > 0) {
+      // While a handle is open the animation-frame callbacks run as they are asked for, as in a browser, where a page
+      // waiting for its map's `idle` (which a repaint in a frame callback brings) is not stuck. That is not quiet.
+      // While only the page's scripts are loading, the callbacks wait: how many turns of the event loop a read of a file
+      // takes is not the page's clock, and a callback that ran in each of them would move a page that counts them (an
+      // animation that adds to a rotation) by that many frames. A script that waits for a frame itself gets one once
+      // nothing has moved for a while (`PAGE_LOAD_STUCK_MS`), or it would never finish.
+      if (animationFrames && animationFramesQueued() && (!onlyPageLoadOpen() || stuck())) {
+        runAnimationFrames();
+        await tick();
+        quiet = 0;
+        continue;
+      }
       await Promise.race([idle, tick()]);
       if (released) break;
-      quiet = pendingFetches() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+      quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+      if (quiet === 1) quietSince = realMs();
       if (quiet >= 2 && fireHoldTimer()) quiet = 0;
     }
     await idle;
@@ -106,7 +145,13 @@ class Renderer implements FrameRenderer {
   /** The frames whose islands' states are kept, for CSS transitions (compat's history): a continuous run. */
   private trailFrom = -1;
   private trailTo = -1;
+  /** A frame that followed a jump depends on the frames before it through a WebGL render target (`glDependsOnHistory`): a jump renders the frames it skips. */
+  private historyDependent = false;
+  /** The frame a jump landed on without the frames before it drawn, until a frame says the page's GPU state carries (a Dawn page, `dawnDependsOnHistory`): -1 when none. */
+  private unreplayedJump = -1;
   private disposed = false;
+  /** What this renderer's WebGPU pages made (devices, canvases, pictures) and what their frames read of each other: its own on a thread that holds several renderers. */
+  private readonly dawn = createDawnScope();
   /** The `renderFrame` call in progress, the one whose renders the open island pass holds (-1: none), and the frame
    *  being rendered: the frame's own renders and its sub-frames are one pass of the islands' documents (compat/dom). */
   private calls = 0;
@@ -144,14 +189,18 @@ class Renderer implements FrameRenderer {
     this.disposed = true;
     this.scene?.unmount();
     this.scene = null;
+    releaseDawn(this.dawn);
   }
 
   async renderFrame(frame: number): Promise<FrameResult> {
     this.calls += 1;
     this.target = frame;
+    setNetFrame(frame);
+    const leaveDawn = enterDawnScope(this.dawn);
     try {
       return await this.drawFrame(frame);
     } finally {
+      leaveDawn();
       this.closePass();
       this.subFrameLayers = null;
     }
@@ -173,6 +222,7 @@ class Renderer implements FrameRenderer {
     // which brings a new scene up to it; drawing it here first would be thrown away.
     const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
     // React state and virtual timers only move forward. Going back means starting the composition over.
+    if (frame < this.lastFrame) noteDawnRewind();
     if (!replays && (frame < this.lastFrame || this.scene === null)) this.startScene(config);
     if (!sequential) {
       clearHistory();
@@ -192,20 +242,36 @@ class Renderer implements FrameRenderer {
       if (fresh && frame > 0) {
         // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
         // frame looks the same whether the render began there or somewhere later.
-        setVirtualFrame(0, config.fps, { deferAnimationFrames: true });
-        await this.settle(scene, () => this.update(scene, this.element(component, config, 0)));
+        await this.replayFrame(scene, config, component, 0, true);
       }
-      if (gsapIsLoaded()) {
+      if (gsapIsLoaded() || this.historyDependent) {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
         // to run at 30 for a frame after it to show the tween where a render of every frame has it. So a jump renders
         // the frames it skips, with the clock on each, and reads nothing from them.
+        // A WebGL render target a frame makes from what it held before (a trail) is the same, once a frame has shown it
+        // (below): a draw made by a render or an animation-frame callback of a skipped frame is not made unless that
+        // frame is rendered.
         const play = frameReplay();
         for (let at = was + 1; at < frame; at++) {
+          if (play === null) {
+            await this.replayFrame(scene, config, component, at);
+            continue;
+          }
           setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
           // A source that says what its scripts see of a frame is played through that, without rendering the composition.
-          const render = play === null ? () => this.update(scene, this.element(component, config, at)) : () => this.replay(play, at, config);
-          await this.settle(scene, render, true, false);
+          await this.settle(scene, () => this.replay(play, at, config), true, false);
         }
+      } else if (frame - was > 1 && glHoldsTargets()) {
+        // A WebGL render target a frame reads that the frame before wrote is what that frame drew (a ping-pong that swaps
+        // its targets each frame), so the frame before this one is rendered too; the frames before that are stepped.
+        stepAnimationFrames(was + 1, frame - 1, config.fps);
+        setVirtualFrame(frame - 1, config.fps, { deferAnimationFrames: true });
+        await this.settle(scene, () => this.update(scene, this.element(component, config, frame - 1)), true, false);
+      } else if (frame - was > 1 && dawnInUse() && animationFramesQueued()) {
+        // A Dawn page's loop draws what the tree shows (a react-three-fiber `useFrame`: positions from `useCurrentFrame` through a ref the
+        // render sets), and stepping its callbacks alone would run each skipped frame's with the props of the frame before the jump. So each
+        // skipped frame is rendered, and its callbacks run with its own props, as in a render of every frame (nothing is read from it).
+        for (let at = was + 1; at < frame; at++) await this.replayFrame(scene, config, component, at);
       } else {
         // A jump forward gives the animation-frame callbacks the frames it skipped (not rendered), so what is advanced
         // by their time (Motion) shows the same as in a render of every frame.
@@ -214,6 +280,32 @@ class Renderer implements FrameRenderer {
       setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
       setHistoryMode({ record: true });
       main = await this.settle(scene, () => this.update(scene, this.element(component, config, frame)));
+      // A Dawn page whose state carries can show it a frame later than the one a jump landed on (it reads a resource the page made in a frame
+      // the jump skipped, in the frame after): then the frame the jump landed on was drawn without the frames before it, which is said.
+      const late = this.unreplayedJump >= 0 && frame > this.unreplayedJump && dawnDependsOnHistory();
+      if ((frame - was > 1 ? glDependsOnHistory() : late) && !gsapIsLoaded() && !this.historyDependent) {
+        const saidAt = late ? this.unreplayedJump : -1;
+        // The frame makes a target from what it held before, and the frames it skipped were not rendered. A frame can
+        // only be seen to do that by rendering it, so the composition starts over and renders the frames before it
+        // (once: a later jump renders what it skips). A target that no frame writes after frame 0 (an environment map
+        // drawn at mount) never gets here, and the skipped frames of a chunk are not rendered.
+        this.historyDependent = true;
+        this.startScene(config);
+        clearHistory();
+        setHistoryMode({ record: false });
+        const again = this.scene!;
+        for (let at = 0; at < frame; at++) await this.replayFrame(again, config, component, at, at === 0);
+        setVirtualFrame(frame, config.fps, { deferAnimationFrames: true });
+        setHistoryMode({ record: true });
+        main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
+        this.lastFrame = frame;
+        // Said after the replay, whose renders start each from what a render says.
+        if (saidAt >= 0) {
+          reportUnsupported('canvas', 'webgpu', 'device', `the page's GPU state carries from frame to frame, and the jump to frame ${saidAt} drew it without the frames before it: frames ${saidAt} to ${frame - 1} are not what a render of every frame draws`);
+        }
+      }
+      if (this.historyDependent || gsapIsLoaded()) this.unreplayedJump = -1;
+      else if (frame - was > 1 && this.unreplayedJump < 0) this.unreplayedJump = frame;
     }
     // CSS transitions need the states of the islands before this frame (packages/cli/skills/kinetograph-markup/references/ENGINE.md §7.12). A frame has the
     // same history whichever frames were rendered before it: a sequential render keeps what it has seen, anything
@@ -242,15 +334,19 @@ class Renderer implements FrameRenderer {
         main = await this.settle(again, () => this.update(again, this.element(component, config, frame)));
         this.lastFrame = frame;
         this.trailFrom = start;
+        // The frames between 0 and the window were not rendered, so a target the frame makes from what it held before
+        // is not what the page drew. Said in every such frame, as the render of every frame would draw it right.
+        if (start > 1 && (this.historyDependent || glDependsOnHistory())) {
+          reportUnsupported('canvas', 'webgl', 'render target', 'a render target is made from what it held before the frame (a trail) on a page with CSS transitions, whose frames that do not follow the one before are drawn from a replay of the transition window only, so it is not what the page drew');
+        }
       }
     }
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
-    // A video or audio element the engine cannot play as asked (an unreadable file, a rate below 0) or a capture it refuses.
-    for (const what of takeMediaIssues()) reportUnsupported('page', 'media', what, 'the page asked for something media elements cannot do here; it is drawn without');
-    // What the page's audio used that the mix cannot do (page-audio.ts), said on every frame.
-    for (const item of pageAudioNotes()) reportUnsupported('audio', item.property, item.value, item.reason);
-    const reported = reportedUnsupported();
+    for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+    for (const what of takeDawnReports()) reportUnsupported('canvas', 'webgpu', 'device', what);
+    for (const what of takeLoadFailures()) reportUnsupported('page', 'load', what, `a load the page started failed; what needed it is drawn without`);
+    let reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
     const times = collectMotionTimes(main.layers, frame);
     let layers = main.layers;
@@ -259,6 +355,9 @@ class Renderer implements FrameRenderer {
       // The samples share the islands' documents with the frame's own render (compat/dom), and only their blurred
       // layers are read: the rest of each sub-frame's tree is left out.
       this.openPass();
+      // What a sub-frame draws into a WebGL render target is its own: the frame after this one starts from what the
+      // frame's own render left, as it does when the frames before it were rendered without sub-frames.
+      const restoreGl = snapshotGlStates();
       this.subFrameLayers = collectMotionLayers(main.layers, frame);
       for (const time of times) {
         if (time === frame) {
@@ -275,6 +374,13 @@ class Renderer implements FrameRenderer {
         treesAt.set(time, tree.layers);
       }
       this.subFrameLayers = null;
+      // What the sub-frames' recordings left out is said too, each once.
+      for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
+      // A sub-frame runs the page's GPU calls again: what they got wrong is this frame's, not the next one's.
+      for (const what of takeDawnReports()) reportUnsupported('canvas', 'webgpu', 'device', what);
+      const had = new Set(reported.map((item) => JSON.stringify(item)));
+      reported = [...reported, ...reportedUnsupported().filter((item) => !had.has(JSON.stringify(item)))];
+      restoreGl();
       // GSAP goes back to the frame's own time, as the frames after this one expect to find it.
       endGsapSamples();
       // The sub-frames' islands were drawn while the next sub-frames rendered.
@@ -311,6 +417,39 @@ class Renderer implements FrameRenderer {
     scene.update(element);
   }
 
+  /**
+   * Renders a frame the loop does not read (one of those a jump skips, or the frame a new scene starts with) so that the page's state is
+   * what a render of every frame has made of it. With a Dawn page that is also its motion-blur sub-frames: in a render of every frame
+   * each frame's sub-frames run the page's effects at their times, and what the effects draw into the GPU state the page keeps (a
+   * feedback texture) is not undone, as a WebGL render target's is (`snapshotGlStates`). `read` draws the frame's tree, for a frame whose
+   * tree the caller has no use for but whose canvases are read back (the frame a scene starts with, as the loop always has).
+   */
+  private async replayFrame(scene: SceneRoot, config: VideoConfig, component: ResolvedComposition['component'], at: number, read = false): Promise<void> {
+    setVirtualFrame(at, config.fps, { deferAnimationFrames: true });
+    const render = () => this.update(scene, this.element(component, config, at));
+    const tree = read ? await this.settle(scene, render) : await this.settle(scene, render, true, false);
+    if (!dawnInUse()) return;
+    // The sub-frame times come from the layers' `motionBlur`, so the tree is read (a pass of the islands' documents is open for it, as it is for a frame's own).
+    this.openPass();
+    const layers = (tree ?? scene.snapshot()).layers;
+    const times = collectMotionTimes(layers, at).filter((time) => time !== at);
+    if (times.length === 0) return;
+    const restoreGl = snapshotGlStates();
+    this.subFrameLayers = collectMotionLayers(layers, at);
+    try {
+      for (const time of times) {
+        setVirtualFrame(time, config.fps, { seedFrame: at, fireTimers: false });
+        sampleGsapAt(time / config.fps);
+        await this.settle(scene, () => this.update(scene, this.element(component, config, time)), false, false);
+      }
+    } finally {
+      this.subFrameLayers = null;
+      restoreGl();
+      endGsapSamples();
+      setVirtualFrame(at, config.fps, { fireTimers: false });
+    }
+  }
+
   /** `update` for a frame that is played through and not drawn, by what its source says its scripts see (`frame-replay.ts`). */
   private replay(play: FrameReplay, frame: number, config: VideoConfig): void {
     this.rendering = frame;
@@ -335,6 +474,7 @@ class Renderer implements FrameRenderer {
       onError: (error) => rejectRenderWaits(error instanceof Error ? error : new Error(String(error))),
     });
     this.lastFrame = -1;
+    this.unreplayedJump = -1;
     resetVirtualClock({ keepAnimationFrames: true });
   }
 
@@ -394,29 +534,66 @@ class Renderer implements FrameRenderer {
       // `cancelRender` is the better explanation when the code after it went on to fail.
       throw renderFailure() ?? error;
     }
+    seenLoads = loadsSettled();
+    // The callbacks have run for this tick and only the end of GPU reads is left to wait for: they are not run again for it.
+    let ranForReadbacks = false;
     for (;;) {
       await waitForFonts();
       try {
+        await whenReleased(animationFrames);
+
         await whenReleased();
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }
       // Let the state updates that continueRender's callers made reach the reconciler.
       await tick();
-      if (openRenderHandles() === 0 && pendingFontLoads() === 0) break;
-    }
-    // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
-    // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
-    if (animationFrames) {
+      // A script's `<img>` or `new Image()` that has not fired `load` yet holds the frame like a font that is still loading.
+      if (openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0 || pendingFetches() > 0) {
+        if (pendingFetches() > pendingReadbacks() || openRenderHandles() > 0 || pendingFontLoads() > 0 || pendingImageLoads() > 0) ranForReadbacks = false;
+        continue;
+      }
+      // A load finished in this frame: what it was for (a Suspense of the page's own) reveals before the frame is read.
+      if (loadsSettled() !== seenLoads) {
+        ranForReadbacks = false;
+        await runAfterLoads();
+        continue;
+      }
+      if (!animationFrames) {
+        // The 3D canvases draw now that the loads are done; what the draw starts is waited for in turn.
+        if (drawSettled()) continue;
+        break;
+      }
+      // requestAnimationFrame callbacks run once the frame has rendered, as a browser runs them before it paints:
+      // a library that draws in one after being told what to show (Motion's render step) shows this frame, not the one before.
+      if (ranForReadbacks) {
+        ranForReadbacks = false;
+        if (drawSettled()) continue;
+        break;
+      }
+      const made = renderHandlesMade();
       runAnimationFrames();
       // GSAP renders what the frame's own render made (a `from()` is drawn lazily, on the next tick) at the frame's time.
       setGsapTime(virtualNow() / 1000);
       await tick();
-    } else if (read) {
+      // A callback that started work (a map asking its workers for tiles, a fetch) holds the frame as a handle does: wait
+      // for it, and run the callbacks its end asked for, until a pass leaves nothing pending.
+      if (renderHandlesMade() === made && pendingFontLoads() === 0 && pendingImageLoads() === 0 && pendingFetches() === pendingReadbacks()) {
+        // A read of the GPU's results (a timestamp query, a readback) that the callbacks started is waited for, as a browser's frame is
+        // whatever the page awaits, and does not ask for the callbacks again.
+        ranForReadbacks = pendingReadbacks() > 0;
+        if (drawSettled()) continue;
+        if (ranForReadbacks) continue;
+        break;
+      }
+    }
+    if (!animationFrames && read) {
       // A motion-blur sub-frame: what plays on GSAP's root clock is shown at the sub-frame's time (undone after the
       // last one, by `endGsapSamples`).
       sampleGsapAt(virtualNow() / 1000);
     }
+    // A Dawn canvas is read back to pixels once the page has drawn: only a frame that is read pays for it.
+    if (read) await flushDawnCanvases();
     const tree = read ? scene.snapshot() : null;
     const failure = renderFailure();
     if (failure) throw failure;

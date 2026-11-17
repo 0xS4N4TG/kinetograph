@@ -44,8 +44,16 @@ export interface DomAddon {
    * canvas). Does not open the GPU.
    */
   readCanvasPicture?(requestJson: string): Uint8Array | null;
-  /** The engine device's `{ features, limits }` as JSON, for `navigator.gpu`; null without a GPU. Opens the GPU once. */
-  webgpuDeviceInfo?(): string | null;
+  /**
+   * Keeps the read-back of a GPU canvas as bytes, not text (`bytes`: rows of `rowBytes`, RGBA8, or BGRA8 with `bgra`; `alpha` is
+   * `opaque`, `premultiplied` or `straight`) as `version` of the canvas `key`; the commands name it as `{ kind: 'stored', key, version }`.
+   * False, with nothing kept, when the newest version of `key` is the same picture: the caller keeps using that version.
+   */
+  putCanvasPixels?(key: string, version: number, width: number, height: number, rowBytes: number, bgra: boolean, alpha: 'opaque' | 'premultiplied' | 'straight', bytes: Uint8Array): boolean;
+  /** The rows of version `version` of the canvas `key` as `putCanvasPixels` was given them, or null when that version is gone. */
+  getCanvasPixels?(key: string, version: number): Uint8Array | null;
+  /** Forgets every version of the canvas `key` that `putCanvasPixels` kept. */
+  releaseCanvasPixels?(key: string): void;
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
   riveFrame?(requestJson: string): string;
   riveInfo?(requestJson: string): string;

@@ -636,6 +636,11 @@ export type CanvasSource =
   /** Straight-alpha RGBA8, base64: an `ImageData`. */
   | { kind: 'pixels'; width: number; height: number; data: string }
   /**
+   * A picture the host kept in the addon as bytes (`putCanvasPixels`: the read-back of a GPU canvas), by `key` and `version`. The
+   * renderer takes the bytes as they were put, with the alpha and the byte order they were put with.
+   */
+  | { kind: 'stored'; key: string; version: number }
+  /**
    * A picture of a video file: what a `<video>` shows, or a `<Video>` clip shows at a scene frame, at `time` seconds
    * after the file's first picture (SCENE.md "video", rule 5); `end` is where the clip ends, in seconds after the
    * first picture (the stream's end when omitted). This is what `onVideoFrame` hands a project to `drawImage`.
@@ -787,6 +792,38 @@ export interface GlslProgram {
   fragment: string;
   /** Attribute name to location. */
   attributes?: Record<string, number>;
+  /** The uniform blocks (WebGL 2) of the two shaders in GL's block order, laid out as std140. */
+  blocks?: GlslBlock[];
+}
+
+/** A uniform block as the shaders declare it: `layout(std140) uniform name { members } instance;`. */
+export interface GlslBlock {
+  name: string;
+  /** The bytes the members take (`UNIFORM_BLOCK_DATA_SIZE`). */
+  size: number;
+  members: GlslBlockMember[];
+}
+
+export interface GlslBlockMember {
+  name: string;
+  /** A GLSL scalar, vector or matrix type, or the name of a struct (then `fields`). */
+  type: string;
+  /** The array length. */
+  length?: number;
+  /** Bytes from the start of the block, or of the struct element that holds it. */
+  offset: number;
+  /** Bytes between the elements of an array. */
+  stride?: number;
+  /** The members of a struct, with their offsets from the start of an element. */
+  fields?: GlslBlockMember[];
+}
+
+/** The bytes a uniform block read at a draw: a range of a buffer of `buffers`. */
+export interface GlslBlockRange {
+  buffer: string;
+  offset: number;
+  /** The bytes the binding holds from `offset`, of which the block reads its own size. */
+  size: number;
 }
 
 /** A video file's picture at `time` seconds after its first picture. */
@@ -899,8 +936,14 @@ export interface GlslStencil {
 export interface GlslAttribute {
   buffer: string;
   size: number;
-  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32';
+  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32';
   normalized?: boolean;
+  /**
+   * `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`), unconverted.
+   * Without it the shader reads floats: an integer `type` is converted to float, or with `normalized` scaled to 0..1
+   * (-1..1 for a signed type).
+   */
+  integer?: boolean;
   stride?: number;
   offset?: number;
   /** `vertexAttribDivisor`: 1 advances for each instance, `n` for each `n` of them (default 0, for each vertex). */
@@ -965,6 +1008,8 @@ export interface GlslDraw {
   indices?: { buffer: string; type: 'u8' | 'u16' | 'u32'; offset: number };
   attributes: Record<string, GlslAttribute>;
   uniforms: Record<string, GlslUniform[]>;
+  /** The bytes of the program's uniform blocks, by block name: what `bindBufferBase` and `bindBufferRange` bound. */
+  blocks?: Record<string, GlslBlockRange>;
   units: Record<string, GlslSampler>;
   /** `x, y, width, height`, y up from the bottom row. */
   viewport: [number, number, number, number];
@@ -972,6 +1017,10 @@ export interface GlslDraw {
   blend?: GlslBlend;
   colorMask?: [boolean, boolean, boolean, boolean];
   cull?: { face: string; front: string };
+  /** `SAMPLE_ALPHA_TO_COVERAGE` was on: the alpha of the fragment's first output is the share of the samples it covers, when the buffer drawn into is multisampled (it does nothing in one that is not). */
+  alphaToCoverage?: true;
+  /** `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter (else it is incomplete). */
+  floatLinear?: true;
   /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */
@@ -1082,12 +1131,25 @@ export interface WebGpuTarget {
   writeMask?: number;
 }
 
+/** A render pipeline's `depthStencil` (depth only: the stencil is left alone, which is its default). */
+export interface WebGpuDepthState {
+  format: string;
+  /** `depthWriteEnabled`; false when left out. */
+  write?: boolean;
+  /** `depthCompare`; `always` when left out. */
+  compare?: string;
+  bias?: number;
+  biasSlopeScale?: number;
+  biasClamp?: number;
+}
+
 export interface WebGpuPipeline {
   /** The ids of the bind group layouts (`WebGpuContent.layouts`); omitted for `layout: 'auto'`. */
   layout?: string[];
   vertex: { module: string; entryPoint?: string; buffers: WebGpuVertexLayout[] };
   fragment?: { module: string; entryPoint?: string; targets: (WebGpuTarget | null)[] };
   primitive: { topology: string; stripIndexFormat?: string; frontFace: string; cullMode: string };
+  depth?: WebGpuDepthState;
   /** `multisample.count`; 1 when left out. */
   samples?: number;
 }
@@ -1103,9 +1165,11 @@ export interface WebGpuBindingLayout {
   /** Of a `storage-texture`: the format the shader declares. */
   format?: string;
   /** Of a `texture`: `float` when left out. */
-  sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint';
+  sampleType?: 'float' | 'unfilterable-float' | 'sint' | 'uint' | 'depth';
+  /** Of a `texture`: `2d-array`, `cube`, `cube-array` or `3d` for those bindings; `2d` when left out. Of a `storage-texture`: `3d` or `2d`. */
+  viewDimension?: '2d-array' | 'cube' | 'cube-array' | '3d';
   /** Of a `sampler`: `filtering` when left out. */
-  samplerType?: 'filtering' | 'non-filtering';
+  samplerType?: 'filtering' | 'non-filtering' | 'comparison';
 }
 
 /** `levels` mip levels of a texture, from `baseMip`. */
@@ -1113,6 +1177,12 @@ export interface WebGpuTextureView {
   id: string;
   baseMip: number;
   mips: number;
+  /** The first array layer of the view; 0 when left out. */
+  baseLayer?: number;
+  /** The array layers of a `2d-array`, `cube` (six) or `cube-array` view; 1 when left out. */
+  layers?: number;
+  /** `2d-array` for a view of an array, `cube` or `cube-array` for a cube map's six layers; `2d` (one layer) when left out. */
+  dimension?: '2d-array' | 'cube' | 'cube-array' | '3d';
 }
 
 export type WebGpuBindEntry =
@@ -1126,10 +1196,14 @@ export interface WebGpuBindGroup {
   entries: WebGpuBindEntry[];
 }
 
-/** A 2D texture. The recording never holds its contents: the steps that wrote it do. */
+/** A 2D texture, or an array of them. The recording never holds its contents: the steps that wrote it do. */
 export interface WebGpuTexture {
   width: number;
   height: number;
+  /** The array layers (`depthOrArrayLayers`), or the depth of a 3d texture; 1 when left out. */
+  layers?: number;
+  /** `3d` for a 3d texture (its layers are slices, halving with each level); a 2d texture when left out. */
+  dimension?: '3d';
   mips: number;
   format: string;
   /** 4 for a multisampled texture (a pass draws into it and resolves it into another); 1 when left out. */
@@ -1146,6 +1220,8 @@ export interface WebGpuSampler {
   lodMinClamp?: number;
   lodMaxClamp?: number;
   maxAnisotropy?: number;
+  /** `compare` of a comparison sampler (a shadow map's). */
+  compare?: string;
 }
 
 /** A compute pipeline: `layout` is the ids of the bind group layouts, left out for `layout: 'auto'`. */
@@ -1162,25 +1238,36 @@ export type WebGpuCommand =
   | { c: 'index'; buffer: string; format: string; offset: number; size?: number }
   | { c: 'draw'; vertices: number; instances: number; first: number; firstInstance: number }
   | { c: 'drawIndexed'; indices: number; instances: number; first: number; base: number; firstInstance: number }
+  /** An indirect draw whose arguments a pass wrote: `buffer` is a key of `gpuBuffers`. (Arguments the CPU knows are recorded as `draw`.) */
+  | { c: 'drawIndirect'; buffer: string; offset: number }
+  | { c: 'drawIndexedIndirect'; buffer: string; offset: number }
   | { c: 'viewport'; x: number; y: number; width: number; height: number; minDepth: number; maxDepth: number }
   | { c: 'scissor'; x: number; y: number; width: number; height: number }
   | { c: 'blend'; color: [number, number, number, number] };
 
 export interface WebGpuPass {
   k: 'render';
-  /** A level of the texture drawn into; the canvas when left out. */
-  target?: { texture: string; mip: number };
+  /** A level (and array layer, 0 when left out) of the texture drawn into; the canvas when left out. */
+  target?: { texture: string; mip: number; layer?: number };
   /** A multisampled `target` resolves into this level of another texture when the pass ends. */
-  resolve?: { texture: string; mip: number };
+  resolve?: { texture: string; mip: number; layer?: number };
   /** The clear colour, or null for `loadOp: 'load'`. */
   clear: [number, number, number, number] | null;
+  /** The colour attachments after the first (several colour attachments), each of the first one's size, with its own clear and resolve target. */
+  more?: { texture: string; mip: number; layer?: number; clear: [number, number, number, number] | null; resolve?: { texture: string; mip: number; layer?: number } }[];
+  /** The depth attachment: a level of a depth texture the same size as the target, cleared to `clear` (null: `loadOp: 'load'`). */
+  depth?: { texture: string; mip: number; layer?: number; clear: number | null; readOnly?: boolean };
+  /** A pass with no colour attachment (no `target`, and not the canvas): it only writes `depth`. */
+  depthOnly?: true;
   commands: WebGpuCommand[];
 }
 
 export type WebGpuComputeCommand =
   | { c: 'pipeline'; id: string }
   | { c: 'bind'; index: number; group: string; offsets?: number[] }
-  | { c: 'dispatch'; x: number; y: number; z: number };
+  | { c: 'dispatch'; x: number; y: number; z: number }
+  /** A dispatch whose counts a pass wrote: `buffer` is a key of `gpuBuffers`. (Counts the CPU knows are recorded as `dispatch`.) */
+  | { c: 'dispatchIndirect'; buffer: string; offset: number };
 
 /** A compute pass: it writes the storage textures and storage buffers its bind groups hold. */
 export interface WebGpuCompute {
@@ -1231,6 +1318,8 @@ export interface WebGpuUpload {
   k: 'upload';
   texture: string;
   mip?: number;
+  /** The array layer written; 0 when left out. */
+  layer?: number;
   x: number;
   y: number;
   width: number;
@@ -1244,8 +1333,8 @@ export interface WebGpuUpload {
 
 export interface WebGpuCopy {
   k: 'copy';
-  from: { texture: string; mip?: number; x: number; y: number };
-  to: { texture: string; mip?: number; x: number; y: number };
+  from: { texture: string; mip?: number; layer?: number; x: number; y: number };
+  to: { texture: string; mip?: number; layer?: number; x: number; y: number };
   width: number;
   height: number;
 }
@@ -1278,6 +1367,8 @@ export interface WebGpuContent {
   passes: WebGpuStep[];
   /** Calls the engine does not draw; the frame reports each. */
   notes?: string[];
+  /** The invalid calls the page made, which threw in it: reported, though a page that caught the error may carry on. */
+  errors?: string[];
   /** What the frame reads that earlier frames made (state a page carries), so that the frame is not the same alone as in a sequence. */
   impure?: string[];
   /** The canvas's `format` when it is `rgba16float` (drawn at half-float precision); 8-bit otherwise. */

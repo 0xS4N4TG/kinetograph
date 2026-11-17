@@ -33,7 +33,7 @@
 // that arrived) is emitted and read again.
 
 import { createContext, useContext, useEffect, useId, useReducer, useRef, type CSSProperties, type ReactNode } from 'react';
-import { canvasEnvironment, LayerPicturesNotReady, rasterizeCanvas, setLayerPictures, webgpuDeviceInfo, type LayerPictures } from '@kinetographdev/compat/shim';
+import { canvasEnvironment, LayerPicturesNotReady, rasterizeCanvas, setLayerPictures, type LayerPictures } from '@kinetographdev/compat/shim';
 import { emitLayerOf, Layer, TimelineContext, type EmittedLayer } from '@kinetographdev/react';
 import {
   createCanvasContext,
@@ -87,7 +87,7 @@ export class RecordingCanvas {
 
   /** The recording device of a WebGPU effect (`gpuDevice` of `apply`): one for the canvas, made on first use. */
   gpuDevice(): GPUDeviceShim {
-    return (this.device ??= new GPUDeviceShim({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }));
+    return (this.device ??= new GPUDeviceShim({ rasterize: rasterizeCanvas }));
   }
 
   getContext(type: string, attributes?: Record<string, unknown>): CanvasContext2D | WebGLContext | GPUCanvasContextShim | null {

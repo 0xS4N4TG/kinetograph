@@ -2299,17 +2299,6 @@ async fn new_gpu() -> std::result::Result<(wgpu::Instance, wgpu::Device, wgpu::Q
     Err(why)
 }
 
-/// The limits and WebGPU features of the device a render opens, as `navigator.gpu` reports them (`webgpu::device_info`),
-/// as JSON; none when there is no GPU. The device is opened once to read them and dropped.
-pub fn webgpu_device_info() -> Option<String> {
-    static INFO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    INFO.get_or_init(|| {
-        let (_instance, device, _queue) = pollster::block_on(new_gpu()).ok()?;
-        Some(crate::webgpu::device_info(&device).to_string())
-    })
-    .clone()
-}
-
 /// One adapter as a line of the start-up trace.
 fn adapter_line(info: &wgpu::AdapterInfo) -> String {
     format!(
@@ -2345,6 +2334,8 @@ async fn new_device(instance: &wgpu::Instance, backends: wgpu::Backends) -> std:
     let features = adapter.features() & wanted;
     let limits = wgpu::Limits {
         max_vertex_buffers: adapter.limits().max_vertex_buffers.min(16),
+        // WebGL 2 blocks, each its own uniform buffer: 12 a stage, and the loose uniforms' one besides.
+        max_uniform_buffers_per_shader_stage: adapter.limits().max_uniform_buffers_per_shader_stage.min(16),
         ..wgpu::Limits::default()
     };
     trace::start("request-device", format_args!("features={features:?} max_vertex_buffers={} other limits default", limits.max_vertex_buffers));

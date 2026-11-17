@@ -3,7 +3,8 @@
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
 import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, setRemoteStylesheetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
-import { installDomGlobals, setCanvasFonts, setMediaHost, setPathMeasure } from '@kinetographdev/compat/shim';
+import { installDomGlobals, setCanvasFonts, setMediaHost, setPathMeasure, setWorkerHold } from '@kinetographdev/compat/shim';
+import { continueRender, delayRender } from './assets.js';
 import { installPageAudio, mediaHost } from './page-audio.js';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
@@ -44,6 +45,11 @@ export function registerCssFontFace(face: CssFontFace): void {
 }
 
 installDomGlobals();
+// A frame waits for the messages a worker or a MessageChannel still has in flight, as for any other `delayRender`.
+setWorkerHold(() => {
+  const handle = delayRender('worker messages');
+  return () => continueRender(handle);
+});
 // A page's `AudioContext` and `<audio>` play on the virtual clock and reach the soundtrack (page-audio.ts).
 installPageAudio();
 setMediaHost(mediaHost);
