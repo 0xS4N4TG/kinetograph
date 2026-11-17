@@ -215,6 +215,7 @@ jobs:
 
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 40
         env:
           KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
