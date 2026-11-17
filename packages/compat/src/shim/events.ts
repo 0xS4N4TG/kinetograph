@@ -162,6 +162,39 @@ export class WheelEventShim extends MouseEventShim {
   }
 }
 
+export interface KeyboardEventInit extends UIEventInit {
+  key?: string;
+  code?: string;
+  location?: number;
+  repeat?: boolean;
+  ctrlKey?: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+}
+
+export class KeyboardEventShim extends UIEventShim {
+  readonly key: string;
+  readonly code: string;
+  readonly location: number;
+  readonly repeat: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+  constructor(type: string, init: KeyboardEventInit = {}) {
+    super(type, init);
+    this.key = init.key ?? '';
+    this.code = init.code ?? '';
+    this.location = init.location ?? 0;
+    this.repeat = init.repeat ?? false;
+    this.ctrlKey = init.ctrlKey ?? false;
+    this.shiftKey = init.shiftKey ?? false;
+    this.altKey = init.altKey ?? false;
+    this.metaKey = init.metaKey ?? false;
+  }
+}
+
 export interface ProgressEventInit extends EventInit {
   lengthComputable?: boolean;
   loaded?: number;

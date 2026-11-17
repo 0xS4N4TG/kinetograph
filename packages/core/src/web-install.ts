@@ -3,8 +3,9 @@
 // `getComputedStyle`), `@font-face` rules of imported stylesheets, and SVG measurement.
 
 import { hasAddonFunction, measureSpan, noteStylesheetProblem, resolveProjectFile, setCssFontFaceHandler, setRemoteAssetResolver, setRemoteStylesheetResolver, type CssFontFace } from '@kinetographdev/compat/dom';
-import { installDomGlobals, setCanvasFonts, setPathMeasure, setWorkerHold } from '@kinetographdev/compat/shim';
+import { installDomGlobals, setCanvasFonts, setMediaHost, setPathMeasure, setWorkerHold } from '@kinetographdev/compat/shim';
 import { continueRender, delayRender } from './assets.js';
+import { installPageAudio, mediaHost } from './page-audio.js';
 import { addFace, NodeFontFace } from './font-face.js';
 import { getFonts, setFontProblemHandler } from './font-registry.js';
 import { setDomTextMeasure } from './layout-utils.js';
@@ -49,6 +50,9 @@ setWorkerHold(() => {
   const handle = delayRender('worker messages');
   return () => continueRender(handle);
 });
+// A page's `AudioContext` and `<audio>` play on the virtual clock and reach the soundtrack (page-audio.ts).
+installPageAudio();
+setMediaHost(mediaHost);
 setCssFontFaceHandler(registerCssFontFace);
 // A font that could not be had is a note in `doctor` and `lint`, like a stylesheet that could not be built.
 setFontProblemHandler(noteStylesheetProblem);

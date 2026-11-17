@@ -18,6 +18,7 @@ import {
   collectMotionLayers,
   collectMotionTimes,
   type AudioClipJson,
+  type PageAudioOp,
   type LayerJson,
   type SceneJson,
   type SequenceJson,
@@ -37,14 +38,18 @@ import { isRemotionPage, resolveComposition, setInputProps, type ResolvedComposi
 import { animationFramesQueued, fireHoldTimer, realTimers, resetVirtualClock, runAnimationFrames, setHoldProbe, setVirtualFrame, stepAnimationFrames, virtualNow } from './determinism.js';
 import { getFonts, pendingFontLoads, waitForFonts } from './font-registry.js';
 import { endGsapSamples, gsapIsLoaded, sampleGsapAt, setGsapTime } from './gsap-clock.js';
+import { pageAudioNotes, takePageAudioOps } from './page-audio.js';
 import { takePageErrors } from './page-errors.js';
 import { frameReplay, type FrameReplay } from './frame-replay.js';
 import { drawSettled } from './canvas-draws.js';
 import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
+import { takeMediaIssues } from '@kinetographdev/compat/shim';
 
 export interface FrameResult {
   scene: SceneJson;
   audio: AudioClipJson[];
+  /** What the page did with its `AudioContext` since the last frame returned (the calls of the frames it played on the way too). */
+  pageAudio: PageAudioOp[];
   /** Every `<Sequence>` in the frame's tree, showing or not (packages/cli/skills/kinetograph-markup/references/AUTHORING.md §11.4). */
   sequences: SequenceJson[];
   /** Layer id to name and source; studio builds only. */
@@ -399,7 +404,7 @@ class Renderer implements FrameRenderer {
     // The scene's margin is the largest of the composition's and what the DOM islands' blurs need.
     const needed = Math.max(margin ?? 0, main.margin ?? 0);
     if (margin !== undefined || needed > 0) sceneJson.margin = needed;
-    return { scene: sceneJson, audio: main.audio, sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
+    return { scene: sceneJson, audio: main.audio, pageAudio: takePageAudioOps(), sequences: main.sequences, ...(main.names !== undefined ? { names: main.names } : {}), unsupported: [...main.unsupported, ...reported, ...takePageErrors()] };
   }
 
   /** Renders `element`; a canvas redrawn by it starts from a new canvas's state (see `resetCanvasStates`). */
@@ -536,6 +541,8 @@ class Renderer implements FrameRenderer {
       await waitForFonts();
       try {
         await whenReleased(animationFrames);
+
+        await whenReleased();
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }

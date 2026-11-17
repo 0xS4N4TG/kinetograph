@@ -96,6 +96,7 @@ describe('syntheticEntry', () => {
       `export { setWorkerModuleLoader } from '@kinetographdev/compat/shim';`,
       `export { setDomAddon, setDomEnvironment, stylesheetNotes } from '@kinetographdev/compat/dom';`,
       `export { finishNetRecord, setNetFrame, setNetStore, whenFetchesSettle } from '@kinetographdev/compat/shim';`,
+      `export { parsePageInput, setPageInput } from '@kinetographdev/compat/shim';`,
     ]);
   });
 });
