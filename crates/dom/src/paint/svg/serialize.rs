@@ -467,6 +467,9 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
     let string = |s: &style::properties::ComputedValues, l: LonghandId| {
         s.computed_value_to_string(PropertyDeclarationId::Longhand(l))
     };
+    // usvg is also given the page's stylesheets, so a rule's static value (`.bar { opacity: 0 }`) reaches the element
+    // there, and an animation that ends on the initial or inherited value (`to { opacity: 1 }`, `forwards`) would be
+    // left out as "nothing to say" and lose to it. What an animation sets is written whatever it is.
     let mut out = Vec::new();
     for (name, longhand, inherits, initial) in CASCADED {
         let font = name.starts_with("font-");
@@ -501,8 +504,9 @@ fn cascaded(doc: &BaseDocument, id: NodeId, root: bool) -> Vec<(String, String, 
         if name == "display" && value != "none" {
             continue;
         }
-        if differs || from_html {
-            out.push((name.to_string(), value, differs));
+        let animated_here = !root && doc.animates(id, longhand);
+        if differs || from_html || animated_here {
+            out.push((name.to_string(), value, differs || animated_here));
         }
     }
     out
