@@ -202,7 +202,8 @@ jobs:
           KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}/angle-swiftshader
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
@@ -210,8 +211,9 @@ jobs:
           KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
       # ANGLE on the Mac's own GPU through Metal, from the very files the package ships. Its goldens were recorded on an
       # M4; this runner's (virtual) GPU may round differently, so a failure here does not fail the build until a run has
@@ -222,7 +224,8 @@ jobs:
         env:
           KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_DIR: ${{ github.workspace }}/crates/node/npm/${{ matrix.platform }}/angle
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --test webgl -- --nocapture
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
       # ONNX Runtime for the BEN2 step: Microsoft's CPU release, the version and SHA-256 that
       # packages/video-matting/src/registry.ts pins (users get it from the same release on the first use of matting). Its
