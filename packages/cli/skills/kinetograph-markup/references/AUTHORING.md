@@ -1112,6 +1112,13 @@ the range with `time = (frame - first) / fps`, plays each clip (decoded with `de
 loop and a gain stepped per frame, and returns the mix. Loudness follows ITU-R BS.1770-4 (K-weighting, gating) and
 true peak uses 4x oversampling.
 
+An HTML page's own Web Audio (`new AudioContext()`, `new Audio(src).play()`, `<audio>.play()` through `createMediaElementSource`)
+is recorded on the virtual clock (`currentTime` is `frame / fps`, the context is `running` with no gesture) and replayed into the
+mix by `renderAudio({ pageAudio })`, so the soundtrack is the same at any worker count. An `AnalyserNode`'s data at a frame is worked
+out from the sources and gains ahead of it (a panner's distance and cone gain too) with the spec's windowed FFT and smoothing
+over the frames before. A buffer the page writes itself, a `ScriptProcessor`, `WaveShaper`, `Convolver`, `AudioWorklet` or a stream
+source is reported as unsupported (`--strict` fails), never played as silence. A page that waits on a click needs `--input` (§9).
+
 ## 9. `kinetograph` CLI and MCP
 
 `npx kinetograph <command> <entry> …`; `<entry>` is a project file (`.tsx`, `.ts`, `.jsx`, `.js`) or a `.json` scene.
@@ -1119,6 +1126,8 @@ Every command takes `--json` (one JSON object on stdout; errors as `{ "error": {
 1), `--comp <id>` (default: the first composition) and `--props <json>`. `-o` is optional on `still`, `render`, `strip` and `onion`:
 without it they write to `out/stills/<comp>-f<frame>.png`, `out/renders/<comp>.<ext>` (`mp4`; `mov`, `webm`, `gif` for `--codec prores`, `vp9`, `gif`),
 `out/sheets/<comp>-strip.png` and `out/sheets/<comp>-onion.png`, under the folder of the nearest `package.json` at or above the entry (else the entry's folder).
+An HTML page that starts on a click ("Play") draws nothing, and `doctor` says it waits for a user gesture: `--input '[{"frame":0,"type":"click","selector":"#start"}]'`
+(or a JSON file) sends pointer, mouse, key and wheel events (`frame`, `type`, optional `selector`, `x`, `y`, `key`) on the virtual clock, bubbling, before that frame's animation-frame callbacks.
 
 | Command | Does |
 |---|---|

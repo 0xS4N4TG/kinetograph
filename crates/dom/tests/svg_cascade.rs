@@ -475,3 +475,69 @@ fn clip_path_from_the_cascade_applies() {
         "{clipped}"
     );
 }
+
+/// The page of `page`, with the rect's class `bar` and `rule` for it, at `time`.
+fn bar_at(rule: &str, time: f64) -> IslandOutput {
+    bar_with(rule, json!({}), time)
+}
+
+/// `bar_at`, the rect also having the presentation attributes `attrs`.
+fn bar_with(rule: &str, attrs: Value, time: f64) -> IslandOutput {
+    let sheet = format!(
+        "@keyframes fade {{ from {{ opacity: 0 }} to {{ opacity: 1 }} }}
+         @keyframes ink {{ from {{ fill: #ff0000 }} to {{ fill: #000000 }} }}
+         @keyframes thin {{ from {{ stroke-width: 8px }} to {{ stroke-width: 1px }} }}
+         @keyframes home {{ from {{ transform: translate(50px, 0) }} to {{ transform: none }} }}
+         .bar {{ {rule} }}"
+    );
+    let mut rect = json!({ "class": "bar" });
+    rect.as_object_mut().unwrap().extend(attrs.as_object().unwrap().clone());
+    let mut req = page(&sheet, json!({}), "", rect, json!({}));
+    req["time"] = json!(time);
+    paint(&req)
+}
+
+/// A property an animation ends on, and the rule's static value for it is another: the animation wins after its end
+/// (`forwards`), also when its end value is the one the property starts with (usvg is given the page's rules too, so
+/// the static value would come back).
+#[test]
+fn an_animation_that_ends_on_an_initial_value_keeps_it_on_an_svg_shape() {
+    // opacity: the property's initial value is 1.
+    for t in [3.0, 1.0] {
+        let out = bar_at("opacity: 0; animation: fade 1s linear forwards", t);
+        assert!(
+            !json_of(&out).contains("\"opacity\""),
+            "t={t}: {}",
+            json_of(&out)
+        );
+    }
+    // The same with `both`, and with a delay (the animation has ended at 3 s).
+    let out = bar_at("opacity: 0; animation: fade 1s linear 1s both", 3.0);
+    assert!(!json_of(&out).contains("\"opacity\""));
+    // Before the delay, `both` holds the first keyframe, and `forwards` the rule.
+    let out = bar_at("opacity: 0; animation: fade 1s linear 1s both", 0.5);
+    assert!(json_of(&out).contains("\"opacity\":0.0"));
+    // Without a fill mode the rule applies again after the end.
+    let out = bar_at("opacity: 0; animation: fade 1s linear", 3.0);
+    assert!(json_of(&out).contains("\"opacity\":0.0"));
+    // fill: black is the initial value.
+    let out = bar_at("fill: #00f; animation: ink 1s linear forwards", 3.0);
+    assert_eq!(shapes(&out)[0]["fill"], "#000000ff");
+    // stroke-width: 1px is the initial value.
+    let out = bar_at(
+        "stroke: #f00; stroke-width: 4px; animation: thin 1s linear forwards",
+        3.0,
+    );
+    assert_eq!(shapes(&out)[0]["stroke"]["width"], 1.0);
+    // transform: none is the initial value; the shape is where it is drawn untransformed.
+    let moved = bar_at("transform: translate(30px, 0); animation: home 1s linear forwards", 3.0);
+    let plain = bar_at("", 3.0);
+    assert_eq!(shapes(&moved)[0]["shape"], shapes(&plain)[0]["shape"]);
+    assert_eq!(json_of(&moved), json_of(&plain));
+    // What an animation does not set stays with the presentation attribute: `fill="none"` is not undone by an animation of
+    // the opacity, and the animated opacity beats an `opacity` attribute.
+    let out = bar_with("animation: fade 1s linear forwards", json!({ "fill": "none", "stroke": "#ff0000" }), 3.0);
+    assert!(shapes(&out)[0]["fill"].is_null(), "{:?}", shapes(&out)[0]);
+    let out = bar_with("animation: fade 1s linear forwards", json!({ "opacity": "0" }), 3.0);
+    assert!(!json_of(&out).contains("\"opacity\""));
+}

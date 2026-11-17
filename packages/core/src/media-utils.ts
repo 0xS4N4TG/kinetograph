@@ -235,7 +235,7 @@ export async function getAudioDurationInSeconds(src: string): Promise<number> {
 }
 
 /** In-place radix-2 FFT; `re.length` is a power of two. */
-function fft(re: Float64Array, im: Float64Array): void {
+export function fftInPlace(re: Float64Array, im: Float64Array): void {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
@@ -335,7 +335,7 @@ function spectrumAt(audioData: MediaUtilsAudioData, seconds: number, numberOfSam
   const end = Math.min(waveform.length, start + size);
   // The samples go into 16-bit integers, which drop what is after the point and wrap what is past full scale.
   for (let i = start; i < end; i++) re[i - start] = (Math.trunc(Math.fround(toInt16(waveform[i]!))) << 16) >> 16;
-  fft(re, im);
+  fftInPlace(re, im);
   const magnitudes: number[] = [];
   for (let k = 0; k < numberOfSamples; k++) magnitudes.push(Math.hypot(re[k]!, im[k]!));
   const peak = peakOf(waveform);

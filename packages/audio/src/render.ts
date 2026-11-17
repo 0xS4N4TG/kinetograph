@@ -3,7 +3,9 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AudioBuffer, OfflineAudioContext } from 'node-web-audio-api';
+import type { PageAudioOp } from '@kinetographdev/scene';
 import type { AudioClipTimeline } from './clips.js';
+import { scheduleGraph } from './page-graph.js';
 import { shiftPitch } from './pitch.js';
 import { registeredCallbacks } from './registry.js';
 import { parseFxChain, type FxChain } from './hf-fx/chain.js';
@@ -33,6 +35,8 @@ export async function renderAudio(options: {
   last: number;
   sampleRate?: number;
   clips: AudioClipTimeline[];
+  /** What the page did with its `AudioContext`, replayed into the mix (the calls of every frame, in one list). */
+  pageAudio?: PageAudioOp[];
   baseDir?: string;
   /** Decodes the sound of `video: true` clips; default: the addon's `decodeAudio` (tests pass a stub). */
   decodeAudio?: DecodeAudio;
@@ -72,7 +76,16 @@ export async function renderAudio(options: {
     if (buffer) scheduleClip(ctx, buffer, clip, { fps, first, last, timeOf });
   }
 
+  const graph =
+    options.pageAudio && options.pageAudio.length > 0
+      ? await scheduleGraph(ctx, options.pageAudio, { fps, first, sampleRate, loadFile: (path) => decode(ctx, path, options.baseDir, options.decodeAudio) })
+      : null;
   const rendered = await ctx.startRendering();
+  if (graph) {
+    await graph.done;
+    // A call the mix could not make (a node it lacks) is said, not left as silence.
+    for (const problem of graph.problems) console.warn(`page audio: ${problem}`);
+  }
   const channels: Float32Array[] = [];
   for (let c = 0; c < rendered.numberOfChannels; c++) channels.push(rendered.getChannelData(c));
   if (fx.tracks.length > 0 || fx.master !== null) await mixHfFx(fx, channels, { fps, first, last, sampleRate, load });

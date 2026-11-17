@@ -3,7 +3,7 @@
 
 import { parentPort, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
-import type { SceneJson, Unsupported, AudioClipJson } from '@kinetographdev/scene';
+import type { SceneJson, Unsupported, AudioClipJson, PageAudioOp } from '@kinetographdev/scene';
 import { setPreferredEffectBackend } from './effects.js';
 import { usesGpuYuv } from './gpu-yuv.js';
 import { encodeFrame, type ImageFormat } from './image-sequence.js';
@@ -53,6 +53,7 @@ export type FromWorker =
       frame: number;
       data: ArrayBuffer;
       audio: AudioClipJson[];
+      pageAudio: PageAudioOp[];
       unsupported: Unsupported[];
       repeated: boolean;
       busyMs: number;
@@ -73,7 +74,7 @@ setPreferredEffectBackend(preferredEffectBackend);
 process.env.NODE_ENV = devReact ? 'development' : 'production';
 
 try {
-  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, bundleFile: spec.bundleFile, prefetch: false });
+  const source = await openSource(spec.entry, { comp: spec.comp, props: spec.props, input: spec.input, bundleFile: spec.bundleFile, prefetch: false });
   source.clearArtifacts?.();
   const renderer = new (native().Renderer)();
   let init: WorkerInit | undefined;
@@ -143,7 +144,7 @@ try {
       mark = at;
       const waited = renderer.takeGpuWaitMs();
       const gpuWaitMs = busyMs > 0 ? waited : 0;
-      post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: drawn.repeated, busyMs, gpuWaitMs }, [data]);
+      post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio ?? [], unsupported: out.unsupported ?? [], repeated: drawn.repeated, busyMs, gpuWaitMs }, [data]);
       if (log && row) {
         const t3 = now();
         log.add({ ...row, finish: t1 - t0, yuv: t2 - t1, post: t3 - t2, t3, ...takeAddon() });
@@ -169,7 +170,7 @@ try {
       if (sequence) {
         // An image file per frame is drawn and encoded whole here, with no frame in flight.
         const data = copy(encodeFrame(renderer, sequence, sceneJson, frame, source.baseDir));
-        post({ type: 'frame', frame: index, data, audio: out.audio, unsupported: out.unsupported ?? [], repeated: false, busyMs: 0, gpuWaitMs: 0 }, [data]);
+        post({ type: 'frame', frame: index, data, audio: out.audio, pageAudio: out.pageAudio ?? [], unsupported: out.unsupported ?? [], repeated: false, busyMs: 0, gpuWaitMs: 0 }, [data]);
         continue;
       }
       // The frame before is collected first: its start ran on the addon's own thread while this frame's JS did, and

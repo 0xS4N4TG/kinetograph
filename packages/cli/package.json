@@ -57,6 +57,8 @@
     "esbuild": "0.28.2",
     "parse5": "8.0.1",
     "postcss": "8.5.30",
+    "react": "19.3.1",
+    "react-reconciler": "0.34.0",
     "typescript": "5.9.3",
     "zod": "4.6.7"
   },
