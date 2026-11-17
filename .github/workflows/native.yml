@@ -142,13 +142,18 @@ jobs:
           head -c 115200 /dev/zero | "$d"/ffmpeg* -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 160x120 -framerate 30 -i pipe:0 -c:v libx264 -f mp4 "$RUNNER_TEMP/probe.mp4"
           test -s "$RUNNER_TEMP/probe.mp4"
 
-      # ANGLE (the OpenGL ES library WebGL pages run on with KINETOGRAPH_WEBGL=angle) for the platform package's angle/
+      # ANGLE (the OpenGL ES library WebGL pages run on by default) for the platform package's angle/
       # folder, where the addon finds it and npm packs it from (ignored by the repository). The source is the one
-      # DEFAULT_SOURCE in scripts/fetch-angle.mjs names; every file is checked against a SHA-256 pinned there.
+      # DEFAULT_SOURCE in scripts/fetch-angle.mjs names; every file is checked against a SHA-256 pinned there. Linux and
+      # Windows packages also hold SwiftShader (and the Vulkan loader) for servers with no GPU; macOS always has Metal.
       - name: Fetch ANGLE for the platform package
         shell: bash
         run: |
-          node scripts/fetch-angle.mjs ${{ matrix.platform }}
+          if [ "$RUNNER_OS" = macOS ]; then
+            node scripts/fetch-angle.mjs ${{ matrix.platform }}
+          else
+            node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader
+          fi
           ls -l crates/node/npm/${{ matrix.platform }}/angle
 
       - run: npm ci
@@ -187,7 +192,7 @@ jobs:
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
-      # WebGL through ANGLE (crates/dom/tests/webgl.rs, KINETOGRAPH_WEBGL=angle) on ANGLE's SwiftShader backend, the CPU
+      # WebGL through ANGLE (crates/dom/tests/webgl.rs) on ANGLE's SwiftShader backend, the CPU
       # rasteriser: these runners have no GPU. SwiftShader is not in the platform package (the files are 6 to 21 MB and the
       # package does not ship them), so they come from our ANGLE release into a folder of their own. There is no Chrome
       # here, so a case is held to "drew without an unsupported call"; ANGLE's goldens are Metal's (tests/golden/angle)

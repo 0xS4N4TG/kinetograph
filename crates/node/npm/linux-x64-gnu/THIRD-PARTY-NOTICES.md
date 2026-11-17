@@ -76,13 +76,13 @@ GPL text is `COPYING.GPLv2`.
 ## ANGLE (BSD-3-Clause), the `angle/` folder
 
 Not part of the addon and not linked into it: `angle/` holds Google's ANGLE, the OpenGL ES library that runs WebGL
-pages when `KINETOGRAPH_WEBGL=angle` is set. The addon opens `libEGL` and `libGLESv2` from this folder at run time, by
-full path, and only then. They are the unchanged files of Chrome for Testing 150.0.7871.124 (`chrome-headless-shell`),
-checked against SHA-256 values by `scripts/fetch-angle.mjs` in <https://github.com/0xS4N4TG/kinetograph>;
+pages by default (`KINETOGRAPH_WEBGL=builtin` turns it off). The addon opens `libEGL` and `libGLESv2` from this folder at run time, by
+full path, and only then. They are the unchanged files of Chrome for Testing 150.0.7871.124 (`chrome-headless-shell`) or of our own ANGLE
+build (<https://github.com/0xS4N4TG/kinetograph-angle>), checked against SHA-256 values by `scripts/fetch-angle.mjs` in <https://github.com/0xS4N4TG/kinetograph>;
 `angle/SOURCE.txt` names the archive and the hashes. The licence is `angle/ANGLE-LICENSE`; the libraries also contain
-third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/CHROMIUM-CREDITS.txt`. A build made
-with `--swiftshader` adds SwiftShader (Apache-2.0, `angle/SWIFTSHADER-LICENSE`) and the Khronos Vulkan loader
-(`angle/VULKAN-LOADER-LICENSE`).
+third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/CHROMIUM-CREDITS.txt` (Chrome for Testing builds). The Linux and
+Windows packages add SwiftShader, a software Vulkan driver (Apache-2.0), its ICD file and the Khronos Vulkan loader (Apache-2.0); their licences are in
+`angle/THIRD-PARTY-NOTICES.txt` (`angle/SWIFTSHADER-LICENSE` and `angle/VULKAN-LOADER-LICENSE` in Chrome for Testing builds). ANGLE uses them on a machine with no GPU device; macOS does not ship them.
 
 ## Others
 

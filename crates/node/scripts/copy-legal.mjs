@@ -16,7 +16,8 @@ This package holds ${angle ? 'three' : 'two'} separate works:
 - The stand-alone program \`bin/ffmpeg\` (\`bin/ffmpeg.exe\` on Windows) is licensed under the GNU General Public License,
   version 2 or later (COPYING.GPLv2). The addon runs it as a child process and never links it. See FFMPEG-LICENSE.md.
 ${angle ? `- The libraries in \`angle/\` are Google's ANGLE (BSD-3-Clause, \`angle/ANGLE-LICENSE\`), taken unchanged from a prebuilt ANGLE
-  (angle/SOURCE.txt says whose). The addon opens them at run time and does not link them. See THIRD-PARTY-NOTICES.md.
+  (angle/SOURCE.txt says whose). The addon opens them at run time and does not link them. On Linux and Windows the folder also
+  holds SwiftShader (Apache-2.0) and the Khronos Vulkan loader (Apache-2.0), ANGLE's software Vulkan driver. See THIRD-PARTY-NOTICES.md.
 ` : ''}
 ---
 

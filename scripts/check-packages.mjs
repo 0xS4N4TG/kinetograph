@@ -1,7 +1,9 @@
 // For every publishable package directory given (default: all): `npm pack --dry-run` must list LICENSE.md (Apache-2.0), NOTICE, a README and
 // no source, test or source-map files, and every `@kinetographdev/*` or `kinetograph` dependency must be an exact version.
 // A platform package that has an `angle/` folder (scripts/fetch-angle.mjs) must pack both ANGLE libraries and their
-// licence files, and its size is reported. ANGLE is optional: a platform package without the folder passes.
+// licence files, and its size is reported. On Linux and Windows it must also pack SwiftShader (the software Vulkan driver, its ICD file,
+// the Vulkan loader), which a server with no GPU draws WebGL on; macOS always has Metal and ships none.
+// ANGLE is optional: a platform package without the folder passes.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +18,14 @@ const angleFiles = (dir) => {
   const name = path.basename(dir);
   const ext = name.includes('darwin') ? 'dylib' : name.includes('win32') ? 'dll' : 'so';
   const own = fs.readFileSync(`${dir}/angle/SOURCE.txt`, 'utf8').includes('kinetograph-angle');
-  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? ['THIRD-PARTY-NOTICES.txt'] : ['CHROMIUM-CREDITS.txt'])];
+  const swiftshader = name.includes('darwin')
+    ? []
+    : name.includes('win32')
+      ? ['vk_swiftshader.dll', 'vk_swiftshader_icd.json', 'vulkan-1.dll']
+      : ['libvk_swiftshader.so', 'vk_swiftshader_icd.json', 'libvulkan.so.1'];
+  // Chrome's build has their licences as files of their own; our build's THIRD-PARTY-NOTICES.txt covers them.
+  const licences = swiftshader.length && !own ? ['SWIFTSHADER-LICENSE', 'VULKAN-LOADER-LICENSE'] : [];
+  return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? ['THIRD-PARTY-NOTICES.txt'] : ['CHROMIUM-CREDITS.txt']), ...swiftshader, ...licences];
 };
 let bad = 0;
 for (const dir of dirs) {
