@@ -22,7 +22,7 @@ architecture diagram are in the [README](../../../../../README.md); the DOM engi
    it.
 5. **Composite on the GPU.** `kinetograph-core` draws the layer tree with wgpu: Skia for vectors, text and Canvas 2D;
    WGSL passes for blends, masks, blurs, shadows, filters and the rest of the effects; WebGL shaders translated from
-   GLSL by naga; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
+   WebGL by ANGLE; the `scene3d` renderer for meshes and glTF models; ThorVG for Lottie. Layers that did not change since
    the last frame are reused.
    Skia (Graphite on Metal, or on Vulkan on Linux and Windows) draws every 2D layer; layers it cannot draw (3D, GLSL
    groups, mesh gradients, `preserve3d` groups) are drawn by the wgpu path and Skia composites them. On a machine where

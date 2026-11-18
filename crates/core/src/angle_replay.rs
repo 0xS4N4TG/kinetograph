@@ -1,10 +1,10 @@
-//! A glsl layer's recording (`GlslContent`) replayed into an ANGLE ES 3.0 context (`angle.rs`) in place of the
-//! hand-written replay (`compositor/glsl.rs`): the page's own GLSL goes to ANGLE untranslated, and the draws, state,
+//! A glsl layer's recording (`GlslContent`) replayed into an ANGLE ES 3.0 context (`angle.rs`), the only WebGL replay
+//! (`compositor/glsl.rs` places the result): the page's own GLSL goes to ANGLE untranslated, and the draws, state,
 //! framebuffers and blits are GL calls. The result is the drawing buffer's RGBA8 rows, top row first.
 //!
 //! Every object is made for the frame and deleted after it, except programs, which are kept by their source (a
-//! program is a pure function of it). Textures `layer`-sourced from a group, cube maps, 3D and array textures are
-//! not replayed yet: they are an error, which the compositor shows as a failed layer.
+//! program is a pure function of it). A group's child, as a texture, is the picture the compositor read back for this
+//! frame (`Layers`); it is uploaded as it is, the unpack state having been applied when it was read.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,6 +18,16 @@ use crate::glsl::{
 };
 
 type R<T> = Result<T, String>;
+
+/// The pictures of a group's children a recording reads, as RGBA8 rows of the drawing buffer's size, top first, by
+/// `layer_key`: each is the child drawn as the buffer's box shows it, already turned over and premultiplied as the
+/// upload that reads it asks.
+pub type Layers = HashMap<String, Vec<u8>>;
+
+/// The key of a child's picture for one way of reading it: `UNPACK_FLIP_Y_WEBGL` and `UNPACK_PREMULTIPLY_ALPHA_WEBGL`.
+pub(crate) fn layer_key(layer: &str, flip_y: bool, premultiply: bool) -> String {
+    format!("{layer}\0{}{}", u8::from(flip_y), u8::from(premultiply))
+}
 
 /// An active uniform of a linked program: where it is (of its first element), how many elements, and its GL type.
 #[derive(Clone, Copy)]
@@ -52,7 +62,7 @@ thread_local! {
 }
 
 /// What a context keeps from frame to frame: the buffers and the uploaded textures by what they are made from (the same key
-/// the hand-written replay uses: the recording's id, the upload flags, and the stamp of the picture files), with an
+/// the recording's id, the upload flags, and the stamp of the picture files), with an
 /// estimate of the bytes of each, and the textures whose green and blue read red. Objects the frame makes (targets,
 /// framebuffers, samplers) are not kept.
 #[derive(Default)]
@@ -202,8 +212,10 @@ struct Replay<'a> {
     content: &'a GlslContent,
     base_dir: &'a Path,
     size: (u32, u32),
+    layers: &'a Layers,
     ext: angle::Extensions,
-    buffers: HashMap<&'a str, u32>,
+    /// By the recording's id and whether the buffer holds indices: WebGL keeps an index buffer apart from the others.
+    buffers: HashMap<(&'a str, bool), u32>,
     textures: HashMap<&'a str, Handle>,
     /// The targets a framebuffer draws a cube face or an array or 3D layer into, as the recorder lists them under
     /// the cube or array texture (`targets`): the target's id, to the texture's id and the face or layer.
@@ -235,8 +247,15 @@ struct Canvas {
     samples: i32,
 }
 
+/// Whether the texture is made from a group's child anywhere, which the frame draws afresh.
+fn reads_layer(t: &GlslTexture) -> bool {
+    t.layer.is_some()
+        || t.patches.iter().any(|p| p.layer.is_some())
+        || t.calls.iter().any(|c| c.layer.is_some())
+}
+
 fn multisampled(content: &GlslContent) -> bool {
-    // The hand-written replay's rule: a blit that writes the drawing buffer or copies its depth makes it single sample.
+    // A blit that writes the drawing buffer or copies its depth makes it single sample.
     content.antialias
         && !content
             .ops
@@ -245,7 +264,12 @@ fn multisampled(content: &GlslContent) -> bool {
 }
 
 /// Runs `content` into a `size` drawing buffer; RGBA8 rows, top first.
-pub fn replay(content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<Vec<u8>> {
+pub fn replay(
+    content: &GlslContent,
+    size: (u32, u32),
+    base_dir: &Path,
+    layers: &Layers,
+) -> R<Vec<u8>> {
     if content.webgpu.is_some() {
         return Err("unsupported: a WebGPU recording is not replayed by ANGLE".into());
     }
@@ -259,7 +283,8 @@ pub fn replay(content: &GlslContent, size: (u32, u32), base_dir: &Path) -> R<Vec
         float_linear: draws().any(|d| d.float_linear),
         float_blend: draws().any(|d| d.float_blend),
     };
-    angle::with(ext, |gl| run(gl, content, size, base_dir, ext))?
+    angle::with(ext, |gl| run(gl, content, size, base_dir, layers, ext))
+        .map_err(|e| format!("WebGL cannot draw, ANGLE did not start: {e}"))?
 }
 
 fn run(
@@ -267,6 +292,7 @@ fn run(
     content: &GlslContent,
     size: (u32, u32),
     base_dir: &Path,
+    layers: &Layers,
     ext: angle::Extensions,
 ) -> R<Vec<u8>> {
     // The program cache of this context starts over when it has grown past its bound.
@@ -315,6 +341,7 @@ fn run(
         content,
         base_dir,
         size,
+        layers,
         ext,
         buffers: HashMap::new(),
         textures: HashMap::new(),
@@ -562,8 +589,8 @@ impl<'a> Replay<'a> {
 
     // ---- resources ----
 
-    fn buffer(&mut self, id: &'a str) -> R<u32> {
-        if let Some(b) = self.buffers.get(id) {
+    fn buffer(&mut self, id: &'a str, index: bool) -> R<u32> {
+        if let Some(b) = self.buffers.get(&(id, index)) {
             return Ok(*b);
         }
         let b64 = self
@@ -576,7 +603,7 @@ impl<'a> Replay<'a> {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             b64.hash(&mut h);
-            format!("{id}|{:x}", h.finish())
+            format!("{id}|{:x}|{}", h.finish(), u8::from(index))
         };
         let ext = self.ext;
         if let Some((name, _)) = CACHES.with(|c| {
@@ -585,15 +612,16 @@ impl<'a> Replay<'a> {
                 .and_then(|c| c.buffers.get(&key).copied())
         }) {
             self.kept.insert(name);
-            self.buffers.insert(id, name);
+            self.buffers.insert((id, index), name);
             return Ok(name);
         }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("buffer {id}: {e}"))?;
         let name = self.gl.gen_buffer();
-        self.gl.bind_buffer(gl::ARRAY_BUFFER, name);
-        self.gl.buffer_data(gl::ARRAY_BUFFER, &bytes);
+        let target = if index { gl::ELEMENT_ARRAY_BUFFER } else { gl::ARRAY_BUFFER };
+        self.gl.bind_buffer(target, name);
+        self.gl.buffer_data(target, &bytes);
         CACHES.with(|c| {
             c.borrow_mut()
                 .entry(ext)
@@ -602,7 +630,7 @@ impl<'a> Replay<'a> {
                 .insert(key, (name, bytes.len()));
         });
         self.kept.insert(name);
-        self.buffers.insert(id, name);
+        self.buffers.insert((id, index), name);
         Ok(name)
     }
 
@@ -630,7 +658,7 @@ impl<'a> Replay<'a> {
                 .get(id)
                 .ok_or_else(|| format!("no texture {id}"))?;
             // A texture uploaded from the recording is kept by what it is made from; a render target is the frame's.
-            let key = (!spec.target && spec.targets.is_empty() && spec.layer.is_none())
+            let key = (!spec.target && spec.targets.is_empty() && !reads_layer(spec))
                 .then(|| self.texture_key(id, spec));
             let ext = self.ext;
             let cached = key.as_ref().and_then(|k| {
@@ -676,7 +704,7 @@ impl<'a> Replay<'a> {
     fn texture_key(&self, id: &str, t: &GlslTexture) -> String {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        let mut source =
+        let source =
             |h: &mut std::collections::hash_map::DefaultHasher, src: Option<&str>| match src {
                 Some(s) if s.starts_with("data:") => s.hash(h),
                 Some(s) => {
@@ -731,11 +759,6 @@ impl<'a> Replay<'a> {
 
     fn make_texture(&self, t: &GlslTexture) -> R<Handle> {
         let gl_ = self.gl;
-        if t.layer.is_some() {
-            return Err(
-                "unsupported: a group layer as a texture is not replayed by ANGLE yet".into(),
-            );
-        }
         let whole = |name, target, ds| Handle {
             name,
             renderbuffer: false,
@@ -899,8 +922,14 @@ impl<'a> Replay<'a> {
                 }),
             )?;
         } else {
-            let (mut rgba, w, h) = rec::decode_texture(t, self.base_dir)?;
-            rec::unpack(&mut rgba, w, t.flip_y, t.premultiply);
+            let (rgba, w, h) = match &t.layer {
+                Some(layer) => self.layer_picture(layer, t.flip_y, t.premultiply)?,
+                None => {
+                    let (mut rgba, w, h) = rec::decode_texture(t, self.base_dir)?;
+                    rec::unpack(&mut rgba, w, t.flip_y, t.premultiply);
+                    (rgba, w, h)
+                }
+            };
             gl_.tex_image_2d(
                 gl::TEXTURE_2D,
                 0,
@@ -913,16 +942,12 @@ impl<'a> Replay<'a> {
                 }),
             )?;
             for p in &t.patches {
-                if p.layer.is_some() {
-                    return Err("unsupported: a group layer patch".into());
-                }
-                let (mut px, pw, ph) = rec::decode_picture(
-                    p.src.as_deref(),
-                    p.pixels.as_deref(),
+                let (px, pw, ph) = self.picture(
+                    p.layer.as_deref(),
+                    (p.src.as_deref(), p.pixels.as_deref()),
                     (p.width, p.height),
-                    self.base_dir,
+                    (p.flip_y, p.premultiply),
                 )?;
-                rec::unpack(&mut px, pw, p.flip_y, p.premultiply);
                 gl_.tex_sub_image_2d(
                     0,
                     (p.x as i32, p.y as i32, pw as i32, ph as i32),
@@ -938,6 +963,35 @@ impl<'a> Replay<'a> {
             gl_.generate_mipmap(gl::TEXTURE_2D);
         }
         Ok(whole(name, gl::TEXTURE_2D, None))
+    }
+
+    /// A group's child as the frame's picture of it: the drawing buffer's size, turned over and premultiplied as the
+    /// upload asked.
+    fn layer_picture(&self, layer: &str, flip_y: bool, premultiply: bool) -> R<(Vec<u8>, u32, u32)> {
+        let bytes = self
+            .layers
+            .get(&layer_key(layer, flip_y, premultiply))
+            .ok_or_else(|| format!("the texture reads the layer {layer:?}, which was not drawn"))?;
+        Ok((bytes.clone(), self.size.0, self.size.1))
+    }
+
+    /// The picture a patch or an upload of `size` writes, unpacked: a child's picture cut to the part the rectangle
+    /// has of it (the child is the drawing buffer's size), or the recording's picture, turned over and premultiplied.
+    fn picture(
+        &self,
+        layer: Option<&str>,
+        (src, pixels): (Option<&str>, Option<&str>),
+        size: (u32, u32),
+        (flip_y, premultiply): (bool, bool),
+    ) -> R<(Vec<u8>, u32, u32)> {
+        if let Some(layer) = layer {
+            let (rgba, pw, ph) = self.layer_picture(layer, flip_y, premultiply)?;
+            let (w, h) = (size.0.min(pw), size.1.min(ph));
+            return Ok((rec::crop(&rgba, (pw, ph), (0, 0), (w, h))?, w, h));
+        }
+        let (mut px, w, h) = rec::decode_picture(src, pixels, size, self.base_dir)?;
+        rec::unpack(&mut px, w, flip_y, premultiply);
+        Ok((px, w, h))
     }
 
     /// One raw texture call (`GlslTexCall`) on the texture bound to its target, as the page made it.
@@ -1013,31 +1067,33 @@ impl<'a> Replay<'a> {
     /// The bytes a texture call uploads, with their format and type: its `data` as it is, or a picture as RGBA8 (cut
     /// to the call's window, flipped and premultiplied as the page asked). `None` for an upload of no data.
     fn call_texels(&self, c: &rec::GlslTexCall) -> R<Option<(Vec<u8>, Enum, Enum)>> {
-        if c.layer.is_some() {
-            return Err(
-                "unsupported: a group layer as texture data is not replayed by ANGLE yet".into(),
-            );
-        }
-        if c.src.is_none() && c.pixels.is_none() {
+        if c.src.is_none() && c.pixels.is_none() && c.layer.is_none() {
             return c
                 .data
                 .as_deref()
                 .map(|d| Ok((rec::decode_base64(d)?, c.format, c.ty)))
                 .transpose();
         }
-        let (rgba, pw, ph) = rec::decode_picture(
-            c.src.as_deref(),
-            c.pixels.as_deref(),
-            (c.picture_width, c.picture_height),
-            self.base_dir,
-        )?;
+        // A child's picture is already unpacked, so only a picture of the recording is turned over and premultiplied
+        // after it is cut.
+        let (rgba, pw, ph) = match &c.layer {
+            Some(layer) => self.layer_picture(layer, c.flip_y, c.premultiply)?,
+            None => rec::decode_picture(
+                c.src.as_deref(),
+                c.pixels.as_deref(),
+                (c.picture_width, c.picture_height),
+                self.base_dir,
+            )?,
+        };
         let mut window = rec::crop(
             &rgba,
             (pw, ph),
             (c.skip_pixels, c.skip_rows),
             (c.width, c.height),
         )?;
-        rec::unpack(&mut window, c.width, c.flip_y, c.premultiply);
+        if c.layer.is_none() {
+            rec::unpack(&mut window, c.width, c.flip_y, c.premultiply);
+        }
         Ok(Some((window, gl::RGBA, gl::UNSIGNED_BYTE)))
     }
 
@@ -1259,16 +1315,12 @@ impl<'a> Replay<'a> {
     }
 
     fn upload(&mut self, u: &'a rec::GlslUpload) -> R<()> {
-        if u.layer.is_some() {
-            return Err("unsupported: an upload of a group layer".into());
-        }
-        let (mut px, w, h) = rec::decode_picture(
-            u.src.as_deref(),
-            u.pixels.as_deref(),
+        let (px, w, h) = self.picture(
+            u.layer.as_deref(),
+            (u.src.as_deref(), u.pixels.as_deref()),
             (u.width, u.height),
-            self.base_dir,
+            (u.flip_y, u.premultiply),
         )?;
-        rec::unpack(&mut px, w, u.flip_y, u.premultiply);
         let target = self.texture(&u.target)?;
         self.gl.bind_texture(gl::TEXTURE_2D, target.name);
         self.gl.tex_sub_image_2d(
@@ -1409,7 +1461,7 @@ impl<'a> Replay<'a> {
             let Some(index) = index else {
                 continue;
             };
-            let buffer = self.buffer(&range.buffer)?;
+            let buffer = self.buffer(&range.buffer, false)?;
             gl_.uniform_block_binding(program.name, index, slot as u32);
             gl_.bind_buffer_range(
                 gl::UNIFORM_BUFFER,
@@ -1637,7 +1689,7 @@ impl<'a> Replay<'a> {
         };
         match &d.indices {
             Some(ix) => {
-                let buffer = self.buffer(&ix.buffer)?;
+                let buffer = self.buffer(&ix.buffer, true)?;
                 gl_.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
                 let ty = type_enum(ix.ty);
                 let offset = ix.offset as usize + d.first as usize * ix.ty.size() as usize;
@@ -1678,7 +1730,7 @@ impl<'a> Replay<'a> {
             self.const_attrs |= 1 << loc;
             return Ok(());
         }
-        let buffer = self.buffer(&a.buffer)?;
+        let buffer = self.buffer(&a.buffer, false)?;
         gl_.bind_buffer(gl::ARRAY_BUFFER, buffer);
         gl_.enable_vertex_attrib_array(loc);
         self.arrays_on |= 1 << loc;
@@ -1989,7 +2041,7 @@ mod tests {
 }
 
 /// The size and modification time of a file, for the key of a texture made from it; empty when it cannot be read.
-fn file_stamp(path: &Path) -> String {
+pub(crate) fn file_stamp(path: &Path) -> String {
     std::fs::metadata(path)
         .map(|m| {
             let t = m

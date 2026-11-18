@@ -885,14 +885,14 @@ export interface GlslTexture {
   /**
    * The texture as raw GL calls, in order, in place of `src`, `pixels`, `floats`, `faces` and `patches` (all absent):
    * the integer and compressed formats, parts of mip levels and the like. `cube`, `depth` and `array` say which target
-   * it is of. Only the ANGLE replay takes one; the hand-written replay stops the frame at a draw that samples it.
+   * it is of. ANGLE replays it.
    */
   calls?: GlslTexCall[];
 }
 
 /**
  * One texture call as the page made it, with GL's own enums and the bytes the call reads (the pixel-store state already
- * applied, so they are tightly packed). ANGLE replays it as it is; the hand-written replay does not take it.
+ * applied, so they are tightly packed). ANGLE replays it as it is.
  */
 export interface GlslTexCall {
   /** `image` is `texImage2D`/`texImage3D`, `sub` `texSubImage2D`/`3D`, `storage` `texStorage2D`/`3D`, `compressed` and `compressedSub` their compressed forms. */
@@ -1001,7 +1001,7 @@ export interface GlslAttribute {
    * for every vertex. `buffer` then only names the value (it is not in `buffers`), and `size` is 4 of `f32`.
    */
   constant?: [number, number, number, number];
-  /** As `constant`, for an integer input (`vertexAttribI4i`, `vertexAttribI4ui`): the values it reads as `ivec4` or `uvec4`. ANGLE replays it; the hand-written replay stops the frame. */
+  /** As `constant`, for an integer input (`vertexAttribI4i`, `vertexAttribI4ui`): the values it reads as `ivec4` or `uvec4`. ANGLE replays it. */
   intConstant?: { unsigned?: boolean; value: [number, number, number, number] };
 }
 
@@ -1134,7 +1134,7 @@ export interface GlslUpload {
  * `clear` (and `clearBuffer*`): the colour of the buffers drawn into (`COLOR_BUFFER_BIT`), the depth buffer
  * (`DEPTH_BUFFER_BIT`, to `depth`), the stencil buffer (`STENCIL_BUFFER_BIT`, to `stencil`), or several. Where it
  * clears is given as for a draw. `colorMask` and `stencilMask` are the masks the clear went through when they were not full,
- * and `scissor` the box of the scissor test; ANGLE replays them as GL does, the hand-written replay reports them.
+ * and `scissor` the box of the scissor test; ANGLE replays them as GL does.
  */
 export type GlslOp =
   | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string; colorMask?: [boolean, boolean, boolean, boolean]; stencilMask?: number; scissor?: [number, number, number, number] }

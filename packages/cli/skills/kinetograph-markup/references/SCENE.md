@@ -537,47 +537,26 @@ was off or the buffer has no stencil). Each unit's sampler also has `maxLevel` w
 
 How it is drawn:
 
-- The program is read by naga's GLSL frontend after a rewrite to the Vulkan flavour it reads (`attribute`, `varying`
-  and `in`/`out` get locations, loose uniforms become one block, a `sampler2D`, `sampler3D`, `sampler2DArray`, `samplerCube` or shadow sampler (`sampler2DShadow`, `samplerCubeShadow`, `sampler2DArrayShadow`) becomes a texture and a sampler,
-  `gl_FragColor` an output). `gl_FragCoord` counts up from the bottom row and clip depth is taken from GL's -w..w to
-  wgpu's 0..w, so the shaders mean what they mean in a browser. Arrays of scalars and of `vec2`, `bool` and `mat2`
-  uniforms travel packed (naga and Metal lay them out differently). The conditionals (`#if`, `#ifdef`, `#elif`, `#else`) are evaluated, and what they leave out is not read for
-  declarations. An array's length is an integer expression of numbers and macros (`morphTargetInfluences[MORPHTARGETS_COUNT]`);
-  any other length is refused. A struct uniform (or an array of them, as three.js declares its lights) is set field by
-  field, in `uniforms` under the name WebGL gives the field: `lights[1].color`. A shader naga cannot read fails when the scene
-  loads, with the line of the page's source (`layer "sky": glsl program "p": fragment shader: 3:15: ...`). A vertex
-  shader can read textures; its `texture` calls read level 0, as in GL, and a sampler both stages declare is one unit.
-- A draw with `depth` is tested against a 32-bit float depth buffer: the drawing buffer's, or the `depthStencil` target
-  its framebuffer names (shared by every framebuffer that attaches it), 1 until cleared and not carried from one frame
-  to the next. Window depth is clip depth taken from -w..w to 0..1 and then through `near` and `far`; `polygonOffset`
-  moves it by `factor` times the slope plus `units` steps of the buffer. A draw without `depth` neither tests nor
-  writes. `NEVER`, `LESS`, `EQUAL`, `LEQUAL`, `GREATER`, `NOTEQUAL`, `GEQUAL` and `ALWAYS` are all drawn. A draw with
-  `stencil` is tested against an 8-bit stencil buffer (0 until cleared) the same way, with every function and
-  operation; wgpu takes one reference and one pair of masks for both faces, which is what WebGL allows. A draw that
-  uses neither buffer and one that uses them go in separate render passes, which share the buffers.
-- A draw's fragment shader writes output `i` (`layout(location = i) out`, or `gl_FragColor` as output 0) to the
-  colour attachment `outputs` gives it; one with no attachment is dropped, and an attachment the shader does not write
-  keeps what it had. Up to 8 outputs (`MAX_DRAW_BUFFERS`). Every attachment of a pass is one size.
-- A depth target a draw samples is read as its depth in the red channel, `(d, 0, 0, 1)` as WebGL 2 reads it
-  (`(d, d, d, 1)` for a WebGL 1 depth texture, `luminance`), texel for texel (`NEAREST`): it is copied into a float
-  texture before the pass that samples it.
+- ANGLE replays the recording in an OpenGL ES 3.0 context with WebGL validation on, and the page's own GLSL (100 or
+  300 es) goes to it untranslated, so what GL specifies is what is drawn: `gl_FragCoord`, depth and stencil tests, blending,
+  the colour mask, texture completeness and filtering, framebuffers, multisampling, `MAX_DRAW_BUFFERS` 8. A struct
+  uniform (or an array of them, as three.js declares its lights) is set field by field, in `uniforms` under the name WebGL
+  gives the field: `lights[1].color`. A shader that does not compile fails the frame with ANGLE's message, which names
+  the shader and the line of the page's source (`layer "sky": ... fragment shader: 3:15: ...`), and a draw GL refuses
+  with a GL error fails it, naming the op and its program. The conditionals (`#if`, `#ifdef`) and the length of an array
+  (`morphTargetInfluences[MORPHTARGETS_COUNT]`) are the recorder's to read, for the uniforms and blocks it lists.
+- When ANGLE cannot load or start (no `libEGL` and `libGLESv2` in the platform package's `angle/` folder, or no device
+  that starts), a WebGL layer is an error that says why; `kinetograph doctor` with no entry reports the device, or that
+  WebGL will not work.
 - Drawing is into an 8-bit RGBA buffer, blended in it as GL does (on sRGB-encoded values, with the factors and the
   colour mask), not in linear light. The buffer is then placed under the layer's transform and converted to linear
-  light like a picture is. The first frame costs the compile of each program; every later frame reuses the pipeline.
+  light like a picture is.
+- A texture with `target: true` is what a framebuffer draws into (`width` x `height`, up to the device's limit). The
+  ops run in order, so a draw samples a target as the earlier ops left it, and a target starts every frame empty:
+  colour transparent black, depth 1, stencil 0. A colour target with `levels` is drawn into at an op's `level` and
+  sampled with its levels. A draw that samples a target it draws into is an error (WebGL gives `INVALID_OPERATION`).
 - A texture whose minification filter reads mipmaps it does not have (WebGL's default filter, without
   `generateMipmap`) is incomplete and samples as opaque black, as in a browser.
-- A texture with `target: true` is what a framebuffer draws into (`width` x `height`, 1 to 8192 each way, RGBA8 or a
-  depth and stencil format, 512 MiB for all of a layer's targets). The ops run in order, one render pass for each run
-  of ops to the same attachments, so a draw samples a target as the earlier ops left it, and a colour target nothing
-  was drawn to is transparent black. A target is not carried from one frame to the next. Its first row is GL's bottom
-  one (so the viewport and scissor of a draw into it, `gl_FragCoord` and the winding of a face are GL's, and sampling
-  it needs no flip). A colour target with `levels` is drawn into at an op's `level` (that level's size) and sampled
-  with its levels, which are complete when they reach 1 x 1 or the sampler's `maxLevel`. A draw's `viewport` must lie
-  inside its target. A draw that samples a target it draws into is an error (WebGL gives `INVALID_OPERATION`), and so
-  is a `target` that is not a target texture.
-- A depth and stencil `blit` writes the source's depth with a draw that sets the fragment's depth, and its stencil a
-  bit at a time (a fragment shader cannot write stencil): a draw zeroes it, then one for each of the 8 bits sets the
-  bit where the source has it.
 - Rendering is a pure function of the recording and the files it names; nothing reads a clock.
 
 Points (`mode: "points"`): each is a square of `gl_PointSize` pixels (1 to 511, the `ALIASED_POINT_SIZE_RANGE`,
