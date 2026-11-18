@@ -306,7 +306,6 @@ impl Scene {
                 LayerKind::Glsl(g) => {
                     non_negative("width", &g.width)?;
                     non_negative("height", &g.height)?;
-                    crate::glsl::validate(&layer.id, &g.recording.0)?;
                 }
                 LayerKind::Scene3d(s) => {
                     s.validate(&layer.id, &|font| self.fonts.contains_key(font))?;
@@ -639,7 +638,6 @@ fn validate_shader_group(group: &Layer, g: &GroupLayer, glsl: &GlslLayer) -> Res
     if g.layout.is_some() {
         return bad("cannot have a layout");
     }
-    crate::glsl::validate(&group.id, &glsl.recording.0)?;
     for (id, texture) in &glsl.recording.0.textures {
         let Some(child) = &texture.layer else {
             continue;

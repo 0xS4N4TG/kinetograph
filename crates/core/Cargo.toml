@@ -25,7 +25,7 @@ ash = { version = "0.38" }
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
 
 [dependencies]
-# ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, the default WebGL replay; KINETOGRAPH_WEBGL=builtin opts out).
+# ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, the WebGL replay).
 libloading = "0.8"
 kurbo = "0.13.1"
 peniko = "0.6.1"
@@ -41,13 +41,9 @@ serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 pollster = "1.0"
 # The version wgpu 30 uses. Validates shaders on the CPU: the built-in ones in
-# tests, and users' custom effect shaders when a scene loads. `glsl-in` reads
-# the GLSL of a `glsl` layer (src/glsl.rs); `wgsl-out` writes it as WGSL.
-naga = { version = "30.0.1", features = ["wgsl-in", "wgsl-out", "glsl-in"] }
-# `naga-ir` lets a shader module be made from the
-# naga module the GLSL frontend produced, with no round trip through WGSL text
-# (which would not keep the array strides of a uniform block).
-wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "metal", "vulkan", "naga-ir"] }
+# tests, and users' custom effect shaders when a scene loads.
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "metal", "vulkan"] }
 glam = "0.34.1"
 # LottieFiles' own player, which builds ThorVG (C++) from a submodule. Its
 # crates.io release is a stale 2024 alpha, so this is pinned to a git tag. CPU

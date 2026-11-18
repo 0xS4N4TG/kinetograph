@@ -1,6 +1,6 @@
 //! ANGLE as a library: `libEGL` and `libGLESv2` loaded at run time, an offscreen OpenGL ES 3.0 context with ANGLE's
-//! WebGL compatibility on, and the GL entry points a replay needs (`angle_replay.rs`). The default WebGL replay when the
-//! libraries load and start (`angle_select.rs` has the rules; `KINETOGRAPH_WEBGL=builtin` opts out);
+//! WebGL compatibility on, and the GL entry points a replay needs (`angle_replay.rs`): the only WebGL replay. When the
+//! libraries do not load or start, a WebGL layer is an error saying why (`angle_select.rs` has the device rules);
 //! `KINETOGRAPH_ANGLE_DIR` is the folder holding the two libraries.
 //!
 //! All `unsafe` of the ANGLE path is here. The invariants, once: the libraries are loaded for the life of the
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use libloading::Library;
 
-use crate::angle_select::{self as select, Decision, Device};
+use crate::angle_select::{self as select, Device};
 
 pub type Enum = u32;
 
@@ -1109,34 +1109,12 @@ pub(crate) fn settings() -> &'static Settings {
     })
 }
 
-/// The WebGL replay this process uses, decided on first use (which loads and starts ANGLE unless the environment
-/// settles it) and kept: the same for every project and frame of the process.
-fn decision() -> &'static Decision {
-    static DECISION: std::sync::OnceLock<Decision> = std::sync::OnceLock::new();
-    DECISION.get_or_init(|| {
-        let mode = select::mode(std::env::var("KINETOGRAPH_WEBGL").ok().as_deref());
-        let decision = select::decide(mode, || shared().map(|s| s.why.clone()));
-        if let Some(warning) = &decision.warning {
-            eprintln!("{warning}");
-        }
-        decision
-    })
-}
-
-/// Whether the ANGLE replay draws WebGL (the default when ANGLE starts; `KINETOGRAPH_WEBGL=builtin` turns it off).
-pub fn enabled() -> bool {
-    decision().angle
-}
-
-/// Which WebGL replay draws, the ANGLE device when it is ANGLE, and why: `(backend, device, why)`.
+/// What WebGL has here, for `doctor`: `("angle", Some(device), why)` when ANGLE loads and starts (it is started on the first
+/// call and kept), `("none", None, why)` with what failed when it does not, and WebGL then draws nothing.
 pub fn backend_report() -> (&'static str, Option<&'static str>, String) {
-    let d = decision();
-    if !d.angle {
-        return ("builtin", None, d.why.clone());
-    }
     match shared() {
         Ok(s) => ("angle", Some(s.device.name()), s.why.clone()),
-        Err(e) => ("angle", None, format!("{}, but it cannot start: {e}", d.why)),
+        Err(e) => ("none", None, e),
     }
 }
 
@@ -1644,11 +1622,8 @@ fn create(ext: Extensions) -> Result<Context, String> {
 }
 
 /// The compressed texture formats the raw texture calls can take on this machine, as the WebGL extensions that offer them: the
-/// ones the ANGLE context can be asked for. Empty unless ANGLE is the WebGL replay, because the built-in replay takes none.
+/// ones the ANGLE context can be asked for. Empty when ANGLE cannot start.
 pub fn compressed_formats() -> Vec<&'static str> {
-    if !enabled() {
-        return Vec::new();
-    }
     let ext = Extensions { float_linear: false, float_blend: false };
     let Ok(have) = with(ext, |gl| gl.requestable_extensions()) else {
         return Vec::new();

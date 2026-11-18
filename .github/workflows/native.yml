@@ -212,7 +212,6 @@ jobs:
       - name: Test WebGL on ANGLE SwiftShader (macOS, Linux)
         if: runner.os != 'Windows'
         env:
-          KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}/angle-swiftshader
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
@@ -222,7 +221,6 @@ jobs:
         if: runner.os == 'Windows'
         timeout-minutes: 30
         env:
-          KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_BACKEND: swiftshader
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
@@ -245,7 +243,6 @@ jobs:
         if: runner.os == 'macOS'
         continue-on-error: true
         env:
-          KINETOGRAPH_WEBGL: angle
           KINETOGRAPH_ANGLE_DIR: ${{ github.workspace }}/crates/node/npm/${{ matrix.platform }}/angle
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture

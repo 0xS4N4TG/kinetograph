@@ -34,7 +34,7 @@ export interface ProbeResult {
   addon: { loaded: true; version: string } | { loaded: false; error: string };
   renderer: string | null;
   rendererReason: string | null;
-  /** The WebGL replay a render would use (`angle` or `builtin`), the ANGLE device when it is ANGLE, and why. */
+  /** What WebGL has here: `angle` with the ANGLE device and why, or `none` with what failed when ANGLE cannot start. */
   webgl?: WebglBackend;
   failure?: ProbeFailure;
   /** The GPU adapters the renderer found (name, backend, type, vendor and device ids, driver), when it got that far. */
@@ -227,7 +227,7 @@ try {
 
 /** Env vars that change what the renderer does, as set here, for the report. */
 export function relevantEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-  const names = ['WGPU_BACKEND', 'WGPU_POWER_PREF', 'WGPU_ADAPTER_NAME', 'WGPU_DX12_COMPILER', 'KINETOGRAPH_SKIA_CPU', 'KINETOGRAPH_WEBGL', 'KINETOGRAPH_ANGLE_BACKEND', 'KINETOGRAPH_ANGLE_DIR'];
+  const names = ['WGPU_BACKEND', 'WGPU_POWER_PREF', 'WGPU_ADAPTER_NAME', 'WGPU_DX12_COMPILER', 'KINETOGRAPH_SKIA_CPU', 'KINETOGRAPH_ANGLE_BACKEND', 'KINETOGRAPH_ANGLE_DIR'];
   return names.filter((n) => env[n] !== undefined).map((n) => `${n}=${env[n]}`);
 }
 

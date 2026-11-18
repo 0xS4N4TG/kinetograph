@@ -1,5 +1,5 @@
-//! A glsl layer's recording (`GlslContent`) replayed into an ANGLE ES 3.0 context (`angle.rs`) in place of the
-//! hand-written replay (`compositor/glsl.rs`): the page's own GLSL goes to ANGLE untranslated, and the draws, state,
+//! A glsl layer's recording (`GlslContent`) replayed into an ANGLE ES 3.0 context (`angle.rs`), the only WebGL replay
+//! (`compositor/glsl.rs` places the result): the page's own GLSL goes to ANGLE untranslated, and the draws, state,
 //! framebuffers and blits are GL calls. The result is the drawing buffer's RGBA8 rows, top row first.
 //!
 //! Every object is made for the frame and deleted after it, except programs, which are kept by their source (a
@@ -62,7 +62,7 @@ thread_local! {
 }
 
 /// What a context keeps from frame to frame: the buffers and the uploaded textures by what they are made from (the same key
-/// the hand-written replay uses: the recording's id, the upload flags, and the stamp of the picture files), with an
+/// the recording's id, the upload flags, and the stamp of the picture files), with an
 /// estimate of the bytes of each, and the textures whose green and blue read red. Objects the frame makes (targets,
 /// framebuffers, samplers) are not kept.
 #[derive(Default)]
@@ -214,7 +214,8 @@ struct Replay<'a> {
     size: (u32, u32),
     layers: &'a Layers,
     ext: angle::Extensions,
-    buffers: HashMap<&'a str, u32>,
+    /// By the recording's id and whether the buffer holds indices: WebGL keeps an index buffer apart from the others.
+    buffers: HashMap<(&'a str, bool), u32>,
     textures: HashMap<&'a str, Handle>,
     /// The targets a framebuffer draws a cube face or an array or 3D layer into, as the recorder lists them under
     /// the cube or array texture (`targets`): the target's id, to the texture's id and the face or layer.
@@ -254,7 +255,7 @@ fn reads_layer(t: &GlslTexture) -> bool {
 }
 
 fn multisampled(content: &GlslContent) -> bool {
-    // The hand-written replay's rule: a blit that writes the drawing buffer or copies its depth makes it single sample.
+    // A blit that writes the drawing buffer or copies its depth makes it single sample.
     content.antialias
         && !content
             .ops
@@ -282,7 +283,8 @@ pub fn replay(
         float_linear: draws().any(|d| d.float_linear),
         float_blend: draws().any(|d| d.float_blend),
     };
-    angle::with(ext, |gl| run(gl, content, size, base_dir, layers, ext))?
+    angle::with(ext, |gl| run(gl, content, size, base_dir, layers, ext))
+        .map_err(|e| format!("WebGL cannot draw, ANGLE did not start: {e}"))?
 }
 
 fn run(
@@ -587,8 +589,8 @@ impl<'a> Replay<'a> {
 
     // ---- resources ----
 
-    fn buffer(&mut self, id: &'a str) -> R<u32> {
-        if let Some(b) = self.buffers.get(id) {
+    fn buffer(&mut self, id: &'a str, index: bool) -> R<u32> {
+        if let Some(b) = self.buffers.get(&(id, index)) {
             return Ok(*b);
         }
         let b64 = self
@@ -601,7 +603,7 @@ impl<'a> Replay<'a> {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             b64.hash(&mut h);
-            format!("{id}|{:x}", h.finish())
+            format!("{id}|{:x}|{}", h.finish(), u8::from(index))
         };
         let ext = self.ext;
         if let Some((name, _)) = CACHES.with(|c| {
@@ -610,15 +612,16 @@ impl<'a> Replay<'a> {
                 .and_then(|c| c.buffers.get(&key).copied())
         }) {
             self.kept.insert(name);
-            self.buffers.insert(id, name);
+            self.buffers.insert((id, index), name);
             return Ok(name);
         }
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("buffer {id}: {e}"))?;
         let name = self.gl.gen_buffer();
-        self.gl.bind_buffer(gl::ARRAY_BUFFER, name);
-        self.gl.buffer_data(gl::ARRAY_BUFFER, &bytes);
+        let target = if index { gl::ELEMENT_ARRAY_BUFFER } else { gl::ARRAY_BUFFER };
+        self.gl.bind_buffer(target, name);
+        self.gl.buffer_data(target, &bytes);
         CACHES.with(|c| {
             c.borrow_mut()
                 .entry(ext)
@@ -627,7 +630,7 @@ impl<'a> Replay<'a> {
                 .insert(key, (name, bytes.len()));
         });
         self.kept.insert(name);
-        self.buffers.insert(id, name);
+        self.buffers.insert((id, index), name);
         Ok(name)
     }
 
@@ -701,7 +704,7 @@ impl<'a> Replay<'a> {
     fn texture_key(&self, id: &str, t: &GlslTexture) -> String {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        let mut source =
+        let source =
             |h: &mut std::collections::hash_map::DefaultHasher, src: Option<&str>| match src {
                 Some(s) if s.starts_with("data:") => s.hash(h),
                 Some(s) => {
@@ -1458,7 +1461,7 @@ impl<'a> Replay<'a> {
             let Some(index) = index else {
                 continue;
             };
-            let buffer = self.buffer(&range.buffer)?;
+            let buffer = self.buffer(&range.buffer, false)?;
             gl_.uniform_block_binding(program.name, index, slot as u32);
             gl_.bind_buffer_range(
                 gl::UNIFORM_BUFFER,
@@ -1686,7 +1689,7 @@ impl<'a> Replay<'a> {
         };
         match &d.indices {
             Some(ix) => {
-                let buffer = self.buffer(&ix.buffer)?;
+                let buffer = self.buffer(&ix.buffer, true)?;
                 gl_.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
                 let ty = type_enum(ix.ty);
                 let offset = ix.offset as usize + d.first as usize * ix.ty.size() as usize;
@@ -1727,7 +1730,7 @@ impl<'a> Replay<'a> {
             self.const_attrs |= 1 << loc;
             return Ok(());
         }
-        let buffer = self.buffer(&a.buffer)?;
+        let buffer = self.buffer(&a.buffer, false)?;
         gl_.bind_buffer(gl::ARRAY_BUFFER, buffer);
         gl_.enable_vertex_attrib_array(loc);
         self.arrays_on |= 1 << loc;
@@ -2038,7 +2041,7 @@ mod tests {
 }
 
 /// The size and modification time of a file, for the key of a texture made from it; empty when it cannot be read.
-fn file_stamp(path: &Path) -> String {
+pub(crate) fn file_stamp(path: &Path) -> String {
     std::fs::metadata(path)
         .map(|m| {
             let t = m

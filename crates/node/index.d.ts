@@ -726,8 +726,8 @@ export interface WebglBackend {
 }
 
 /**
- * The WebGL replay a render would use: `angle` or `builtin`, the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`)
- * when it is ANGLE, and why. Loads and starts ANGLE (the decision is made once per process).
+ * What WebGL has here: `angle` with the ANGLE device (`Metal`, `Vulkan`, `D3D11`, `SwiftShader`) and why, or `none` with what
+ * failed when ANGLE cannot start (a page's WebGL is then an error). Loads and starts ANGLE (once per process).
  */
 export declare function webglBackend(): WebglBackend
 
