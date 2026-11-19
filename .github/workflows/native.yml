@@ -164,12 +164,35 @@ jobs:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
+      # Windows only: keep line tables in the PDB next to the DLL (MSVC writes debug info to a PDB, never into the DLL),
+      # so a crash stack a user pastes (crates/node/src/crash_report.rs) can be turned into function names. Debug info
+      # does not change the generated code. The crash test below uses the same setting so it reuses this build's crates.
       - name: Build the addon (Windows)
         if: runner.os == 'Windows'
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
+
+      - name: Upload the addon's PDB (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pdb-${{ matrix.platform }}
+          path: target/${{ matrix.target }}/release/kinetograph_node.pdb
+          retention-days: 90
+          if-no-files-found: error
+
+      # The Windows crash report (PR #155): a vectored exception handler that prints the code, the module and the stack.
+      # Its test raises an access violation and checks the report; it ran nowhere before this step.
+      - name: Test the crash report (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report -- --nocapture
 
       # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
       # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
