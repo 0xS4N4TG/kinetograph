@@ -19,4 +19,21 @@ describe('location', () => {
     document.location.href = 'http://elsewhere/';
     expect(document.location.href).toBe(DOCUMENT_URL);
   });
+
+  it('changes nothing when a script sets a part of the URL', () => {
+    const url = new URL(DOCUMENT_URL);
+    const parts = ['protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash'] as const;
+    const values = { protocol: 'https:', host: 'elsewhere:81', hostname: 'elsewhere', port: '81', pathname: '/other', search: '?q=1', hash: '#top' };
+    for (const part of parts) (document.location as unknown as Record<string, string>)[part] = values[part];
+    for (const part of parts) expect(document.location[part]).toBe(url[part]);
+    expect(document.location.href).toBe(url.href);
+  });
+
+  it('has no ancestor origins, as a DOMStringList', () => {
+    const list = document.location.ancestorOrigins;
+    expect(list.length).toBe(0);
+    expect(list.item(0)).toBeNull();
+    expect(list.contains(new URL(DOCUMENT_URL).origin)).toBe(false);
+    expect([...(list as unknown as Iterable<string>)]).toEqual([]);
+  });
 });

@@ -636,19 +636,23 @@ function webglGlobal(version: 1 | 2): typeof WebGLContext {
 
 /**
  * The page's `location`, shared by `window` and `document` and built from the document's URL, so it agrees with what
- * a script reads back from `src` and `href`. Navigating is not supported: `assign`, `replace`, `reload` and a set `href` warn and stay.
+ * a script reads back from `src` and `href`. Navigating is not supported: `assign`, `replace`, `reload` and setting
+ * `href` or any other part of the URL warn and change nothing.
  */
 const pageLocation = (() => {
   const url = new URL(DOCUMENT_URL);
   const refuse = (what: string) => () => reportMediaIssue(`location.${what}: navigating is not supported; the page stays where it is`);
-  return {
-    get href() { return url.href; },
-    set href(_value: string) { refuse('href')(); },
-    origin: url.origin, protocol: url.protocol, host: url.host, hostname: url.hostname, port: url.port,
-    pathname: url.pathname, search: url.search, hash: url.hash, ancestorOrigins: [] as string[],
+  const location: Record<string, unknown> = {
+    origin: url.origin,
+    // A DOMStringList: a top-level page has no ancestors.
+    ancestorOrigins: { length: 0, item: () => null, contains: () => false, [Symbol.iterator]: [][Symbol.iterator] },
     assign: refuse('assign'), replace: refuse('replace'), reload: refuse('reload'),
     toString: () => url.href,
   };
+  for (const part of ['href', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash'] as const) {
+    Object.defineProperty(location, part, { get: () => url[part], set: refuse(part), enumerable: true });
+  }
+  return location;
 })();
 
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
