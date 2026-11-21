@@ -579,6 +579,17 @@ mod tests {
     }
 
     #[test]
+    fn technical_symbols_and_the_flag_have_a_bundled_glyph() {
+        let mut e = engine();
+        // Print, copy and paste (Miscellaneous Technical) and the flag (Miscellaneous Symbols).
+        let text = "\u{2397}\u{2398}\u{2399}\u{2691}";
+        let t = e.layout(text, "DM Sans", 40.0, None, None, TextAlign::Left);
+        assert!(t.missing_chars(text).is_empty(), "{:?}", t.missing_chars(text));
+        assert!(t.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0));
+        assert_eq!(font_of(&t, 0).as_deref(), Some("builtin:NotoSansSymbols"));
+    }
+
+    #[test]
     fn plain_text_never_leaves_the_project_font() {
         let mut e = engine();
         let t = e.layout("Hello, World 123", "DM Sans", 40.0, None, None, TextAlign::Left);

@@ -29,13 +29,14 @@ The software H.264 encoder is Cisco's OpenH264 2.6.0, built from source (`OPENH2
 covers only the binaries Cisco itself distributes; this build is compiled from source, so any patent licence for H.264
 encoding is the user's to arrange.
 
-## Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (SIL Open Font License 1.1)
+## Noto Sans Symbols 2, Noto Sans Math, Noto Sans Symbols and Noto Emoji (SIL Open Font License 1.1)
 
 Text falls back to these fonts for a character its own font lacks (an arrow, a check mark, a maths sign, an emoji). They
-are embedded in the addon as WOFF2 files, converted from the TrueType originals without other changes. The copyright
+are embedded in the addon as WOFF2 files, converted from the TrueType originals without other changes, except that Noto Sans Symbols is a static Regular instance subset to the characters in U+2300-23FF and U+2600-26FF that the other fonts lack. The copyright
 notices and the licence are in `OFL-NOTO.txt`:
 
 - Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (<https://github.com/notofonts/symbols>)
+- Noto Sans Symbols: Copyright 2022 The Noto Project Authors (<https://github.com/notofonts/symbols>)
 - Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
 - Noto Emoji: Copyright 2013-2026 Google LLC
 

@@ -2,7 +2,7 @@
 //! check mark, a maths sign, an emoji), as a browser falls back to a system font.
 //!
 //! Kinetograph reads no system fonts, so the fallbacks ship with the engine:
-//! Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (monochrome), SIL OFL 1.1
+//! Noto Sans Symbols 2, Noto Sans Math, Noto Sans Symbols (a subset) and Noto Emoji (monochrome), SIL OFL 1.1
 //! (`fonts/OFL.txt`). The order is fixed, so a character is drawn in the same
 //! font on every machine: the CSS `font-family` list first, then these in the
 //! order of [`SOURCES`]. CJK and other scripts are not covered; what no font has
@@ -23,7 +23,7 @@ pub const BUILTIN_PREFIX: &str = "builtin:";
 /// Name, family name in the collection and WOFF2 file, in fallback order.
 /// Symbols and dingbats come before the maths font so that a ✓ or a ★ is
 /// drawn in the dingbat style; arrows and operators are in the maths font only.
-const SOURCES: [(&str, &str, &[u8]); 3] = [
+const SOURCES: [(&str, &str, &[u8]); 4] = [
     (
         "NotoSansSymbols2",
         "Kinetograph Fallback Symbols 2",
@@ -33,6 +33,13 @@ const SOURCES: [(&str, &str, &[u8]); 3] = [
         "NotoSansMath",
         "Kinetograph Fallback Math",
         include_bytes!("../fonts/NotoSansMath-Regular.woff2"),
+    ),
+    // The part of Noto Sans Symbols (v1) in U+2300-23FF and U+2600-26FF that the two above lack,
+    // such as ⎙ and ⚑, as a static Regular subset.
+    (
+        "NotoSansSymbols",
+        "Kinetograph Fallback Symbols",
+        include_bytes!("../fonts/NotoSansSymbols-Regular.woff2"),
     ),
     (
         "NotoEmoji",
@@ -215,7 +222,7 @@ mod tests {
     #[test]
     fn the_bundled_fonts_unpack_and_are_named() {
         let names: Vec<_> = faces().iter().map(|f| f.name).collect();
-        assert_eq!(names, ["NotoSansSymbols2", "NotoSansMath", "NotoEmoji"]);
+        assert_eq!(names, ["NotoSansSymbols2", "NotoSansMath", "NotoSansSymbols", "NotoEmoji"]);
         for f in faces() {
             assert!(f.data.starts_with(&[0, 1, 0, 0]), "{} is TrueType", f.name);
             assert!(face(&format!("builtin:{}", f.name)).is_some());
