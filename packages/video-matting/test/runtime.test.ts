@@ -1,31 +1,64 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { deflateRawSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RUNTIMES } from '../src/registry.js';
+import { RUNTIMES, RUNTIME_PACKAGE } from '../src/registry.js';
 import { ensureOnnxRuntime, runtimeDir, runtimeLibrary } from '../src/runtime.js';
 import { resetVideoMattingForTests, setFetchForTests } from '../src/testing.js';
 import { serve, tempDir } from './helpers.js';
 
 const key = `${process.platform}-${process.arch}`;
 const original = RUNTIMES[key];
+const originalPackage = { ...RUNTIME_PACKAGE };
 const savedModelDir = process.env.KINETOGRAPH_MODEL_DIR;
 const savedOrt = process.env.ORT_DYLIB_PATH;
 let dir: string;
 
-/** An archive laid out like Microsoft's (`<folder>/lib/<files>`), and the spec that pins it. */
-function fakeArchive(): Buffer {
-  const folder = 'onnxruntime-fake';
-  const lib = join(dir, 'src', folder, 'lib');
-  mkdirSync(lib, { recursive: true });
-  writeFileSync(join(lib, 'libfake.so'), 'the library');
-  writeFileSync(join(lib, 'libfake_providers.so'), 'the provider');
-  writeFileSync(join(lib, 'unused.txt'), 'left in the archive');
-  const archive = join(dir, 'fake.tgz');
-  execFileSync('tar', ['-czf', archive, '-C', join(dir, 'src'), folder]);
-  const bytes = readFileSync(archive);
-  RUNTIMES[key] = { folder, archive: 'fake.tgz', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), library: 'libfake.so', others: ['libfake_providers.so'] };
+/** A zip of `files` (name to bytes), deflated, with its central directory. */
+function zip(files: Record<string, string>): Buffer {
+  const parts: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const raw = Buffer.from(text);
+    const data = deflateRawSync(raw);
+    const n = Buffer.from(name);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(n.length, 26);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(8, 10);
+    entry.writeUInt32LE(data.length, 20);
+    entry.writeUInt32LE(raw.length, 24);
+    entry.writeUInt16LE(n.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    directory.push(entry, n);
+    parts.push(local, n, data);
+    offset += 30 + n.length + data.length;
+  }
+  const dir = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, dir, end]);
+}
+
+/** A package laid out like Microsoft's (`runtimes/<rid>/native/<files>`), and the pins that go with it. */
+function fakePackage(): Buffer {
+  const bytes = zip({
+    'runtimes/fake/native/libfake.so': 'the library',
+    'runtimes/fake/native/libfake_providers.so': 'the provider',
+    'runtimes/other/native/libother.so': 'another platform',
+  });
+  RUNTIMES[key] = { folder: 'onnxruntime-fake', library: 'libfake.so', files: { 'libfake.so': 'runtimes/fake/native/libfake.so', 'libfake_providers.so': 'runtimes/fake/native/libfake_providers.so' } };
+  Object.assign(RUNTIME_PACKAGE, { size: bytes.length, sha512: createHash('sha512').update(bytes).digest('hex') });
   return bytes;
 }
 
@@ -38,30 +71,31 @@ beforeEach(() => {
 
 afterEach(() => {
   RUNTIMES[key] = original!;
+  Object.assign(RUNTIME_PACKAGE, originalPackage);
   if (savedModelDir === undefined) delete process.env.KINETOGRAPH_MODEL_DIR;
   else process.env.KINETOGRAPH_MODEL_DIR = savedModelDir;
   if (savedOrt !== undefined) process.env.ORT_DYLIB_PATH = savedOrt;
 });
 
 describe.skipIf(process.platform === 'win32' || original === undefined)('ensureOnnxRuntime', () => {
-  it('downloads the archive once, keeps the library and its neighbour, and drops the rest', async () => {
+  it('downloads the package once, keeps the platform library and its neighbour, and drops the rest', async () => {
     const log = { urls: [] as string[], ranges: [] as (string | null)[] };
-    setFetchForTests(serve(fakeArchive(), log));
+    setFetchForTests(serve(fakePackage(), log));
     const path = await ensureOnnxRuntime();
     expect(path).toBe(runtimeLibrary());
     expect(readFileSync(path!, 'utf8')).toBe('the library');
     expect(existsSync(join(dirname(path!), 'libfake_providers.so'))).toBe(true);
-    expect(existsSync(join(dirname(path!), 'unused.txt'))).toBe(false);
-    expect(existsSync(join(runtimeDir(), 'fake.tgz'))).toBe(false);
-    expect(log.urls[0]).toMatch(/^https:\/\/github\.com\/microsoft\/onnxruntime\/releases\/download\/v[\d.]+\/fake\.tgz$/);
+    expect(existsSync(join(dirname(path!), 'libother.so'))).toBe(false);
+    expect(readdirSync(runtimeDir())).toEqual(['onnxruntime-fake']);
+    expect(log.urls[0]).toMatch(/^https:\/\/api\.nuget\.org\/v3-flatcontainer\/microsoft\.ml\.onnxruntime\/[\d.]+\/microsoft\.ml\.onnxruntime\.[\d.]+\.nupkg$/);
     // A second call finds it and fetches nothing.
     expect(await ensureOnnxRuntime()).toBe(path);
     expect(log.urls).toHaveLength(1);
   });
 
-  it('refuses an archive that does not match its pinned hash and leaves no library', async () => {
-    const bytes = fakeArchive();
-    RUNTIMES[key] = { ...RUNTIMES[key]!, sha256: '0'.repeat(64) };
+  it('refuses a package that does not match its pinned hash and leaves no library', async () => {
+    const bytes = fakePackage();
+    RUNTIME_PACKAGE.sha512 = '0'.repeat(128);
     setFetchForTests(serve(bytes, { urls: [], ranges: [] }));
     await expect(ensureOnnxRuntime()).rejects.toMatchObject({ code: 'MODEL_CHECKSUM' });
     expect(existsSync(runtimeLibrary())).toBe(false);

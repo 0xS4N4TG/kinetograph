@@ -1,13 +1,10 @@
-import { execFile } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { download, type DownloadVideoMattingModelOptions } from './cache.js';
 import { VideoMattingError } from './errors.js';
 import { videoMattingCacheDir } from './models.js';
-import { RUNTIMES, RUNTIME_VERSION, type RuntimeSpec } from './registry.js';
-
-const run = promisify(execFile);
+import { RUNTIMES, RUNTIME_PACKAGE, RUNTIME_VERSION, type RuntimeSpec } from './registry.js';
+import { readZipEntries } from './zip.js';
 
 /** The runtime for this platform, or the error that says there is none. */
 export function runtimeSpec(): RuntimeSpec {
@@ -15,7 +12,7 @@ export function runtimeSpec(): RuntimeSpec {
   if (!spec) {
     throw new VideoMattingError(
       'MATTING_UNAVAILABLE',
-      `No ONNX Runtime is pinned for ${process.platform}-${process.arch}: download one from github.com/microsoft/onnxruntime and set ORT_DYLIB_PATH to its library`,
+      `No ONNX Runtime is pinned for ${process.platform}-${process.arch}: download one from nuget.org (Microsoft.ML.OnnxRuntime) or github.com/microsoft/onnxruntime and set ORT_DYLIB_PATH to its library`,
     );
   }
   return spec;
@@ -26,7 +23,7 @@ export function runtimeDir(): string {
   return join(videoMattingCacheDir(), `onnxruntime-${RUNTIME_VERSION}`);
 }
 
-/** Where the archive's `lib/` ends up: the archive unpacked, its top folder kept (the macOS one is `./`-prefixed, the others are not, so nothing is stripped). */
+/** Where the platform's files end up. */
 function libDir(spec: RuntimeSpec): string {
   return join(runtimeDir(), spec.folder, 'lib');
 }
@@ -34,11 +31,6 @@ function libDir(spec: RuntimeSpec): string {
 /** The library `matteVideo` is given as `runtimePath`. */
 export function runtimeLibrary(spec: RuntimeSpec = runtimeSpec()): string {
   return join(libDir(spec), spec.library);
-}
-
-/** Windows's `tar` is bsdtar, which reads zip; a GNU tar on the PATH (Git's) cannot take a drive-letter path. */
-function tarCommand(): string {
-  return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 }
 
 let pending: Promise<string | undefined> | undefined;
@@ -60,24 +52,19 @@ export function ensureOnnxRuntime(options: Omit<DownloadVideoMattingModelOptions
 async function fetchRuntime(options: Omit<DownloadVideoMattingModelOptions, 'model'>): Promise<string> {
   const spec = runtimeSpec();
   const dir = runtimeDir();
-  const wanted = [spec.library, ...spec.others];
+  const wanted = Object.keys(spec.files);
   if (wanted.every((f) => existsSync(join(libDir(spec), f)))) return runtimeLibrary(spec);
 
-  const archive = join(dir, spec.archive);
+  const archive = join(dir, 'microsoft.ml.onnxruntime.nupkg');
   await download(
-    {
-      url: `https://github.com/microsoft/onnxruntime/releases/download/v${RUNTIME_VERSION}/${spec.archive}`,
-      path: archive,
-      size: spec.size,
-      sha256: spec.sha256,
-      name: `ONNX Runtime ${RUNTIME_VERSION}`,
-      pin: spec.archive,
-    },
+    { ...RUNTIME_PACKAGE, path: archive, name: `ONNX Runtime ${RUNTIME_VERSION}`, pin: 'Microsoft.ML.OnnxRuntime on nuget.org' },
     options,
   );
   try {
-    // Only the files the addon needs, not the headers and symbol files.
-    await run(tarCommand(), ['-xf', archive, '-C', dir, ...wanted.map((f) => `${spec.folder}/lib/${f}`)]);
+    // Only this platform's files, not the other platforms' libraries; the package is deleted after.
+    const entries = await readZipEntries(archive, Object.values(spec.files));
+    mkdirSync(libDir(spec), { recursive: true });
+    for (const [name, entry] of Object.entries(spec.files)) writeFileSync(join(libDir(spec), name), entries.get(entry)!, { mode: 0o755 });
   } catch (error) {
     throw new VideoMattingError('MODEL_DOWNLOAD', `Unpacking ONNX Runtime ${RUNTIME_VERSION} failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
