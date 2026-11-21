@@ -8,6 +8,7 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
+import { isMainThread } from 'node:worker_threads';
 
 type Env = Record<string, string | undefined>;
 
@@ -46,4 +47,25 @@ export function useSwiftshader(icd: string, env: Env = process.env): () => void 
       else env[name] = value;
     }
   };
+}
+
+/**
+ * Runs `make` (the making of a Dawn instance, which reads the Vulkan loader's environment) with the loader on the ICD file, and puts the environment
+ * back after, so the rest of the process (the compositor, ANGLE, Skia, ffmpeg) keeps its own drivers. Not when the environment already names it
+ * (`keepSwiftshader` set it for the process), and never in a worker: there `process.env` is a copy that native code does not read, so the main
+ * thread's decision (`keepSwiftshader`, before the workers start) is the one that counts.
+ */
+export function withSwiftshader<T>(icd: string, make: () => T, env: Env = process.env, main: boolean = isMainThread): T {
+  if (!main || env.VK_DRIVER_FILES === icd) return make();
+  const undo = useSwiftshader(icd, env);
+  try {
+    return make();
+  } finally {
+    undo();
+  }
+}
+
+/** For the whole process, from the main thread before its workers are made: Dawn needs SwiftShader and the workers' instances are made where this thread's real environment applies. */
+export function keepSwiftshader(icd: string, env: Env = process.env, main: boolean = isMainThread): void {
+  if (main) useSwiftshader(icd, env);
 }

@@ -18,7 +18,7 @@ import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
 import { DawnBinaryError, loadDawnBinary } from './dawn-binary.js';
-import { softwareChoice, swiftshaderIcd, useSwiftshader } from './dawn-software.js';
+import { keepSwiftshader, softwareChoice, swiftshaderIcd, withSwiftshader } from './dawn-software.js';
 import { lap, stamp } from '../profile.js';
 import { beginRewind, newCarry, trackCarry, carryNeedsReplay, startsCleared, stillCarries, untracked, useCarry, type Carry } from './webgpu-dawn-carry.js';
 
@@ -334,7 +334,7 @@ function createGpu(d: NonNullable<typeof dawn>): Any {
       if (process.platform !== 'linux') throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader is for Linux; Windows falls back to WARP by itself and macOS always has Metal');
       const icd = swiftshaderIcd(d.directory ?? null);
       if (icd === null) throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader: this install has no SwiftShader (the angle/ folder of the platform package, or KINETOGRAPH_ANGLE_DIR, holds vk_swiftshader_icd.json)');
-      useSwiftshader(icd);
+      return withSwiftshader(icd, () => d.create(dawnFlags()));
     }
     return d.create(dawnFlags());
   } catch (error) {
@@ -350,8 +350,7 @@ function softwareInstance(d: NonNullable<typeof dawn>): Any | null {
   if (process.platform !== 'linux') return null;
   const icd = swiftshaderIcd(d.directory ?? null);
   if (icd === null) return null;
-  useSwiftshader(icd);
-  const instance = createGpu(d);
+  const instance = withSwiftshader(icd, () => createGpu(d));
   shared.softwareInstances.push(instance);
   return instance;
 }
@@ -431,6 +430,12 @@ function noAdapterMessage(): string {
     ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, or on a host without one the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), or Mesa\'s lavapipe'
     : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
   return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU`;
+}
+
+/** Linux, when the adapter Dawn would take is SwiftShader: the Vulkan loader of this whole process is pointed at it, before workers are made (see `keepSwiftshader`). */
+export function keepDawnSoftware(): void {
+  const icd = swiftshaderIcd(load().directory ?? null);
+  if (icd !== null) keepSwiftshader(icd);
 }
 
 /** The adapter a page was given in this process, or null when none asked yet. */

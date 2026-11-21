@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { softwareChoice, swiftshaderIcd, useSwiftshader } from '../src/shim/dawn-software.js';
+import { keepSwiftshader, softwareChoice, swiftshaderIcd, useSwiftshader, withSwiftshader } from '../src/shim/dawn-software.js';
 
 /** A platform package's folders: `dawn/` and a sibling `angle/` that holds the ICD file and the driver library of the platform. */
 function platformPackage(library: string | null): { dawn: string; angle: string } {
@@ -55,5 +55,32 @@ describe('the Vulkan loader\'s environment', () => {
     expect(env).toEqual({ VK_DRIVER_FILES: '/p/angle/vk_swiftshader_icd.json', VK_ICD_FILENAMES: '/p/angle/vk_swiftshader_icd.json' });
     undo();
     expect(env).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' });
+  });
+});
+
+describe('the loader\'s environment around the making of an instance', () => {
+  const icd = '/p/angle/vk_swiftshader_icd.json';
+
+  it('is SwiftShader\'s while the instance is made, and the process\'s own again right after', () => {
+    const env: Record<string, string | undefined> = { VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' };
+    const seen = withSwiftshader(icd, () => ({ ...env }), env, true);
+    expect(seen).toEqual({ VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd });
+    expect(env).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' });
+    expect(() => withSwiftshader(icd, () => { throw new Error('no'); }, env, true)).toThrow('no');
+    expect(env).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' });
+  });
+
+  it('is left as it is when the process was already pointed at SwiftShader (the main thread chose, before the workers were made)', () => {
+    const env: Record<string, string | undefined> = {};
+    keepSwiftshader(icd, env, true);
+    expect(withSwiftshader(icd, () => 1, env, true)).toBe(1);
+    expect(env).toEqual({ VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd });
+  });
+
+  it('is never touched in a worker, where it is a copy that native code does not read', () => {
+    const env: Record<string, string | undefined> = {};
+    expect(withSwiftshader(icd, () => ({ ...env }), env, false)).toEqual({});
+    keepSwiftshader(icd, env, false);
+    expect(env).toEqual({});
   });
 });

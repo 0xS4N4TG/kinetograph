@@ -2,7 +2,7 @@
 // the folder of a project's bundle; `doctor` says which adapter it gives.
 
 import { isMainThread } from 'node:worker_threads';
-import { dawnRequested, describeDawn, loadDawnBinary, setDawnLoader, type DawnAdapter, type DawnStatus } from '@kinetographdev/compat/shim';
+import { dawnRequested, describeDawn, keepDawnSoftware, loadDawnBinary, setDawnLoader, type DawnAdapter, type DawnStatus } from '@kinetographdev/compat/shim';
 
 /** Sets how the compat module (a copy of it sits in each project's bundle) finds the library; before a bundle runs, which installs `navigator.gpu` as it loads. */
 export function useCliDawn(): void {
@@ -18,7 +18,11 @@ export async function prepareCliDawn(say: (message: string) => void = (message) 
   useCliDawn();
   if (!dawnRequested() || !isMainThread) return;
   const status = await describeDawn();
-  if (status.ok) return;
+  if (status.ok) {
+    // Workers copy this thread's environment when they are made, and their instances are made on the process's real one: the choice is made here, first.
+    if (status.adapter.via === 'swiftshader') keepDawnSoftware();
+    return;
+  }
   process.env.KINETOGRAPH_WEBGPU = 'builtin';
   say(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws this render instead: ${status.error.replace(/^Dawn: /, '').replace(/\s*KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU\.?$/, '')}`);
 }

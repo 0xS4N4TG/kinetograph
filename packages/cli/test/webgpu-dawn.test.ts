@@ -117,6 +117,16 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(plain.status, plain.stderr).toBe(0);
   });
 
+  it('gives the workers the built-in WebGPU too when Dawn cannot be used: the decision is made before they are made, and said once', () => {
+    const page = join(dir, 'workers.html');
+    cpSync(join(fixtures, 'stateless.html'), page);
+    const out = join(dir, 'workers-seq');
+    const r = spawnSync(process.execPath, [cli, 'render', page, '--sequence', '--range', '0..8', '--concurrency', '2', '--offline', '-o', out], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_CHUNK: '1', KINETOGRAPH_WEBGPU: '', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr.match(/WebGPU through Dawn cannot be used here/g)).toHaveLength(1);
+    expect(readdirSync(out).filter((f) => f.endsWith('.png'))).toHaveLength(8);
+  });
+
   it('says in `doctor` which backend and adapter Dawn gives, and that there is none when the backend has none', () => {
     const doctor = (extra: Record<string, string>) => spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: '', ...extra } });
     const found = JSON.parse(doctor({}).stdout);
