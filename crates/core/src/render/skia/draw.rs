@@ -89,6 +89,8 @@ pub struct Translator {
     text_atlas: bool,
     svg_paths: HashMap<String, Path>,
     srgb: bool,
+    /// `Scene::render_scale`.
+    render_scale: f64,
     fx: HashMap<String, Option<skia_safe::RuntimeEffect>>,
     videos: HashMap<String, crate::video::VideoDecoder>,
     video_last: HashMap<String, (i64, Image)>,
@@ -212,6 +214,7 @@ impl Translator {
             text_atlas: std::env::var("KINETOGRAPH_SKIA_TEXT").is_ok_and(|v| v == "atlas"),
             svg_paths: HashMap::new(),
             srgb: false,
+            render_scale: 1.0,
             fx: HashMap::new(),
             videos: HashMap::new(),
             video_last: HashMap::new(),
@@ -281,6 +284,7 @@ impl Translator {
             self.fonts_key = scene.fonts.clone();
         }
         self.srgb = matches!(scene.blend_space, crate::scene::BlendSpace::Srgb);
+        self.render_scale = scene.render_scale;
     }
 
     /// Draws the scene on `canvas`, whose origin is the margin's corner (`margin` pixels in). `host` draws the fallback
@@ -291,7 +295,9 @@ impl Translator {
         canvas.translate((margin as f32, margin as f32));
         self.host = host;
         self.layer_saves.clear();
-        self.draw_layers(canvas, &scene.layers, 1.0);
+        // The layers' `scale` is the factor between layer units and the canvas, which the effects' pixel lengths are divided
+        // by to be drawn at their own size. The render scale is not part of it: those lengths shrink with the canvas.
+        self.draw_layers(canvas, &scene.layers, 1.0 / self.render_scale.max(1e-6));
         self.host = std::ptr::null_mut();
         canvas.restore();
     }

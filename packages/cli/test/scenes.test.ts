@@ -16,6 +16,7 @@ describe('draftScene', () => {
     expect(draft.width).toBe(540);
     expect(draft.height).toBe(960);
     expect(draft.background).toBe('#123456');
+    expect(draft.renderScale).toBe(0.5);
     expect(draft.fonts).toEqual(base.fonts);
     expect(draft.layers).toHaveLength(1);
     expect(draft.layers[0]).toMatchObject({ type: 'group', transform: { scale: 0.5 }, children: base.layers });

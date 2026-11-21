@@ -1703,6 +1703,12 @@ export interface SceneJson {
    */
   margin?: number;
   /**
+   * The device scale of a render at a reduced size (`render --scale`): the canvas and the layers are already at the
+   * scaled size, and the lengths of the effects (blur radii, shadow offsets, filter primitive lengths) are multiplied
+   * by it. Default 1.
+   */
+  renderScale?: number;
+  /**
    * The space layers are composited in: `srgb` (default), as CSS does, or `linear` (SCENE.md "Blend space"). The DOM
    * painter writes its layers for `srgb` (ENGINE.md §10.1).
    */

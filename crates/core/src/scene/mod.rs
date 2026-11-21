@@ -34,6 +34,11 @@ pub struct Scene {
     /// The least margin to render with, in pixels (`Scene::margin`). Without
     /// it the margin is only what the effects reach.
     pub margin: Option<u32>,
+    /// The device scale of a render at a reduced size (`render --scale`): the canvas and the layers are already at the
+    /// scaled size (the layers in a group at this scale), and the lengths of the effects, which are in pixels and not
+    /// in layer units, are multiplied by it. Default 1.
+    #[serde(default = "default_render_scale")]
+    pub render_scale: f64,
     /// Font family name -> font file path.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
@@ -72,6 +77,10 @@ pub enum BlendSpace {
     /// The default.
     #[default]
     Srgb,
+}
+
+fn default_render_scale() -> f64 {
+    1.0
 }
 
 fn default_background() -> Color {

@@ -22,6 +22,7 @@ export function scaleScene(scene: SceneJson, scale: number): SceneJson {
     ...scene,
     width: scaledSize(scene.width, scale),
     height: scaledSize(scene.height, scale),
+    renderScale: scale,
     layers: [{ id: 'kinetograph-draft', type: 'group', transform: { scale }, children: scene.layers }],
   };
   if (scene.camera) {

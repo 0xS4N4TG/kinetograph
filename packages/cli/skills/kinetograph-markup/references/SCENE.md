@@ -19,6 +19,7 @@ same pixels. The React reconciler emits this same shape.
 | `durationInFrames` | integer | At least 1. Valid frames are `0..durationInFrames`; anything else is an error. |
 | `background` | colour | Optional, default `#000000`. May be transparent. |
 | `margin` | integer | Optional, default `0`. The least [canvas margin](#canvas-margin) in pixels; a number, not animated, not negative. |
+| `renderScale` | number | Optional, default `1`. The device scale of a render at a reduced size (`render --scale`): the canvas and the layers are already at the scaled size, and the lengths of the effects (blur radii, shadow offsets, filter primitive lengths) are multiplied by it. Skia-drawn layers only. |
 | `fonts` | object | Optional. Font family name to font file path. Text layers refer to these names. |
 | `camera` | object | Optional. The viewpoint for layers with a 3D transform. See [3D transforms and the camera](#3d-transforms-and-the-camera). |
 | `layers` | array | Bottom layer first, topmost last (the same order as SVG and DOM paint order). |
