@@ -1386,6 +1386,12 @@ describe('the recording WebGL context', () => {
       expect(draws.map((d) => d.floatLinear)).toEqual([undefined, true]);
     });
 
+    it('offers OES_texture_half_float_linear in WebGL 2, as a page that picks a filter by it looks', () => {
+      const { gl } = floatContext();
+      expect(gl.getSupportedExtensions()).toContain('OES_texture_half_float_linear');
+      expect(gl.getExtension('OES_texture_half_float_linear')).not.toBeNull();
+    });
+
     it('records generateMipmap of a float texture with texels, for the replay to make its chain from', () => {
       const { gl, program } = floatContext();
       gl.texImage2D(GL.TEXTURE_2D, 0, GL2.RGBA16F, 4, 2, 0, GL.RGBA, GL.FLOAT, new Float32Array(32).fill(0.5));

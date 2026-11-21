@@ -1405,7 +1405,7 @@ export class WebGLContext {
     return (this.options.compressedFormats?.() ?? []).filter((name) => COMPRESSED_EXTENSIONS[name] !== undefined);
   }
   getSupportedExtensions(): string[] {
-    const base = this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
+    const base = this.version === 1 ? ['OES_standard_derivatives', 'WEBGL_depth_texture'] : ['OES_texture_float_linear', 'OES_texture_half_float_linear', 'EXT_color_buffer_float', 'EXT_color_buffer_half_float', 'EXT_float_blend'];
     return [...base, ...this.compressedExtensions()];
   }
   getExtension(name: string): object | null {
@@ -1424,6 +1424,8 @@ export class WebGLContext {
       this.floatLinear = true;
       return {};
     }
+    // 16-bit floats are filtered linearly in the replay's ES 3 context whatever the page asks, as they are core in WebGL 2.
+    if (name === 'OES_texture_half_float_linear' && this.version === 2) return {};
     if (name === 'WEBGL_depth_texture' && this.version === 1) return { UNSIGNED_INT_24_8_WEBGL: GL2.UNSIGNED_INT_24_8 };
     if (this.compressedExtensions().includes(name)) {
       for (const value of Object.values(COMPRESSED_EXTENSIONS[name]!)) this.compressedEnabled.add(value);
