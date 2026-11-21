@@ -1,13 +1,34 @@
-// WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn): the CLI's side. The library is the CLI's optional dependency, found from here and not from
+// WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn): the CLI's side. dawn.node is in the addon's platform package, found from here and not from
 // the folder of a project's bundle; `doctor` says which adapter it gives.
 
-import { createRequire } from 'node:module';
-import { dawnRequested, describeDawn, setDawnLoader, type DawnStatus } from '@kinetographdev/compat/shim';
+import { isMainThread } from 'node:worker_threads';
+import { dawnRequested, describeDawn, loadDawnBinary, setDawnLoader, type DawnAdapter, type DawnStatus } from '@kinetographdev/compat/shim';
 
 /** Sets how the compat module (a copy of it sits in each project's bundle) finds the library; before a bundle runs, which installs `navigator.gpu` as it loads. */
 export function useCliDawn(): void {
-  setDawnLoader(() => createRequire(import.meta.url)('webgpu'));
+  setDawnLoader(() => loadDawnBinary(import.meta.url));
 }
+
+/**
+ * Dawn as the provider, decided once before a project runs: when no adapter can be had (no GPU and no software fallback, no binary for this
+ * platform) the built-in WebGPU layer draws instead, with one warning, because `KINETOGRAPH_WEBGPU` is removed from the environment the render's
+ * threads and processes inherit. Only the main thread decides; a worker takes what the environment says.
+ */
+export async function prepareCliDawn(say: (message: string) => void = (message) => process.stderr.write(`${message}\n`)): Promise<void> {
+  useCliDawn();
+  if (!dawnRequested() || !isMainThread) return;
+  const status = await describeDawn();
+  if (status.ok) return;
+  delete process.env.KINETOGRAPH_WEBGPU;
+  say(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws this render instead: ${status.error.replace(/^KINETOGRAPH_WEBGPU=dawn: /, '').replace(/\s*Unset KINETOGRAPH_WEBGPU to use the built-in WebGPU\.?$/, '')}`);
+}
+
+const VIA: Record<DawnAdapter['via'], string> = {
+  hardware: 'a hardware adapter',
+  swiftshader: 'SwiftShader, the software Vulkan driver of the platform package',
+  warp: 'WARP, the software Direct3D 12 adapter of Windows',
+  'system-software': 'a software adapter the system has',
+};
 
 /** What `doctor` says of Dawn: null unless it is the provider. */
 export async function dawnReport(): Promise<{ data: DawnStatus; lines: string[] } | null> {
@@ -20,7 +41,7 @@ export async function dawnReport(): Promise<{ data: DawnStatus; lines: string[] 
   return {
     data: status,
     lines: [
-      `webgpu: Dawn on ${adapter.backend ?? 'the backend it chose'}: ${name}${adapter.software ? ' (software, on the CPU)' : ''}${adapter.description ? `, ${adapter.description}` : ''}`,
+      `webgpu: Dawn on ${adapter.backend ?? 'the backend it chose'}: ${name}${adapter.software ? ` (software, on the CPU: ${VIA[adapter.via]})` : ''}${adapter.description ? `, ${adapter.description}` : ''}`,
       `  flags: ${flags.length === 0 ? 'none' : flags.join(' ')}; KINETOGRAPH_DAWN_BACKEND and KINETOGRAPH_DAWN_ADAPTER change them`,
     ],
   };

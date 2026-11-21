@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
 import type { AudioClipJson, LayerName, PageAudioOp, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
-import { useCliDawn } from './dawn.js';
+import { prepareCliDawn } from './dawn.js';
 import { CliError } from './errors.js';
 import { installDynamicImport, installRemotePictures } from './hyperframes/dynamic.js';
 import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
@@ -187,9 +187,9 @@ async function loadProject(
   const publicDir = publicDirOf(entry);
   process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
   process.env.KINETOGRAPH_BASE_DIR = dirname(entry);
-  // Dawn (KINETOGRAPH_WEBGPU=dawn) is the CLI's optional dependency: found from here, not from the bundle's folder in the project. Set before
-  // the bundle runs, which installs `navigator.gpu` as it loads.
-  useCliDawn();
+  // Dawn (KINETOGRAPH_WEBGPU=dawn) is the addon's platform package's dawn.node: found from here, not from the bundle's folder in the project.
+  // Set (and, when no adapter can be had, given up for the built-in WebGPU) before the bundle runs, which installs `navigator.gpu` as it loads.
+  await prepareCliDawn(prefetch?.progress);
   let mod: ProjectModule;
   try {
     mod = (await import(pathToFileURL(file).href)) as ProjectModule;

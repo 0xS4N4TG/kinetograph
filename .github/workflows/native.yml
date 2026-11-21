@@ -409,16 +409,69 @@ jobs:
           npm run build -w @kinetographdev/studio-ui
           npm run build -w @kinetographdev/studio
 
-      # WebGPU through Dawn (the `webgpu` npm package, KINETOGRAPH_WEBGPU=dawn): the adapter tests, the rendered cases on
+      # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
+      - name: Clean install and render
+        run: node scripts/smoke/clean-install.mjs
+
+  # WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn) on the three platforms' own backends: Metal, Vulkan on SwiftShader (the Linux runner
+  # has the Vulkan loader and no driver, so the SwiftShader of the platform package is the only one), Direct3D 12 on WARP.
+  dawn:
+    name: dawn (${{ matrix.platform }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin-arm64
+          - os: ubuntu-22.04
+            platform: linux-x64-gnu
+          - os: windows-latest
+            platform: win32-x64-msvc
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # The loader only: no Mesa driver, so Dawn finds no adapter of its own on a runner with no GPU.
+      - name: Install the Vulkan loader, without a driver (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libvulkan1 vulkan-tools
+          vulkaninfo --summary || true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-${{ matrix.platform }}
+          path: crates/node
+
+      # Artifacts lose the executable bit.
+      - name: Make bin/ffmpeg executable
+        if: runner.os != 'Windows'
+        run: chmod +x crates/node/npm/${{ matrix.platform }}/bin/ffmpeg
+
+      - run: npm ci
+
+      - name: Build the TypeScript packages
+        shell: bash
+        run: |
+          for p in scene compat react core audio video-matting cli; do npm run build -w "packages/$p"; done
+
+      # WebGPU through Dawn (dawn.node of the platform package, KINETOGRAPH_WEBGPU=dawn): the adapter tests, the rendered cases on
       # the built CLI and addon, and the goldens. These runners have no GPU, so Dawn takes its software adapter
-      # (`forceFallbackAdapter`, see packages/compat/src/shim/webgpu-dawn.ts): lavapipe on Linux (installed above), WARP
-      # on Windows. On macOS it asks Metal for the runner's own (virtual) GPU (a run of this job showed one there). The
-      # goldens are Metal's and skip off macOS, saying so. The tests skip when `webgpu` does not load, so the first step
+      # (packages/compat/src/shim/webgpu-dawn.ts, dawn-software.ts): on Linux SwiftShader, from the `angle/` folder of the platform package
+      # (this job installs the Vulkan loader and no driver: no lavapipe), on Windows WARP.
+      # On macOS it asks Metal for the runner's own (virtual) GPU (a run of this job showed one there). The goldens are Metal's and skip off macOS, saying so. The tests skip when dawn.node does not load, so the first step
       # makes that a failure instead; the second prints which backend and adapter Dawn took.
       - name: Dawn loads
         shell: bash
         working-directory: packages/cli
-        run: node -e "require('webgpu'); console.log('webgpu loads on', process.platform, process.arch)"
+        run: node --input-type=module -e "import { loadDawnBinary } from '@kinetographdev/compat/shim'; loadDawnBinary(import.meta.url); console.log('Dawn loads on', process.platform, process.arch)"
 
       # Informational: `doctor` gives up on a renderer that has not started after a minute, and on Windows (Direct3D 12
       # WARP) the renderer needs longer, so its exit code is not a result.
@@ -440,12 +493,11 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then
             (cd packages/cli && npx vitest run --reporter=verbose -t drawImage test/webgpu-dawn.test.ts)
           else
+            # The engine's own renderer (wgpu) needs a Vulkan driver in every CLI process, and has no SwiftShader switch of its own:
+            # on Linux the loader is told to read SwiftShader's ICD file, the only driver on this runner (Dawn then takes it as well).
+            if [ "$RUNNER_OS" = Linux ]; then export VK_DRIVER_FILES="$GITHUB_WORKSPACE/crates/node/npm/linux-x64-gnu/angle/vk_swiftshader_icd.json"; fi
             (cd packages/cli && npx vitest run --reporter=verbose test/webgpu-dawn.test.ts test/webgpu-dawn-golden.test.ts)
           fi
-
-      # Packs the packages and the addon, installs them into an empty project outside the repository, renders 30 frames.
-      - name: Clean install and render
-        run: node scripts/smoke/clean-install.mjs
 
   js:
     name: typecheck and test (JS)

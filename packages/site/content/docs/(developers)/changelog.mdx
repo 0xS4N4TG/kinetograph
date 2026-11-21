@@ -14,6 +14,8 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - Video with transparency: ProRes 4444 (`.mov`) and VP9 (`.webm`) keep alpha. Codecs that cannot carry it (H.264, H.265, GIF, hardware encoders) are refused when alpha is asked for (#102).
 - `kinetograph matte` and `@kinetographdev/video-matting` remove a video's background with MODNet or BEN2, with no browser and no Python. Studio has a Remove background dialog. Models download on first use.
 - `kinetograph add hyperframes/<name>` installs a block or component from the HyperFrames registry.
+- `KINETOGRAPH_WEBGPU=dawn` runs a page's WebGPU on Dawn (Chrome's WebGPU library). `dawn.node` ships in each platform package (`dawn/`), pinned by checksum; there is no `webgpu` package to install.
+- Dawn with no GPU: Windows uses WARP, Linux uses the SwiftShader that `angle/` carries (`KINETOGRAPH_WEBGPU_BACKEND=swiftshader` forces it), and when no adapter can be had the built-in WebGPU draws, with one warning. `doctor` says which.
 - `--timeout <ms>` on every command that opens a project sets the `delayRender()` timeout; `delayRender(label, { timeoutInMilliseconds })` wins over it (#101).
 - CSS `clip-path: path(evenodd, ...)` and `polygon(evenodd, ...)` cut holes (#106).
 - `image-rendering: pixelated` and `crisp-edges` on `<img>`, CSS backgrounds, border images and SVG `<image>` (#105).

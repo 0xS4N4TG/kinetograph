@@ -127,11 +127,13 @@ interface Shared {
   entered: number;
   /** The adapter Dawn gave the first request of this process (`DawnAdapter`), which `doctor` says. */
   adapter: DawnAdapter | null;
+  /** The Dawn instances made on SwiftShader (`softwareInstance`), kept as long as the process runs: their adapters belong to them. */
+  softwareInstances: Any[];
 }
 
 const SHARED = Symbol.for('kinetograph.dawn.shared');
 const defaultScope = new DawnScope();
-const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null });
+const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null, softwareInstances: [] });
 useCarry(defaultScope.carry);
 
 export function createDawnScope(): DawnScope {
@@ -264,7 +266,7 @@ function patchDawn(g: Record<string, Any>, patch: Patch): void {
   // GPUs would give each page another one): the best adapter of the backend `dawnFlags` names, else a software one. No adapter is `null`, as the
   // spec has it (a page may fall back to something else), and a frame warning that says why, which `--strict` fails.
   wrap(g.GPU.prototype, 'requestAdapter', function (original) {
-    return track(chooseAdapter((options) => original.call(this, options)).then((chosen) => {
+    return track(chooseAdapter((gpu, options) => original.call(gpu, options), this, load()).then((chosen) => {
       if (chosen === null) {
         report(shared.scope, noAdapterMessage());
         return null;
@@ -326,10 +328,31 @@ function startError(error: unknown): Error {
 
 function createGpu(d: NonNullable<typeof dawn>): Any {
   try {
+    // KINETOGRAPH_WEBGPU_BACKEND=swiftshader: the Vulkan loader is pointed at SwiftShader before the instance that reads its drivers is made.
+    if (softwareChoice() === 'swiftshader') {
+      if (process.platform !== 'linux') throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader is for Linux; Windows falls back to WARP by itself and macOS always has Metal');
+      const icd = swiftshaderIcd(d.directory ?? null);
+      if (icd === null) throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader: this install has no SwiftShader (the angle/ folder of the platform package, or KINETOGRAPH_ANGLE_DIR, holds vk_swiftshader_icd.json)');
+      useSwiftshader(icd);
+    }
     return d.create(dawnFlags());
   } catch (error) {
     throw startError(error);
   }
+}
+
+/**
+ * Linux, no hardware adapter: a new Dawn instance with its Vulkan on the SwiftShader the platform package carries (the loader reads its driver
+ * files when an instance is made, so it takes a new one). Null where there is no SwiftShader to use (other systems, a package made without it).
+ */
+function softwareInstance(d: NonNullable<typeof dawn>): Any | null {
+  if (process.platform !== 'linux') return null;
+  const icd = swiftshaderIcd(d.directory ?? null);
+  if (icd === null) return null;
+  useSwiftshader(icd);
+  const instance = createGpu(d);
+  shared.softwareInstances.push(instance);
+  return instance;
 }
 
 /** What Dawn chose, as `doctor` says it. */
@@ -344,24 +367,47 @@ export interface DawnAdapter {
   software: boolean;
   /** It was asked for with `forceFallbackAdapter`, after the best adapter was not there. */
   fallback: boolean;
+  /** How it was found: a hardware adapter, SwiftShader (Linux, no hardware: the Vulkan driver of the platform package), WARP (Windows' software Direct3D 12) or another software adapter the system has (Mesa's lavapipe). */
+  via: 'hardware' | 'swiftshader' | 'warp' | 'system-software';
+}
+
+interface Chosen {
+  adapter: Any;
+  fallback: boolean;
+  via: DawnAdapter['via'];
 }
 
 const SOFTWARE = /llvmpipe|lavapipe|swiftshader|\bwarp\b|basic render|software|\bcpu\b/i;
 
-/** The best adapter of the backend, else a software one, else null. */
-async function chooseAdapter(request: (options: Any) => Promise<Any>): Promise<{ adapter: Any; fallback: boolean } | null> {
+/**
+ * The best adapter of the backend; else a software one: on Linux SwiftShader (a new instance, see `softwareInstance`), when there is none
+ * there the system's own (lavapipe), on Windows WARP (Dawn's fallback adapter of Direct3D 12); else null. `request(gpu, options)` is the
+ * library's own `requestAdapter`, `first` the instance it is asked of.
+ */
+async function chooseAdapter(request: (gpu: Any, options: Any) => Promise<Any>, first: Any, d: NonNullable<typeof dawn>): Promise<Chosen | null> {
+  const given = (adapter: unknown): boolean => adapter !== null && adapter !== undefined;
   try {
-    const best = await request({ powerPreference: 'high-performance' });
-    if (best !== null && best !== undefined) return { adapter: best, fallback: false };
-    const software = await request({ forceFallbackAdapter: true });
-    return software === null || software === undefined ? null : { adapter: software, fallback: true };
+    // Forced software (KINETOGRAPH_WEBGPU_BACKEND=swiftshader): `createGpu` has pointed Vulkan at it, and it is a fallback adapter.
+    if (softwareChoice() === 'swiftshader') {
+      const forced = await request(first, { forceFallbackAdapter: true });
+      return given(forced) ? { adapter: forced, fallback: true, via: 'swiftshader' } : null;
+    }
+    const best = await request(first, { powerPreference: 'high-performance' });
+    if (given(best)) return { adapter: best, fallback: false, via: 'hardware' };
+    const soft = softwareInstance(d);
+    if (soft !== null) {
+      const swiftshader = await request(soft, { forceFallbackAdapter: true });
+      if (given(swiftshader)) return { adapter: swiftshader, fallback: true, via: 'swiftshader' };
+    }
+    const software = await request(first, { forceFallbackAdapter: true });
+    return given(software) ? { adapter: software, fallback: true, via: process.platform === 'win32' ? 'warp' : 'system-software' } : null;
   } catch (error) {
     // The library finds its adapters when the first is asked for, and says so then (a backend or an adapter name it does not know).
     throw startError(error);
   }
 }
 
-function describeAdapter({ adapter, fallback }: { adapter: Any; fallback: boolean }): DawnAdapter {
+function describeAdapter({ adapter, fallback, via }: Chosen): DawnAdapter {
   const info = adapter.info ?? {};
   const text = `${info.device ?? ''} ${info.description ?? ''} ${info.architecture ?? ''}`;
   return {
@@ -369,18 +415,19 @@ function describeAdapter({ adapter, fallback }: { adapter: Any; fallback: boolea
     vendor: String(info.vendor ?? ''), architecture: String(info.architecture ?? ''), device: String(info.device ?? ''), description: String(info.description ?? ''),
     software: fallback || info.isFallbackAdapter === true || SOFTWARE.test(text),
     fallback,
+    via,
   };
 }
 
 /** The first adapter this process was given is kept for `doctor`, which says it once. */
-function noteAdapter(chosen: { adapter: Any; fallback: boolean }): void {
+function noteAdapter(chosen: Chosen): void {
   shared.adapter ??= describeAdapter(chosen);
 }
 
 function noAdapterMessage(): string {
   const flags = dawnFlags();
   const hint = process.platform === 'linux'
-    ? 'on Linux that needs a Vulkan driver: a GPU\'s, or Mesa\'s lavapipe (the package mesa-vulkan-drivers) on a host without one'
+    ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, or on a host without one the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), or Mesa\'s lavapipe'
     : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
   return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and unsetting KINETOGRAPH_WEBGPU uses the built-in WebGPU`;
 }
@@ -403,7 +450,7 @@ export async function describeDawn(): Promise<DawnStatus> {
     const d = load();
     const probe = createGpu(d);
     const request = patchOf(d.globals)?.requestAdapter ?? d.globals.GPU.prototype.requestAdapter;
-    const chosen = await chooseAdapter((options) => request.call(probe, options));
+    const chosen = await chooseAdapter((gpu, options) => request.call(gpu, options), probe, d);
     if (chosen === null) return { ok: false, error: `KINETOGRAPH_WEBGPU=dawn: ${noAdapterMessage()}` };
     return { ok: true, flags, adapter: describeAdapter(chosen) };
   } catch (error) {
