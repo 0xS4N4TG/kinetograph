@@ -586,7 +586,12 @@ mod tests {
         let t = e.layout(text, "DM Sans", 40.0, None, None, TextAlign::Left);
         assert!(t.missing_chars(text).is_empty(), "{:?}", t.missing_chars(text));
         assert!(t.runs.iter().flat_map(|r| &r.glyphs).all(|g| g.id != 0));
-        assert_eq!(font_of(&t, 0).as_deref(), Some("builtin:NotoSansSymbols"));
+        for i in 0..4 {
+            assert_eq!(font_of(&t, i).as_deref(), Some("builtin:NotoSansSymbols"), "char {i}");
+        }
+        // The anchor is in Noto Emoji too, which it was drawn in before the subset was added.
+        let anchor = e.layout("\u{2693}", "DM Sans", 40.0, None, None, TextAlign::Left);
+        assert_eq!(font_of(&anchor, 0).as_deref(), Some("builtin:NotoEmoji"));
     }
 
     #[test]

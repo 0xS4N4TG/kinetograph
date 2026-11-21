@@ -34,8 +34,9 @@ const SOURCES: [(&str, &str, &[u8]); 4] = [
         "Kinetograph Fallback Math",
         include_bytes!("../fonts/NotoSansMath-Regular.woff2"),
     ),
-    // The part of Noto Sans Symbols (v1) in U+2300-23FF and U+2600-26FF that the two above lack,
-    // such as ⎙ and ⚑, as a static Regular subset.
+    // The part of Noto Sans Symbols (v1) in U+2300-23FF and U+2600-26FF that neither the two above
+    // nor Noto Emoji below has, such as ⎙ and ⚑, as a static Regular subset: a character Noto Emoji
+    // has (⚓, ☯) stays in Noto Emoji.
     (
         "NotoSansSymbols",
         "Kinetograph Fallback Symbols",
