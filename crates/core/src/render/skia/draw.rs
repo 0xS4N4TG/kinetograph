@@ -925,7 +925,7 @@ impl Translator {
             }
             match e {
                 ResolvedEffect::Blur { radius } => {
-                    if *radius >= 1.0 {
+                    if *radius > 0.0 {
                         let sg = radius / s;
                         filter = image_filters::blur((sg, sg), TileMode::Decal, filter.take(), None);
                     }
@@ -1006,7 +1006,7 @@ impl Translator {
                     filter = self.filter_graph(g, input, s, lb);
                 }
                 ResolvedEffect::Glow(g) => {
-                    if g.radius >= 1.0 && g.intensity > 0.0 {
+                    if g.radius > 0.0 && g.intensity > 0.0 {
                         let input = filter.take();
                         let sg = g.radius / s;
                         let halo = image_filters::blur((sg, sg), TileMode::Decal, input.clone(), None);
@@ -2172,7 +2172,7 @@ impl Translator {
         // A layer that blurs its backdrop sees what Skia has drawn so far: the frame's surface, flushed to its texture.
         // Inside a layer of Skia's own (a group's opacity, blend or effects) the backdrop is that layer, which only Skia
         // holds: left out.
-        let backdrop = if !crate::render::uses_backdrop(siblings, layer, self.render_scale as f32) {
+        let backdrop = if !crate::render::uses_backdrop(siblings, layer) {
             None
         } else if self.in_skia_layer(canvas) {
             self.stats.approx("backdrop of a GPU-drawn layer in a Skia layer (left out)");

@@ -1374,11 +1374,11 @@ impl Compositor {
     ) -> Tex {
         for (i, effect) in effects.iter().enumerate() {
             match *effect {
-                ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::Blur { radius } if radius > 0.0 => {
                     src = self.blur_layer(src, radius);
                 }
                 ResolvedEffect::Blur { .. } => {}
-                ResolvedEffect::BackdropBlur { radius, mirror } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::BackdropBlur { radius, mirror } if radius > 0.0 => {
                     if let Some(backdrop) = backdrop {
                         src = self.backdrop_blur(src, radius, backdrop, coverage, mirror);
                     }
@@ -1565,7 +1565,7 @@ impl Compositor {
     /// Draws a halo under `src`: a blurred copy of it, tinted if asked. `src`
     /// goes back to the pool; the result is a new texture.
     fn glow(&mut self, src: Tex, glow: &ResolvedGlow) -> Tex {
-        if glow.radius < blur::MIN_RADIUS || glow.intensity <= 0.0 || src.bounds.is_empty() {
+        if glow.radius <= 0.0 || glow.intensity <= 0.0 || src.bounds.is_empty() {
             return src;
         }
         let size = (self.width, self.height);

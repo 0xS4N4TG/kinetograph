@@ -227,22 +227,29 @@ fn green_row(f: &Frame, x0: u32, n: u32) -> Vec<u8> {
 }
 
 #[test]
-fn a_small_backdrop_blur_is_drawn_by_its_scaled_radius() {
-    // At twice the size a radius of 0.6, under the blur's minimum, is 1.2: the compositor blurs, so the backdrop must
-    // have been captured. The red edge at x 200 (400 at twice the size) is soft.
+fn a_small_backdrop_blur_blurs_as_the_full_render_does() {
+    // Whether there is a blur is the authored radius's: 0.6, under the blur's minimum, is no blur at full size, nor at
+    // twice the size, where it would be 1.2. The red edge at x 200 (400 at twice the size) stays hard.
     let double = render(backdrop_layers(0.6), 2.0);
-    let edge = green_row(&double, 396, 8);
-    eprintln!("scale 2, radius 0.6: green across the edge {edge:?}");
-    assert!(edge[3] > 0 && edge[4] < 255, "{edge:?}: not blurred");
-    let (worst, mean) = difference(&double, &render(backdrop_layers(0.6), 1.0));
-    // The full render leaves a radius under the minimum unblurred, so only the edge's own pixels differ.
-    eprintln!("scale 2 shrunk against the full render: worst {worst}, mean {mean:.3}");
-    assert!(mean < 1.0, "worst {worst}, mean {mean:.3}");
-    // At half the size a radius of 4 is 2, still blurred.
-    let (worst, mean) = difference(
-        &render(backdrop_layers(4.0), 1.0),
-        &render(backdrop_layers(4.0), 0.5),
+    eprintln!(
+        "scale 2, radius 0.6: green across the edge {:?}",
+        green_row(&double, 396, 8)
     );
-    eprintln!("scale 0.5 against the full render shrunk: worst {worst}, mean {mean:.3}");
+    let (worst, mean) = difference(&double, &render(backdrop_layers(0.6), 1.0));
+    eprintln!("scale 2 shrunk against the full render: worst {worst}, mean {mean:.3}");
     assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
+    // At half the size a radius of 4 is drawn as 2, and 1.6 as 0.8: under the minimum, still drawn.
+    for radius in [4.0, 1.6] {
+        let (worst, mean) = difference(
+            &render(backdrop_layers(radius), 1.0),
+            &render(backdrop_layers(radius), 0.5),
+        );
+        eprintln!(
+            "scale 0.5, radius {radius}, against the full render shrunk: worst {worst}, mean {mean:.3}"
+        );
+        assert!(
+            worst <= 40 && mean < 0.5,
+            "radius {radius}: worst {worst}, mean {mean:.3}"
+        );
+    }
 }

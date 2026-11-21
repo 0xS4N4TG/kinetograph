@@ -764,14 +764,25 @@ pub(crate) fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedE
     out
 }
 
+/// A blur, backdrop blur or glow radius: 0 (no blur) under `blur::MIN_RADIUS`. The authored radius decides whether
+/// there is a blur, so a render at another scale (`ResolvedEffect::scaled`) blurs exactly when the full render does.
+fn blur_radius(radius: f64) -> f32 {
+    let radius = radius.clamp(0.0, MAX_BLUR_RADIUS) as f32;
+    if radius < crate::blur::MIN_RADIUS {
+        0.0
+    } else {
+        radius
+    }
+}
+
 fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
     let f = clock.t;
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
         },
         Effect::BackdropBlur { radius, edge_mode } => ResolvedEffect::BackdropBlur {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
             mirror: *edge_mode == crate::scene::BackdropEdge::Mirror,
         },
         Effect::BackdropFilter { effects } => ResolvedEffect::BackdropColor(
@@ -788,7 +799,7 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             color,
             intensity,
         } => ResolvedEffect::Glow(ResolvedGlow {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
             color: *color,
             intensity: intensity.at(f).clamp(0.0, MAX_GLOW_INTENSITY) as f32,
         }),
