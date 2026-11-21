@@ -2,11 +2,25 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUNTIMES, RUNTIME_PACKAGE } from '../src/registry.js';
 import { ensureOnnxRuntime, runtimeDir, runtimeLibrary } from '../src/runtime.js';
 import { resetVideoMattingForTests, setFetchForTests } from '../src/testing.js';
 import { serve, tempDir } from './helpers.js';
+
+// `writeFileSync` writes half of what it is given to a path `failAt` matches and then throws, as a full disk would.
+const disk = vi.hoisted(() => ({ failAt: undefined as RegExp | undefined }));
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>();
+  const writeFileSync: typeof fs.writeFileSync = (path, data, options) => {
+    if (disk.failAt?.test(String(path)) && Buffer.isBuffer(data)) {
+      fs.writeFileSync(path, data.subarray(0, data.length >> 1), options);
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    }
+    fs.writeFileSync(path, data, options);
+  };
+  return { ...fs, writeFileSync, default: { ...fs, writeFileSync } };
+});
 
 const key = `${process.platform}-${process.arch}`;
 const original = RUNTIMES[key];
@@ -75,6 +89,7 @@ afterEach(() => {
   if (savedModelDir === undefined) delete process.env.KINETOGRAPH_MODEL_DIR;
   else process.env.KINETOGRAPH_MODEL_DIR = savedModelDir;
   if (savedOrt !== undefined) process.env.ORT_DYLIB_PATH = savedOrt;
+  disk.failAt = undefined;
 });
 
 describe.skipIf(process.platform === 'win32' || original === undefined)('ensureOnnxRuntime', () => {
@@ -99,6 +114,18 @@ describe.skipIf(process.platform === 'win32' || original === undefined)('ensureO
     setFetchForTests(serve(bytes, { urls: [], ranges: [] }));
     await expect(ensureOnnxRuntime()).rejects.toMatchObject({ code: 'MODEL_CHECKSUM' });
     expect(existsSync(runtimeLibrary())).toBe(false);
+  });
+
+  it('unpacks again after a write that failed partway', async () => {
+    const log = { urls: [] as string[], ranges: [] as (string | null)[] };
+    setFetchForTests(serve(fakePackage(), log));
+    // The last file fails half-written (at its name or beside it), after the others are whole.
+    disk.failAt = /libfake_providers\.so(\.tmp)?$/;
+    await expect(ensureOnnxRuntime()).rejects.toMatchObject({ code: 'MODEL_DOWNLOAD' });
+    disk.failAt = undefined;
+    const path = await ensureOnnxRuntime();
+    expect(log.urls).toHaveLength(2);
+    expect(readFileSync(join(dirname(path!), 'libfake_providers.so'), 'utf8')).toBe('the provider');
   });
 
   it('downloads nothing when ORT_DYLIB_PATH names a library', async () => {

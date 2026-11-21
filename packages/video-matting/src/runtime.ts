@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { download, type DownloadVideoMattingModelOptions } from './cache.js';
 import { VideoMattingError } from './errors.js';
@@ -37,7 +37,7 @@ let pending: Promise<string | undefined> | undefined;
 
 /**
  * The path of ONNX Runtime's library for `matteVideo`, downloading it first when it is not in the cache: Microsoft's
- * release archive for this platform, checked against its pinned SHA-256, with the library taken out of it. `undefined`
+ * NuGet package, checked against its pinned SHA-512, with this platform's files taken out of it. `undefined`
  * when `ORT_DYLIB_PATH` names a library (the addon reads that itself). Only runs before a job, never during one.
  */
 export function ensureOnnxRuntime(options: Omit<DownloadVideoMattingModelOptions, 'model'> = {}): Promise<string | undefined> {
@@ -53,6 +53,7 @@ async function fetchRuntime(options: Omit<DownloadVideoMattingModelOptions, 'mod
   const spec = runtimeSpec();
   const dir = runtimeDir();
   const wanted = Object.keys(spec.files);
+  // A file is only ever at its name whole (see below), so one that is there is complete.
   if (wanted.every((f) => existsSync(join(libDir(spec), f)))) return runtimeLibrary(spec);
 
   const archive = join(dir, 'microsoft.ml.onnxruntime.nupkg');
@@ -64,7 +65,12 @@ async function fetchRuntime(options: Omit<DownloadVideoMattingModelOptions, 'mod
     // Only this platform's files, not the other platforms' libraries; the package is deleted after.
     const entries = await readZipEntries(archive, Object.values(spec.files));
     mkdirSync(libDir(spec), { recursive: true });
-    for (const [name, entry] of Object.entries(spec.files)) writeFileSync(join(libDir(spec), name), entries.get(entry)!, { mode: 0o755 });
+    // Written beside its name and renamed, so a kill or a full disk mid-write leaves a `.tmp` and no library.
+    for (const [name, entry] of Object.entries(spec.files)) {
+      const path = join(libDir(spec), name);
+      writeFileSync(`${path}.tmp`, entries.get(entry)!, { mode: 0o755 });
+      renameSync(`${path}.tmp`, path);
+    }
   } catch (error) {
     throw new VideoMattingError('MODEL_DOWNLOAD', `Unpacking ONNX Runtime ${RUNTIME_VERSION} failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
