@@ -23,8 +23,6 @@ ash = { version = "0.38" }
 # there is no GPU), and Skia draws on the CPU (`render/skia/backend.rs`).
 [target.'cfg(windows)'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["dx12"] }
-# `diag.rs`: stderr writes that are safe on an overlapped handle. The version already in the tree.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dependencies]
 # ANGLE's libEGL and libGLESv2, loaded at run time (`angle.rs`, the WebGL replay).

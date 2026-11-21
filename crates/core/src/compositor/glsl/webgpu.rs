@@ -115,7 +115,7 @@ impl Compositor {
 
     fn webgpu_warn(&mut self, message: &str) {
         if self.glsl.webgpu.warned.insert(message.to_string()) {
-            crate::diag::line(format_args!("kinetograph: webgpu: {message}"));
+            eprintln!("kinetograph: webgpu: {message}");
         }
     }
 

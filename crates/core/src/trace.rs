@@ -6,6 +6,7 @@
 //! right after loses none. Nothing here changes what is drawn; the variable is read once.
 
 use std::fmt;
+use std::io::Write;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -24,7 +25,10 @@ fn line(kind: &str, step: &str, detail: fmt::Arguments) {
     static COUNT: AtomicU64 = AtomicU64::new(0);
     let n = COUNT.fetch_add(1, Ordering::Relaxed) + 1;
     let detail = detail.to_string().replace(['\n', '\r'], " ");
-    crate::diag::line(format_args!("kinetograph-trace: {n} {kind} {step} {detail}"));
+    let mut err = std::io::stderr().lock();
+    // A closed stderr is no reason to stop rendering.
+    let _ = writeln!(err, "kinetograph-trace: {n} {kind} {step} {detail}");
+    let _ = err.flush();
 }
 
 /// Says that `step` is about to begin.

@@ -1252,7 +1252,7 @@ impl Translator {
         let e = match skia_safe::RuntimeEffect::make_for_shader(sksl, None) {
             Ok(e) => Some(e),
             Err(err) => {
-                crate::diag::line(format_args!("kinetograph: skia runtime effect {key} did not compile: {err}"));
+                eprintln!("kinetograph: skia runtime effect {key} did not compile: {err}");
                 None
             }
         };
@@ -1285,11 +1285,11 @@ impl Translator {
             }
         }
         b.set_uniform_float("lin", &[lin]).ok()?;
-        b.set_uniform_float("count", &[n as f32]).map_err(|e| crate::diag::line(format_args!("kinetograph: gradientMap uniform count: {e}"))).ok()?;
+        b.set_uniform_float("count", &[n as f32]).map_err(|e| eprintln!("kinetograph: gradientMap uniform count: {e}")).ok()?;
         b.set_uniform_float("amount", &[gm.amount]).ok()?;
-        b.set_uniform_float("offs", &offs).map_err(|e| crate::diag::line(format_args!("kinetograph: gradientMap uniform offs: {e}"))).ok()?;
+        b.set_uniform_float("offs", &offs).map_err(|e| eprintln!("kinetograph: gradientMap uniform offs: {e}")).ok()?;
         for (name, v) in ["cr", "cg", "cb", "ca"].into_iter().zip(&cols) {
-            b.set_uniform_float(name, v).map_err(|e| crate::diag::line(format_args!("kinetograph: gradientMap uniform {name}: {e}"))).ok()?;
+            b.set_uniform_float(name, v).map_err(|e| eprintln!("kinetograph: gradientMap uniform {name}: {e}")).ok()?;
         }
         image_filters::runtime_shader(&b, "src", input)
     }
