@@ -143,6 +143,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - A `url(#id)` in `mask-image` or another property names an element of the page, so it is no longer reported as a missing file.
 - A stylesheet rule that sets `stop-color` or `stop-opacity` on an SVG `<stop>` (`.a { stop-color: var(--brand, #f73) }`) colours the gradient; the stops were black.
 - `mask-image` on an SVG element is a list of layers: a `url(#mask)` and a gradient (`mask-composite: intersect`) mask it, as one `url(#mask)` already did (HyperFrames svg-mask-reveal).
+- Video matting downloads ONNX Runtime from Microsoft's NuGet package (GitHub releases are gone).
 
 ## 0.3.0 (2026-11-03)
 
