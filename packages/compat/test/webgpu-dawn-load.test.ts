@@ -84,6 +84,26 @@ describe('finding the Dawn library', () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
+  it('falls back to the built-in WebGPU, said once, when a host installs the page globals and Dawn cannot load', async () => {
+    await fresh();
+    const { installDomGlobals } = await import('../src/shim/web.js');
+    const { GPU_GLOBALS } = await import('@kinetographdev/scene');
+    vi.stubEnv('KINETOGRAPH_WEBGPU', '');
+    vi.stubEnv('KINETOGRAPH_DAWN_DIR', '/no/such/dawn');
+    const said = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(() => installDomGlobals()).not.toThrow();
+      installDomGlobals();
+      const warnings = said.mock.calls.map(([text]) => String(text)).filter((text) => text.includes('WebGPU through Dawn'));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatch(/^warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws instead: .*KINETOGRAPH_DAWN_DIR=\/no\/such\/dawn has no dawn\.node/);
+    } finally {
+      said.mockRestore();
+    }
+    expect(process.env.KINETOGRAPH_WEBGPU).toBe('builtin');
+    expect((globalThis as any).GPUBufferUsage).toBe(GPU_GLOBALS.GPUBufferUsage);
+  });
+
   it.skipIf(!installed)('finds the platform package\'s dawn.node when nothing else is set', async () => {
     const { dawnGlobals } = await fresh();
     expect(typeof (dawnGlobals() as any).GPUDevice).toBe('function');

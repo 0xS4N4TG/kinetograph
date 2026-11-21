@@ -657,6 +657,21 @@ function webglGlobal(version: 1 | 2): typeof WebGLContext {
 }
 
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
+/**
+ * Dawn for this thread, or null when it cannot start here (no binary for the platform, one that does not load, no adapter): the built-in WebGPU
+ * layer then draws, said once, for a host that did not decide before it ran (the CLI and Studio do, `prepareCliDawn`). `KINETOGRAPH_WEBGPU=builtin`
+ * is set in this thread's environment, so its canvases take the built-in context too.
+ */
+function installDawnOrBuiltin(): unknown {
+  try {
+    return installDawn({ track: trackPending, trackReadback, rasterize: rasterizeCanvas });
+  } catch (error) {
+    process.env.KINETOGRAPH_WEBGPU = 'builtin';
+    process.stderr.write(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws instead: ${(error as Error).message.replace(/^Dawn: /, '')}\n`);
+    return null;
+  }
+}
+
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   setImageSizeReader(imageSizeAt);
@@ -718,7 +733,7 @@ export function installDomGlobals(): void {
   define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
   // KINETOGRAPH_WEBGPU=dawn: the page gets Dawn's own objects (webgpu-dawn.ts).
-  const dawn = dawnRequested() ? installDawn({ track: trackPending, trackReadback, rasterize: rasterizeCanvas }) : null;
+  const dawn = dawnRequested() ? installDawnOrBuiltin() : null;
   for (const [name, value] of Object.entries(dawn === null ? GPU_GLOBALS : dawnGlobals())) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });

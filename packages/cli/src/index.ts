@@ -5,6 +5,7 @@ import { cliVersion } from './version.js';
 export { createMcpServer, toolCommands, toolName } from './mcp.js';
 export { bundleProject, cacheDir, resolveSpecifier, syntheticEntry, watchProject } from './bundle.js';
 export type { BundleResult, ProjectBuild } from './bundle.js';
+export { prepareCliDawn } from './dawn.js';
 export { CliError, toErrorObject } from './errors.js';
 export { native } from './native.js';
 export type { InspectLayer, InspectResult, Native } from './native.js';
