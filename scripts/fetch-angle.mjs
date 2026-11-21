@@ -133,7 +133,7 @@ const NOTICES = 'THIRD-PARTY-NOTICES.txt';
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 // The entries of a zip by name: [{ name, method, size, offset }] read from the central directory.
-function zipEntries(zip) {
+export function zipEntries(zip) {
   const eocd = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   if (eocd < 0) throw new Error('not a zip file');
   const count = zip.readUInt16LE(eocd + 10);
@@ -149,7 +149,7 @@ function zipEntries(zip) {
   return entries;
 }
 
-function zipRead(zip, entries, name) {
+export function zipRead(zip, entries, name) {
   const e = entries.get(name);
   if (!e) throw new Error(`${name} is not in the archive`);
   if (zip.readUInt32LE(e.offset) !== 0x04034b50) throw new Error(`bad zip entry for ${name}`);
