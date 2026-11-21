@@ -205,7 +205,7 @@ fn cpu_notice(forced: bool, why: Option<&str>) -> String {
 /// Tells, once per process, that Skia draws on the CPU.
 fn warn_cpu(forced: bool, why: Option<&str>) {
     static SAID: std::sync::Once = std::sync::Once::new();
-    SAID.call_once(|| eprintln!("{}", cpu_notice(forced, why)));
+    SAID.call_once(|| crate::diag::line(format_args!("{}", cpu_notice(forced, why))));
 }
 
 /// Makes `tr` draw with Graphite: images are uploaded by `rec` and the wgpu path's textures are wrapped by it.
@@ -219,7 +219,7 @@ fn warn_once(what: &str) {
     static SEEN: Mutex<Option<HashSet<String>>> = Mutex::new(None);
     let mut seen = SEEN.lock().unwrap();
     if seen.get_or_insert_with(HashSet::new).insert(what.to_string()) {
-        eprintln!("kinetograph: skia backend did not draw: {what}");
+        crate::diag::line(format_args!("kinetograph: skia backend did not draw: {what}"));
     }
 }
 
