@@ -47,7 +47,9 @@ export interface DownloadTarget {
   /** The file's final path; its folder is made. */
   path: string;
   size: number;
-  sha256: string;
+  sha256?: string;
+  /** Checked instead of `sha256` when given (NuGet publishes its packages' SHA-512), as hex. */
+  sha512?: string;
   /** What the errors call it. */
   name: string;
   /** What the checksum error says about the pin. */
@@ -66,7 +68,7 @@ function targetOf(spec: ModelSpec): DownloadTarget {
   };
 }
 
-async function sha256Of(file: string, hash: ReturnType<typeof createHash>): Promise<void> {
+async function hashOf(file: string, hash: ReturnType<typeof createHash>): Promise<void> {
   for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
 }
 
@@ -114,8 +116,10 @@ export async function download(target: DownloadTarget, { signal, onProgress }: O
     // A server that ignores the range sends the whole file with a 200.
     if (offset > 0 && response.status === 200) offset = 0;
 
-    const hash = createHash('sha256');
-    if (offset > 0) await sha256Of(part, hash);
+    const algorithm = target.sha512 ? 'sha512' : 'sha256';
+    const expected = target.sha512 ?? target.sha256;
+    const hash = createHash(algorithm);
+    if (offset > 0) await hashOf(part, hash);
     handle = await open(part, offset > 0 ? 'a' : 'w');
 
     let loaded = 0;
@@ -142,11 +146,11 @@ export async function download(target: DownloadTarget, { signal, onProgress }: O
 
     const size = offset + loaded;
     const digest = hash.digest('hex');
-    if (size !== target.size || digest !== target.sha256) {
+    if (size !== target.size || digest !== expected) {
       discard();
       throw new VideoMattingError(
         'MODEL_CHECKSUM',
-        `The download of ${target.name} (${target.pin}) does not match the pinned file: expected ${target.size} bytes with SHA-256 ${target.sha256}, got ${size} bytes with ${digest}`,
+        `The download of ${target.name} (${target.pin}) does not match the pinned file: expected ${target.size} bytes with ${algorithm === 'sha512' ? 'SHA-512' : 'SHA-256'} ${expected}, got ${size} bytes with ${digest}`,
       );
     }
     report(true);
