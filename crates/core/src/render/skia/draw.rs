@@ -2172,7 +2172,7 @@ impl Translator {
         // A layer that blurs its backdrop sees what Skia has drawn so far: the frame's surface, flushed to its texture.
         // Inside a layer of Skia's own (a group's opacity, blend or effects) the backdrop is that layer, which only Skia
         // holds: left out.
-        let backdrop = if !crate::render::uses_backdrop(siblings, layer) {
+        let backdrop = if !crate::render::uses_backdrop(siblings, layer, self.render_scale as f32) {
             None
         } else if self.in_skia_layer(canvas) {
             self.stats.approx("backdrop of a GPU-drawn layer in a Skia layer (left out)");

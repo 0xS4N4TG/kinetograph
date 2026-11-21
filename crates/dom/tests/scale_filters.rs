@@ -203,3 +203,46 @@ fn grain_and_dither_cells_shrink_with_the_canvas() {
         );
     }
 }
+
+/// A red box on the left half and, over the whole canvas in a preserve3d group (drawn by the wgpu compositor), a clear
+/// panel that blurs its backdrop by `radius`.
+fn backdrop_layers(radius: f64) -> Vec<Value> {
+    vec![
+        json!({ "id": "red", "type": "shape", "fill": "#ff0000",
+                "shape": { "kind": "rect", "width": WIDTH / 2, "height": HEIGHT } }),
+        json!({ "id": "g", "type": "group", "preserve3d": true, "children": [
+            { "id": "panel", "type": "shape", "fill": "#ffffff00",
+              "shape": { "kind": "rect", "width": WIDTH, "height": HEIGHT },
+              "effects": [{ "type": "backdropBlur", "radius": radius }] },
+        ]}),
+    ]
+}
+
+/// The green channel along the middle row of `f`, from `x0` for `n` pixels.
+fn green_row(f: &Frame, x0: u32, n: u32) -> Vec<u8> {
+    let y = f.height / 2;
+    (x0..x0 + n)
+        .map(|x| f.rgba[((y * f.width + x) * 4) as usize + 1])
+        .collect()
+}
+
+#[test]
+fn a_small_backdrop_blur_is_drawn_by_its_scaled_radius() {
+    // At twice the size a radius of 0.6, under the blur's minimum, is 1.2: the compositor blurs, so the backdrop must
+    // have been captured. The red edge at x 200 (400 at twice the size) is soft.
+    let double = render(backdrop_layers(0.6), 2.0);
+    let edge = green_row(&double, 396, 8);
+    eprintln!("scale 2, radius 0.6: green across the edge {edge:?}");
+    assert!(edge[3] > 0 && edge[4] < 255, "{edge:?}: not blurred");
+    let (worst, mean) = difference(&double, &render(backdrop_layers(0.6), 1.0));
+    // The full render leaves a radius under the minimum unblurred, so only the edge's own pixels differ.
+    eprintln!("scale 2 shrunk against the full render: worst {worst}, mean {mean:.3}");
+    assert!(mean < 1.0, "worst {worst}, mean {mean:.3}");
+    // At half the size a radius of 4 is 2, still blurred.
+    let (worst, mean) = difference(
+        &render(backdrop_layers(4.0), 1.0),
+        &render(backdrop_layers(4.0), 0.5),
+    );
+    eprintln!("scale 0.5 against the full render shrunk: worst {worst}, mean {mean:.3}");
+    assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
+}

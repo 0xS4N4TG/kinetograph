@@ -772,7 +772,7 @@ impl Renderer {
             // A group that changes nothing about how its children are blended
             // needs no buffer either (`needs_no_buffer`).
             if let ResolvedKind::Group { children, .. } = &layer.kind
-                && needs_no_buffer(layer)
+                && needs_no_buffer(layer, self.scene.render_scale as f32)
             {
                 self.cache_path.push(layer.id.clone());
                 let drawn = self.draw_layers_into(
@@ -1059,7 +1059,8 @@ impl Renderer {
         if placement.backface_hidden && h.determinant() < 0.0 {
             return Ok(None);
         }
-        let needs_backdrop = uses_backdrop(item.siblings, item.layer);
+        let needs_backdrop =
+            uses_backdrop(item.siblings, item.layer, self.scene.render_scale as f32);
         let combined = match below {
             Some(below) if needs_backdrop => {
                 Some(self.timed(Stage::Composite, |s| s.compositor.over(below, canvas)))
@@ -1210,7 +1211,7 @@ impl Renderer {
         census(layer, "tex", opacity);
         // The backdrop is only built for a layer that blurs it: the canvas so
         // far, under anything the enclosing groups have behind them.
-        let needs_backdrop = uses_backdrop(siblings, layer);
+        let needs_backdrop = uses_backdrop(siblings, layer, self.scene.render_scale as f32);
         if needs_backdrop {
             canvas = self.blend_pending(canvas, pending);
         }
@@ -1284,7 +1285,7 @@ impl Renderer {
             "mask"
         } else if !self.compositor.blends_per_pixel(layer.blend_mode) {
             "mode"
-        } else if uses_backdrop(siblings, layer) {
+        } else if uses_backdrop(siblings, layer, self.scene.render_scale as f32) {
             "backdrop"
         } else {
             ""
@@ -1324,7 +1325,9 @@ impl Renderer {
                 ResolvedKind::Group {
                     preserve3d: true, ..
                 } => return None,
-                ResolvedKind::Group { children, .. } if needs_no_buffer(layer) => {
+                ResolvedKind::Group { children, .. }
+                    if needs_no_buffer(layer, self.scene.render_scale as f32) =>
+                {
                     n += self.fused_layers(children)?;
                 }
                 // A group of groups is left to be drawn one group at a time:
@@ -1697,9 +1700,12 @@ impl Renderer {
                 }
             }
         };
+        let render_scale = self.scene.render_scale as f32;
         // A shape frosts its whole geometry, however see-through its fill is.
         let coverage = match (&layer.kind, backdrop) {
-            (ResolvedKind::Shape { .. }, Some(_)) if has_backdrop_blur(&layer.effects) => {
+            (ResolvedKind::Shape { .. }, Some(_))
+                if has_backdrop_blur(&layer.effects, render_scale) =>
+            {
                 let region = raster.unwrap_or_else(|| self.whole());
                 if region.is_empty() {
                     Some(self.timed(Stage::Composite, |s| s.compositor.empty()))
@@ -1716,7 +1722,6 @@ impl Renderer {
         };
         // `render --scale`: the effects' lengths in canvas pixels shrink with the canvas, as the Skia painter's do. Every
         // effect the wgpu path draws passes through here.
-        let render_scale = self.scene.render_scale as f32;
         let scaled: Vec<ResolvedEffect>;
         let effects = if render_scale == 1.0 {
             &layer.effects
@@ -2162,7 +2167,7 @@ fn draws_image(kind: &ResolvedKind) -> bool {
 /// and is not a preserve3d group (whose children would blend one by one). Its children are then blended
 /// onto the canvas in the same order, so the result is the same up to f16
 /// rounding: `(b over a) over canvas` against `b over (a over canvas)`.
-fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
+fn needs_no_buffer(layer: &ResolvedLayer, render_scale: f32) -> bool {
     let ResolvedKind::Group {
         children,
         preserve3d: false,
@@ -2182,7 +2187,7 @@ fn needs_no_buffer(layer: &ResolvedLayer) -> bool {
         && layer.matte.is_none()
         && layer.motion.is_empty()
         && warp::layer_world(&layer.transform).is_none()
-        && !needs_backdrop(layer)
+        && !needs_backdrop(layer, render_scale)
         && children
             .iter()
             .filter(|c| !is_hidden(c) && !is_matte_source(children, c))
@@ -2225,31 +2230,33 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
     })
 }
 
-/// Whether `effects` blur the backdrop.
-fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
+/// Whether `effects` blur the backdrop, their radii times `render_scale` (`Scene::render_scale`) as the compositor
+/// draws them.
+fn has_backdrop_blur(effects: &[ResolvedEffect], render_scale: f32) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius * render_scale >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
 /// or so does something inside it, or one of its motion blur sub-frames does
 /// (an animated radius can be under the minimum at the frame itself).
-fn needs_backdrop(layer: &ResolvedLayer) -> bool {
-    has_backdrop_blur(&layer.effects)
-        || matches!(&layer.kind, ResolvedKind::Group { children, .. } if children.iter().any(needs_backdrop))
-        || layer.motion.iter().any(needs_backdrop)
+fn needs_backdrop(layer: &ResolvedLayer, render_scale: f32) -> bool {
+    let needs = |l: &ResolvedLayer| needs_backdrop(l, render_scale);
+    has_backdrop_blur(&layer.effects, render_scale)
+        || matches!(&layer.kind, ResolvedKind::Group { children, .. } if children.iter().any(needs))
+        || layer.motion.iter().any(needs)
 }
 
 /// Like `needs_backdrop`, counting the layer's matte source, which is drawn
 /// through it.
-fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer) -> bool {
-    needs_backdrop(layer)
+fn uses_backdrop(siblings: &[ResolvedLayer], layer: &ResolvedLayer, render_scale: f32) -> bool {
+    needs_backdrop(layer, render_scale)
         || layer
             .matte
             .as_ref()
             .and_then(|m| siblings.iter().find(|l| l.id == m.layer))
-            .is_some_and(needs_backdrop)
+            .is_some_and(|l| needs_backdrop(l, render_scale))
 }
 
 /// `b` shrunk by the four distances, with rounded corners. Empty when
@@ -2465,7 +2472,7 @@ mod tests {
         let layers = scene.resolve(0).unwrap().layers;
         let needs: Vec<_> = layers
             .iter()
-            .map(|l| (l.id.as_str(), uses_backdrop(&layers, l)))
+            .map(|l| (l.id.as_str(), uses_backdrop(&layers, l, 1.0)))
             .collect();
         assert_eq!(
             needs,
@@ -2549,7 +2556,7 @@ mod tests {
         let group = |fields: &str, children: &str| {
             let json =
                 format!(r##"[{{"id": "g", "type": "group"{fields}, "children": [{children}]}}]"##);
-            needs_no_buffer(&resolve_layers(&json)[0])
+            needs_no_buffer(&resolve_layers(&json)[0], 1.0)
         };
         let plain = format!("{}, {}", card("a", "{}"), card("b", r##"{"x": 5}"##));
         assert!(group("", &plain));
@@ -2587,7 +2594,7 @@ mod tests {
         let json = format!(
             r##"[{{"id": "g", "type": "group", "passThrough": true, "children": [{multiply}]}}]"##
         );
-        assert!(needs_no_buffer(&resolve_layers(&json)[0]));
+        assert!(needs_no_buffer(&resolve_layers(&json)[0], 1.0));
         // A hidden child, or a matte source, is not drawn by the group.
         assert!(group(
             "",
@@ -2632,7 +2639,8 @@ mod tests {
         ));
         // Not a group at all.
         assert!(!needs_no_buffer(
-            &resolve_layers(&format!("[{}]", card("a", "{}")))[0]
+            &resolve_layers(&format!("[{}]", card("a", "{}")))[0],
+            1.0
         ));
     }
     #[test]
@@ -2664,7 +2672,17 @@ mod tests {
                     "radius": [{"frame": 0, "value": 0}, {"frame": 1, "value": 16}]}],
                   "motionBlur": {"samples": 4, "shutter": 1}}]"##,
         );
-        assert!(!has_backdrop_blur(&layers[0].effects));
-        assert!(uses_backdrop(&layers, &layers[0]));
+        assert!(!has_backdrop_blur(&layers[0].effects, 1.0));
+        assert!(uses_backdrop(&layers, &layers[0], 1.0));
+    }
+    #[test]
+    fn the_backdrop_is_needed_by_the_radius_as_drawn() {
+        // Under the minimum radius at full size, over it at twice the size, where the compositor blurs by 1.2.
+        let layers = resolve_layers(
+            r##"[{"id": "faint", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0.6}]}]"##,
+        );
+        assert!(!uses_backdrop(&layers, &layers[0], 1.0));
+        assert!(uses_backdrop(&layers, &layers[0], 2.0));
     }
 }
