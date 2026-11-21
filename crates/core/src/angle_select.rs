@@ -1,62 +1,8 @@
-//! Which WebGL replay draws and, with ANGLE, which of its devices: pure choices, made from the environment's values and
-//! from what a probe found, so they are tested without a GPU. `angle.rs` supplies the probes.
+//! Which ANGLE device draws WebGL: pure choices, made from the environment's values and from what a probe found, so they
+//! are tested without a GPU. `angle.rs` supplies the probes.
 //!
-//! `KINETOGRAPH_WEBGL`: unset or `auto` uses ANGLE when it loads and starts, else the built-in replay (one warning
-//! saying why; never an error, as with the other backend fallbacks, `--strict` is about content); `angle` requires ANGLE
-//! (a failure is an error at the first WebGL layer); anything else, `builtin` included, is the built-in replay.
 //! `KINETOGRAPH_ANGLE_BACKEND`: `swiftshader` forces ANGLE's software Vulkan driver; `native` forbids falling back to it.
 //! Neither reads the clock or the order of a run: the choice is made once per process from files and the environment.
-
-/// The replay `KINETOGRAPH_WEBGL` asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mode {
-    Auto,
-    Angle,
-    Builtin,
-}
-
-pub fn mode(value: Option<&str>) -> Mode {
-    match value {
-        None | Some("") | Some("auto") => Mode::Auto,
-        Some("angle") => Mode::Angle,
-        Some(_) => Mode::Builtin,
-    }
-}
-
-/// The replay in use and why, for `doctor` and the one warning.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Decision {
-    pub angle: bool,
-    pub why: String,
-    /// What to print once on stderr.
-    pub warning: Option<String>,
-}
-
-/// `probe` starts ANGLE and says which device it got and why (`Err`: what failed).
-pub fn decide(mode: Mode, probe: impl FnOnce() -> Result<String, String>) -> Decision {
-    match mode {
-        Mode::Builtin => Decision {
-            angle: false,
-            why: "KINETOGRAPH_WEBGL selects the built-in replay".into(),
-            warning: None,
-        },
-        Mode::Angle => Decision {
-            angle: true,
-            why: "KINETOGRAPH_WEBGL=angle".into(),
-            warning: None,
-        },
-        Mode::Auto => match probe() {
-            Ok(why) => Decision { angle: true, why, warning: None },
-            Err(e) => Decision {
-                angle: false,
-                why: format!("ANGLE is not usable here: {e}"),
-                warning: Some(format!(
-                    "kinetograph: WebGL uses the built-in replay, which draws less than ANGLE: {e} (KINETOGRAPH_WEBGL=builtin skips the ANGLE check)"
-                )),
-            },
-        },
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Os {
@@ -155,32 +101,6 @@ pub fn pick<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_mode_names() {
-        assert_eq!(mode(None), Mode::Auto);
-        assert_eq!(mode(Some("")), Mode::Auto);
-        assert_eq!(mode(Some("auto")), Mode::Auto);
-        assert_eq!(mode(Some("angle")), Mode::Angle);
-        assert_eq!(mode(Some("builtin")), Mode::Builtin);
-        assert_eq!(mode(Some("wgpu")), Mode::Builtin);
-    }
-
-    #[test]
-    fn auto_uses_angle_when_it_starts_and_warns_once_when_it_does_not() {
-        let ok = decide(Mode::Auto, || Ok("Metal".into()));
-        assert!(ok.angle && ok.warning.is_none());
-        let bad = decide(Mode::Auto, || Err("no libEGL".into()));
-        assert!(!bad.angle);
-        assert!(bad.warning.unwrap().contains("no libEGL"));
-    }
-
-    #[test]
-    fn builtin_and_angle_do_not_probe() {
-        let never = || -> Result<String, String> { panic!("probed") };
-        assert!(!decide(Mode::Builtin, never).angle);
-        assert!(decide(Mode::Angle, never).angle);
-    }
 
     #[test]
     fn candidates_by_platform() {

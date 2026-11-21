@@ -1,7 +1,7 @@
 // A `WebGLRenderingContext` and `WebGL2RenderingContext` that record instead of rasterising (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl").
 // It keeps the context's state as a browser's does and writes each clear and each draw as an op that carries the
 // program, the vertex data, the uniforms, the textures and the state it ran with; the renderer replays the ops on the
-// GPU with the page's own GLSL, translated to WGSL by naga. Nothing here reads a clock or anything else outside the
+// GPU with the page's own GLSL, drawn by ANGLE. Nothing here reads a clock or anything else outside the
 // calls, so what a context holds is a function of what it was told.
 //
 // The slice that is drawn is the one shader-toy pages and shader transitions use: programs of two shaders, buffers,
@@ -1957,7 +1957,7 @@ export class WebGLContext {
 
   /**
    * A clear through a colour mask or a stencil mask, kept as a clear with its masks (and the scissor box when the test is
-   * on): the replay that has a real `glClear` does it as GL does, the hand-written one reports it. It never hides the draws
+   * on): ANGLE does it as GL does. It never hides the draws
    * before it, since it leaves part of every buffer as it was.
    */
   private pushMaskedClear(values: { color?: [number, number, number, number]; depth?: number; stencil?: number }, color: boolean, stencilMask: number, outputs?: (WebGLAttachment | null)[]): void {

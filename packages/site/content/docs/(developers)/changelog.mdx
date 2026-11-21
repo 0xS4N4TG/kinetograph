@@ -21,10 +21,11 @@ Kinetograph is in beta, so APIs can still change between versions. The same list
 - CSS gradient colour interpolation spaces: `srgb-linear`, `xyz` and `oklch` with hue methods.
 - CSS generic and system font names (`sans-serif`, `serif`, `ui-*`, `system-ui`) draw in bundled fonts; text with no `font-family` stays in the project's first font.
 - The `kinetograph` agent skill routes to smaller skills: `kinetograph-create`, `-markup`, `-render`, `-studio`, `-docs` and `-upgrade`.
-- WebGL draws on ANGLE (Google's OpenGL ES library, loaded from the platform package) by default. `KINETOGRAPH_WEBGL=builtin` selects the earlier hand-written replay, which is also used, with one warning, when ANGLE cannot start.
+- WebGL draws on ANGLE (Google's OpenGL ES library, loaded from the platform package). The earlier hand-written replay and `KINETOGRAPH_WEBGL` are gone: where ANGLE cannot start, a WebGL canvas is an error saying why.
+- A WebGL texture made from a shader group's child, and `drawElements` from an index buffer, draw on ANGLE.
 - ANGLE picks its device by itself: Metal on macOS, Vulkan on Linux, Direct3D 11 on Windows, and SwiftShader (CPU) when the machine has no usable GPU device. `KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it.
 - The Linux and Windows packages ship SwiftShader and the Vulkan loader in `angle/`.
-- `doctor` reports the WebGL backend and the ANGLE device it would use, and why.
+- `doctor` reports the ANGLE device WebGL would use and why, or says that WebGL will not work.
 - WebGL: cube maps, 2D array textures, float colour targets, sRGB textures, struct uniforms, shadow samplers, constant and matrix attributes, line draws and scissored clears.
 - WebGL `blitFramebuffer` to and from float render targets.
 - WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).

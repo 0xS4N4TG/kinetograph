@@ -22,8 +22,6 @@ pub mod generic_fonts;
 pub mod gif;
 pub mod glsl;
 mod glsl_blocks;
-mod glsl_cpp;
-mod glsl_samplers;
 pub mod grade;
 #[cfg(test)]
 mod hash;

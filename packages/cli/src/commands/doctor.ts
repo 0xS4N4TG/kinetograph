@@ -137,7 +137,7 @@ function probeHere(): ProbeResult {
 
 /** The WebGL line of the report: the replay, the ANGLE device and why. */
 export function describeWebgl(webgl: WebglBackend): string {
-  return webgl.backend === 'angle' ? `webgl: ANGLE on ${webgl.device ?? 'no device'} (${webgl.why})` : `webgl: built-in replay (${webgl.why})`;
+  return webgl.backend === 'angle' ? `webgl: ANGLE on ${webgl.device ?? 'no device'} (${webgl.why})` : `webgl: will not work, ANGLE cannot start (${webgl.why}); a page with a WebGL canvas fails to render`;
 }
 
 /**

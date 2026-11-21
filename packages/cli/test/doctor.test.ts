@@ -347,6 +347,6 @@ describe('doctor with a delayRender() that is never cleared', () => {
 describe('describeWebgl', () => {
   it('names the backend, the ANGLE device and why', () => {
     expect(describeWebgl({ backend: 'angle', device: 'Metal', why: "the platform's own device (Metal)" })).toBe("webgl: ANGLE on Metal (the platform's own device (Metal))");
-    expect(describeWebgl({ backend: 'builtin', device: null, why: 'KINETOGRAPH_WEBGL selects the built-in replay' })).toBe('webgl: built-in replay (KINETOGRAPH_WEBGL selects the built-in replay)');
+    expect(describeWebgl({ backend: 'none', device: null, why: 'ANGLE is not available: no libEGL' })).toBe('webgl: will not work, ANGLE cannot start (ANGLE is not available: no libEGL); a page with a WebGL canvas fails to render');
   });
 });

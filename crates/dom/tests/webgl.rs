@@ -1,9 +1,10 @@
 //! `<canvas>` with a WebGL context (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"): the recording the TS side puts in `data-kg-webgl` is one
 //! glsl layer in the painted scene. Each case is a file of WebGL calls (`tests/webgl/<name>.js`) and the recording
 //! the recorder made of it (`<name>.json`, `tools/webgl-cases.mjs`). The page has both: Chrome runs the calls with
-//! its own WebGL (the oracle; SwiftShader, so the numbers do not depend on the GPU), and the engine runs the
-//! recording with naga and wgpu. The two pictures are compared (they are in `target/paint-tests`), and ours
-//! against its committed golden.
+//! its own WebGL (the oracle; SwiftShader, so the numbers do not depend on the GPU), and the engine replays the
+//! recording in ANGLE. The two pictures are compared (they are in `target/paint-tests`), and ours against its
+//! committed golden (`tests/golden/angle`, from ANGLE's Metal backend; `KINETOGRAPH_ANGLE_BACKEND=swiftshader` runs
+//! ANGLE's software backend, held to Chrome's picture only).
 
 mod paintkit;
 
@@ -100,12 +101,37 @@ fn body_of(name: &str) -> (String, u32, u32) {
     let body = format!(
         "<canvas id=\"c\" width=\"{w}\" height=\"{h}\" data-kg-webgl='{}' style=\"display:block\"></canvas>\n\
          <script>\n\
-         const W = {w}, H = {h};\n\
+         const W = {w}, H = {h};\n{}\n\
          (function (gl, W, H) {{\n{script}\n}})(document.getElementById('c').getContext('{ctx}', {attributes}), W, H);\n\
          </script>",
-        recording.trim()
+        recording.trim(),
+        layer_pictures(&script),
     );
     (body, w, h)
+}
+
+/// The children of the shader group of `webgl_group_layer`: id, box (x, y, width, height) and CSS colour. The scene
+/// draws them as shape layers; Chrome's page draws them on 2D canvases (`layerPicture`).
+const GROUP_CHILDREN: [(&str, [u32; 4], &str); 2] = [
+    ("a", [0, 0, 32, 48], "rgba(255,128,0,0.5)"),
+    ("b", [0, 0, 64, 16], "#2060d0"),
+];
+
+/// What the page has for `layerPicture`, which a case of a shader group's textures calls: a 2D canvas with the child
+/// drawn, as a browser would take it (nothing for a case that does not call it).
+fn layer_pictures(script: &str) -> String {
+    if !script.contains("layerPicture(") {
+        return String::new();
+    }
+    let children: Vec<String> = GROUP_CHILDREN
+        .iter()
+        .map(|(id, [x, y, w, h], color)| format!("'{id}': [{x}, {y}, {w}, {h}, '{color}']"))
+        .collect();
+    format!(
+        "const layerPicture = (id, w, h) => {{ const c = document.createElement('canvas'); c.width = w; c.height = h; \
+         const [x, y, bw, bh, color] = {{{}}}[id]; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(x, y, bw, bh); return c; }};",
+        children.join(", ")
+    )
 }
 
 /// The mean and largest difference from Chrome (`None` without Chrome).
@@ -117,12 +143,10 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
         "{name}: unsupported {:?}",
         out.unsupported
     );
-    // The goldens in tests/golden are the hand-written replay's bytes. ANGLE has its own (tests/golden/angle, recorded on
-    // the M4 with ANGLE's Metal backend, so a picture that is black or blank does not pass without Chrome), compared with a
-    // tolerance; ANGLE on SwiftShader is held to Chrome's picture only.
-    if !angle_mode() {
-        paintkit::check_golden(name, &frame);
-    } else if std::env::var("KINETOGRAPH_ANGLE_BACKEND").as_deref() != Ok("swiftshader") {
+    // The goldens (tests/golden/angle) were recorded on the M4 with ANGLE's Metal backend, so a picture that is black or
+    // blank does not pass without Chrome; they are compared with a tolerance. ANGLE on SwiftShader is held to Chrome's
+    // picture only.
+    if !swiftshader() {
         check_angle_golden(name, &frame);
     }
     println!("{name}: {diff:?}");
@@ -130,6 +154,49 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
         assert!(d.mean < mean_limit, "{name}: {d:?}");
     }
     diff.map(|d| (d.mean, d.max))
+}
+
+/// A texture whose source is a child of a shader group (`GroupLayer::glsl`): the group is a scene, which a page cannot
+/// make, so Chrome draws the children on 2D canvases and the engine renders the group of the same children and the
+/// case's recording. Turned over and premultiplied by the unpack state, as the page asked.
+#[test]
+fn webgl_group_layer() {
+    let name = "webgl_group_layer";
+    let script = case_file(name, "js");
+    let (w, h) = size_of(&script);
+    let (body, ..) = body_of(name);
+    let child = |(id, [x, y, cw, ch], color): &(&str, [u32; 4], &str)| {
+        serde_json::json!({
+            "id": id, "type": "shape", "x": x, "y": y,
+            "shape": { "kind": "rect", "width": cw, "height": ch }, "fill": color,
+        })
+    };
+    let mut glsl: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
+    glsl["width"] = w.into();
+    glsl["height"] = h.into();
+    let scene = serde_json::json!({
+        "width": w, "height": h, "fps": 30, "durationInFrames": 1, "background": "#ffffff",
+        "layers": [{ "id": "pass", "type": "group", "children": GROUP_CHILDREN.iter().map(child).collect::<Vec<_>>(), "glsl": glsl }],
+    });
+    let scene = kinetograph_core::Scene::from_json(&scene.to_string(), paintkit::repo_root().join("crates/dom/tests/assets"))
+        .unwrap_or_else(|e| panic!("scene rejected: {e}"));
+    let frame = kinetograph_core::render_still(scene, 0).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let dir = paintkit::out_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    paintkit::save_frame(&frame, &dir.join(format!("{name}-ours.png")));
+    if !swiftshader() {
+        check_angle_golden(name, &frame);
+    }
+    if let Some(reference) = paintkit::chrome(name, &body, w, h) {
+        let d = paintkit::diff(&paintkit::frame_image(&frame), &reference);
+        println!("{name}: {d:?}");
+        assert!(d.mean < 1.0, "{name}: {d:?}");
+    }
+}
+
+#[test]
+fn webgl_indexed() {
+    run("webgl_indexed", 1.0);
 }
 
 #[test]
@@ -181,15 +248,7 @@ fn webgl2_blit_depth_stencil() {
 fn webgl2_cube_rt() {
     // ANGLE's Metal backend filters the cube faces a little differently from the SwiftShader one Chrome's oracle runs on
     // (mean 1.03, largest 32; SwiftShader gives 0): a real backend difference, so the limit is 1.5 with Metal.
-    let swiftshader = std::env::var("KINETOGRAPH_ANGLE_BACKEND").as_deref() == Ok("swiftshader");
-    run(
-        "webgl2_cube_rt",
-        if angle_mode() && !swiftshader {
-            1.5
-        } else {
-            1.0
-        },
-    );
+    run("webgl2_cube_rt", if swiftshader() { 1.0 } else { 1.5 });
 }
 
 #[test]
@@ -227,32 +286,9 @@ fn webgl2_divisor2() {
     run("webgl2_divisor2", 1.0);
 }
 
-/// The cases of what `gl_FrontFacing` does (the hand-written replay does not follow `frontFace` with culling off, so these
-/// run with ANGLE only).
-fn angle_only(name: &str) {
-    if angle_mode() {
-        run(name, 1.0);
-    }
-}
-
-/// A case only ANGLE can draw: with ANGLE it is compared with Chrome as any other; the hand-written replay must stop the
-/// frame with an `unsupported:` error that names the gap, not draw it wrong or crash.
-fn angle_only_reported(name: &str) {
-    if angle_mode() {
-        run(name, 1.0);
-        return;
-    }
-    let (body, w, h) = body_of(name);
-    let error = match paintkit::try_render_body(&body, w, h) {
-        Err(error) => error,
-        Ok(_) => panic!("{name}: the hand-written replay drew a case it cannot draw"),
-    };
-    assert!(error.contains("unsupported:"), "{name}: {error}");
-}
-
-/// Whether ANGLE draws: the default when it starts, so `KINETOGRAPH_WEBGL=builtin` is how the built-in replay is tested.
-fn angle_mode() -> bool {
-    kinetograph_core::webgl_backend().0 == "angle"
+/// Whether ANGLE draws on its SwiftShader backend (`KINETOGRAPH_ANGLE_BACKEND=swiftshader`), the CPU rasteriser.
+fn swiftshader() -> bool {
+    std::env::var("KINETOGRAPH_ANGLE_BACKEND").as_deref() == Ok("swiftshader")
 }
 
 #[test]
@@ -262,44 +298,44 @@ fn webgl2_half_attr() {
 
 #[test]
 fn webgl2_int_texture() {
-    angle_only_reported("webgl2_int_texture");
+    run("webgl2_int_texture", 1.0);
 }
 
 #[test]
 fn webgl2_int_texture_sub() {
-    angle_only_reported("webgl2_int_texture_sub");
+    run("webgl2_int_texture_sub", 1.0);
 }
 
 #[test]
 fn webgl2_attr_int_constant() {
-    angle_only_reported("webgl2_attr_int_constant");
+    run("webgl2_attr_int_constant", 1.0);
 }
 
 #[test]
 fn webgl2_tex_levels() {
-    angle_only_reported("webgl2_tex_levels");
+    run("webgl2_tex_levels", 1.0);
 }
 
 #[test]
 fn webgl2_tex_pictures() {
-    angle_only_reported("webgl2_tex_pictures");
+    run("webgl2_tex_pictures", 1.0);
 }
 
 #[test]
 fn webgl2_compressed() {
-    // The recording of the case offers the S3TC extension only if the replay takes it here; the hand-written replay takes none,
-    // so its recording paints the page's fallback (magenta).
-    angle_only_reported("webgl2_compressed");
+    // The recording of the case offers the S3TC extension only if ANGLE takes it here; otherwise it paints the page's
+    // fallback (magenta).
+    run("webgl2_compressed", 1.0);
 }
 
 #[test]
 fn webgl2_clear_masks() {
-    angle_only_reported("webgl2_clear_masks");
+    run("webgl2_clear_masks", 1.0);
 }
 
 #[test]
 fn webgl2_front_face() {
-    angle_only("webgl2_front_face");
+    run("webgl2_front_face", 1.0);
 }
 
 #[test]
@@ -314,22 +350,22 @@ fn webgl2_stencil_renderbuffer() {
 
 #[test]
 fn webgl2_matrix_varying() {
-    angle_only("webgl2_matrix_varying");
+    run("webgl2_matrix_varying", 1.0);
 }
 
 #[test]
 fn webgl2_frag_depth_range() {
-    angle_only("webgl2_frag_depth_range");
+    run("webgl2_frag_depth_range", 1.0);
 }
 
 #[test]
 fn webgl2_uniform_default_unset() {
-    angle_only("webgl2_uniform_default_unset");
+    run("webgl2_uniform_default_unset", 1.0);
 }
 
 #[test]
 fn webgl2_front_face_reset() {
-    angle_only("webgl2_front_face_reset");
+    run("webgl2_front_face_reset", 1.0);
 }
 
 #[test]
@@ -593,9 +629,6 @@ fn an_extension_a_page_enabled_does_not_reach_the_next_page() {
 /// A draw ANGLE rejects fails the frame with an error that names the op and its program, instead of drawing nothing.
 #[test]
 fn a_draw_angle_rejects_is_an_error_naming_the_op() {
-    if !angle_mode() {
-        return;
-    }
     let (body, w, h) = body_of("webgl_gradient");
     // Far more vertices than the buffers hold: WebGL validation refuses the draw.
     let bad = body.replace("\"count\":6,", "\"count\":6000,");
@@ -616,9 +649,6 @@ fn a_draw_angle_rejects_is_an_error_naming_the_op() {
 /// A program that does not compile is an error naming the shader, on every frame, and the cache keeps no half-made program.
 #[test]
 fn a_program_that_does_not_compile_is_an_error() {
-    if !angle_mode() {
-        return;
-    }
     let (body, w, h) = body_of("webgl_gradient");
     let bad = body.replace("void main", "void mian");
     assert_ne!(bad, body, "the case has no main to break");
@@ -641,9 +671,6 @@ fn a_program_that_does_not_compile_is_an_error() {
 /// Four threads painting at once give the bytes one thread does (ANGLE is entered one thread at a time).
 #[test]
 fn threads_painting_at_once_give_the_same_bytes() {
-    if !angle_mode() {
-        return;
-    }
     let (body, w, h) = body_of("webgl2_mrt");
     let alone = paintkit::render_body(&body, w, h).1.rgba;
     let threads: Vec<_> = (0..4)
