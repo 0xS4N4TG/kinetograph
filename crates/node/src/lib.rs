@@ -828,6 +828,8 @@ fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
                     StartJob::Forget => shared.lock().forget_frame(),
                 }
             }
+            // Before the thread ends, not in its thread-local destructors (`webgl_release_thread`).
+            kinetograph_core::webgl_release_thread();
         })
         .expect("cannot start the frame starter thread");
     jobs
@@ -1183,6 +1185,7 @@ fn spawn_pusher(
                     }
                 }
             }
+            kinetograph_core::webgl_release_thread();
         })
         .expect("cannot start the video writer thread");
     jobs

@@ -249,7 +249,10 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl --no-run
+        run: |
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl --no-run
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core -p kinetograph-dom --features kinetograph-dom/ffmpeg-static --lib --no-run
 
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
@@ -267,6 +270,9 @@ jobs:
           $icd = "$env:RUNNER_TEMP\angle-swiftshader\vk_swiftshader_icd.json"
           New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
           New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+          # Threads ending while others draw: the contexts a thread leaves are destroyed under the loader lock here.
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core -p kinetograph-dom --features kinetograph-dom/ffmpeg-static --lib -- --nocapture a_threads_context_is_destroyed threads_ending_while_others_draw
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # SwiftShader draws slowly here, so this runner takes a subset (Linux and macOS run every case): textures, framebuffers,
           # blending, integer and compressed formats, instancing, uniform buffers, multisampling, and a frame not depending on the last.
           cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture --exact webgl_texture webgl_framebuffer webgl2_mrt webgl2_float_blend webgl2_int_texture webgl2_compressed webgl2_divisor2 webgl2_ubo_shared webgl2_msaa_resolve webgl2_texture_layers a_frame_does_not_depend_on_what_the_thread_drew_before

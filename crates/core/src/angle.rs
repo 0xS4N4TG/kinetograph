@@ -1060,11 +1060,12 @@ struct Context {
 /// Making, using and destroying a context all hold it.
 static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The contexts alive in the process: made by `create`, gone when their thread ends.
+/// The contexts alive in the process: made by `create`, gone when their thread releases them or ends.
 static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// A thread's contexts and their pbuffers are destroyed when the thread ends (its `thread_local` is dropped), under the
-/// same lock as every other use of ANGLE. The libraries are never unloaded, so the entry points stay valid.
+/// A thread's contexts and their pbuffers are destroyed by `release_thread`, or else when the thread ends (its
+/// `thread_local` is dropped), under the same lock as every other use of ANGLE. The libraries are never unloaded, so the
+/// entry points stay valid.
 impl Drop for Context {
     fn drop(&mut self) {
         let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -1088,6 +1089,24 @@ thread_local! {
     /// The contexts of this thread, one for each set of extensions a page can have enabled: an extension a page asks
     /// for stays on in an ANGLE context, so a page that did not ask must not draw in a context another page asked in.
     static CONTEXTS: RefCell<Vec<(Extensions, Context)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Destroys this thread's contexts, their pbuffers and what the replay keeps of them, and releases the thread from EGL:
+/// what a thread that drew WebGL calls before it ends. Left to the thread's end, the destroying runs in a thread-local
+/// destructor, which on Windows runs under the loader lock: a call into ANGLE there that waits on a thread starting or
+/// ending, or loads a library, waits forever. A later `with` on the thread makes new contexts.
+pub fn release_thread() {
+    crate::angle_replay::forget_thread();
+    let contexts = CONTEXTS.with(|cell| std::mem::take(&mut *cell.borrow_mut()));
+    if contexts.is_empty() {
+        return;
+    }
+    // Each is destroyed under BUSY (`Drop`).
+    drop(contexts);
+    let Ok(shared) = shared() else { return };
+    let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // SAFETY: eglReleaseThread takes no arguments; no context is current on this thread any more.
+    unsafe { (shared.release_thread)() };
 }
 
 /// The diagnosis switches, read once. None of them changes a picture.
@@ -1369,10 +1388,15 @@ mod tests {
         assert!(check_upload(&ok, (4, 4, 1)).is_ok());
     }
 
-    /// A thread's context and pbuffer are destroyed when the thread ends (needs ANGLE: skipped without it).
+    /// The tests that make and end contexts on threads, one at a time: one counts `LIVE`.
+    static THREADS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A thread's context and pbuffer are destroyed by `release_thread`, or else when the thread ends (needs ANGLE:
+    /// skipped without it).
     #[test]
     fn a_threads_context_is_destroyed_when_the_thread_ends() {
         use std::sync::atomic::Ordering::SeqCst;
+        let _one_at_a_time = THREADS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let ext = Extensions {
             float_linear: false,
             float_blend: false,
@@ -1392,6 +1416,70 @@ mod tests {
         .join()
         .unwrap();
         assert_eq!(LIVE.load(SeqCst), before);
+        // `release_thread` destroys them before the thread ends.
+        std::thread::spawn(move || {
+            with(ext, |_| ()).unwrap();
+            super::release_thread();
+            assert_eq!(LIVE.load(SeqCst), before);
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// Threads that draw and end at staggered times while others are drawing: in each round half release their contexts
+    /// first (`release_thread`) and half leave them to the thread-local destructor (on Windows, under the loader lock). A
+    /// hang fails the test instead of running into the CI step's limit (needs ANGLE: skipped without it).
+    #[test]
+    fn threads_ending_while_others_draw_do_not_hang() {
+        let _one_at_a_time = THREADS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let ext = Extensions {
+            float_linear: false,
+            float_blend: false,
+        };
+        if std::thread::spawn(move || with(ext, |_| ()))
+            .join()
+            .unwrap()
+            .is_err()
+        {
+            return;
+        }
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for round in 0..50u32 {
+                let threads: Vec<_> = (0..4u32)
+                    .map(|i| {
+                        std::thread::spawn(move || {
+                            // Thread i draws i + 1 times, so the threads end one after another while the rest draw.
+                            for _ in 0..=i {
+                                let px = with(ext, |gl| {
+                                    gl.clear_color(0.0, 1.0, 0.0, 1.0);
+                                    gl.clear(gl::COLOR_BUFFER_BIT);
+                                    let mut px = [0u8; 4];
+                                    gl.read_pixels((1, 1), &mut px).map(|()| px)
+                                });
+                                assert_eq!(px, Ok(Ok([0, 255, 0, 255])));
+                            }
+                            if (round + i) % 2 == 0 {
+                                super::release_thread();
+                            }
+                        })
+                    })
+                    .collect();
+                for thread in threads {
+                    thread.join().unwrap();
+                }
+            }
+            let _ = done.send(());
+        });
+        match finished.recv_timeout(std::time::Duration::from_secs(240)) {
+            Ok(()) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("threads drawing and ending had not finished after 240 s: a hang")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("a thread drawing failed")
+            }
+        }
     }
 }
 
@@ -1416,6 +1504,7 @@ struct Shared {
     make_current: MakeCurrent,
     destroy_context: Destroy,
     destroy_surface: Destroy,
+    release_thread: unsafe extern "C" fn() -> u32,
     display: usize,
     config: usize,
     device: Device,
@@ -1483,6 +1572,7 @@ fn load() -> Result<Shared, String> {
     let destroy_context: Destroy = sym!(b"eglDestroyContext\0", Destroy);
     let destroy_surface: Destroy = sym!(b"eglDestroySurface\0", Destroy);
     let get_proc: GetProc = sym!(b"eglGetProcAddress\0", GetProc);
+    let release_thread = sym!(b"eglReleaseThread\0", unsafe extern "C" fn() -> u32);
 
     // The device: the platform's own, else SwiftShader when its files are beside libEGL (a machine with no Vulkan
     // driver or no D3D11 hardware); `KINETOGRAPH_ANGLE_BACKEND` overrides (`angle_select.rs`).
@@ -1533,6 +1623,7 @@ fn load() -> Result<Shared, String> {
         make_current,
         destroy_context,
         destroy_surface,
+        release_thread,
         display,
         config,
         device,
