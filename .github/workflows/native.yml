@@ -213,6 +213,7 @@ jobs:
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
       # WebGL through ANGLE (crates/dom/tests/webgl.rs) on ANGLE's SwiftShader backend, the CPU
@@ -240,6 +241,16 @@ jobs:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
+      # Compiled in a step of its own, so the time limit below is the tests' only. The profile setting is the addon
+      # build's, so the crates it built are reused.
+      - name: Build the WebGL tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl --no-run
+
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 30
@@ -248,6 +259,7 @@ jobs:
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         # The compositor the cases draw through is wgpu, which found no Vulkan device here and fell back to Skia on the
         # CPU (about 1.5 minutes a case). The runner is elevated, so the loader ignores VK_DRIVER_FILES; the SwiftShader
         # ANGLE ships is registered as a driver the way an installer does, and the loader on the system path finds it.
