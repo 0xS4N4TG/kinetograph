@@ -32,7 +32,7 @@ describe('finding the Dawn library', () => {
     vi.stubEnv('KINETOGRAPH_DAWN_DIR', '/no/such/dawn');
     const message = (() => { try { dawnGlobals(); return ''; } catch (error) { return (error as Error).message; } })();
     expect(message).toMatch(/KINETOGRAPH_DAWN_DIR=\/no\/such\/dawn has no dawn\.node/);
-    expect(message).toMatch(/Unset KINETOGRAPH_WEBGPU/);
+    expect(message).toMatch(/KINETOGRAPH_WEBGPU=builtin/);
     expect(message.split('\n')).toHaveLength(1);
   });
 
@@ -71,12 +71,15 @@ describe('finding the Dawn library', () => {
     expect(() => dawnGlobals()).toThrow(/it is not Dawn for Node/);
   });
 
-  it('does not look for the library unless Dawn is the provider', async () => {
+  it('does not look for the library when the built-in WebGPU is the provider', async () => {
     const shim = await fresh();
     const loader = vi.fn(() => { throw new Error('should not be asked'); });
     shim.setDawnLoader(loader);
-    vi.stubEnv('KINETOGRAPH_WEBGPU', '');
+    vi.stubEnv('KINETOGRAPH_WEBGPU', 'builtin');
     expect(shim.dawnRequested()).toBe(false);
+    vi.stubEnv('KINETOGRAPH_WEBGPU', '');
+    expect(shim.dawnRequested()).toBe(true);
+    vi.stubEnv('KINETOGRAPH_WEBGPU', 'builtin');
     await import('../src/shim/index.js');
     expect(loader).not.toHaveBeenCalled();
   });

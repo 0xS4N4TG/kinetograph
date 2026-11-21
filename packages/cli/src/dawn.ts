@@ -1,4 +1,4 @@
-// WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn): the CLI's side. dawn.node is in the addon's platform package, found from here and not from
+// WebGPU through Dawn (the default; KINETOGRAPH_WEBGPU=builtin picks the built-in layer): the CLI's side. dawn.node is in the addon's platform package, found from here and not from
 // the folder of a project's bundle; `doctor` says which adapter it gives.
 
 import { isMainThread } from 'node:worker_threads';
@@ -11,7 +11,7 @@ export function useCliDawn(): void {
 
 /**
  * Dawn as the provider, decided once before a project runs: when no adapter can be had (no GPU and no software fallback, no binary for this
- * platform) the built-in WebGPU layer draws instead, with one warning, because `KINETOGRAPH_WEBGPU` is removed from the environment the render's
+ * platform) the built-in WebGPU layer draws instead, with one warning, because `KINETOGRAPH_WEBGPU` is set to `builtin` in the environment the render's
  * threads and processes inherit. Only the main thread decides; a worker takes what the environment says.
  */
 export async function prepareCliDawn(say: (message: string) => void = (message) => process.stderr.write(`${message}\n`)): Promise<void> {
@@ -19,8 +19,8 @@ export async function prepareCliDawn(say: (message: string) => void = (message) 
   if (!dawnRequested() || !isMainThread) return;
   const status = await describeDawn();
   if (status.ok) return;
-  delete process.env.KINETOGRAPH_WEBGPU;
-  say(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws this render instead: ${status.error.replace(/^KINETOGRAPH_WEBGPU=dawn: /, '').replace(/\s*Unset KINETOGRAPH_WEBGPU to use the built-in WebGPU\.?$/, '')}`);
+  process.env.KINETOGRAPH_WEBGPU = 'builtin';
+  say(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws this render instead: ${status.error.replace(/^Dawn: /, '').replace(/\s*KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU\.?$/, '')}`);
 }
 
 const VIA: Record<DawnAdapter['via'], string> = {
@@ -30,7 +30,7 @@ const VIA: Record<DawnAdapter['via'], string> = {
   'system-software': 'a software adapter the system has',
 };
 
-/** What `doctor` says of Dawn: null unless it is the provider. */
+/** What `doctor` says of Dawn: null when KINETOGRAPH_WEBGPU=builtin picks the built-in layer. */
 export async function dawnReport(): Promise<{ data: DawnStatus; lines: string[] } | null> {
   if (!dawnRequested()) return null;
   useCliDawn();

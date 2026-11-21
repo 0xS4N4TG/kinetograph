@@ -1,4 +1,4 @@
-// WebGPU through Dawn (Chrome's WebGPU library, dawn.node from the addon's platform package), behind KINETOGRAPH_WEBGPU=dawn.
+// WebGPU through Dawn (Chrome's WebGPU library, dawn.node from the addon's platform package), the default WebGPU provider (KINETOGRAPH_WEBGPU=builtin picks the built-in layer).
 //
 // The page gets Dawn's real GPUAdapter, GPUDevice, GPUBuffer, GPUTexture, ... objects. This file adds what dawn.node has no
 // notion of (it has no canvas) and what the engine's rules ask of it:
@@ -26,7 +26,8 @@ export { duringAnimationFrames } from './webgpu-dawn-carry.js';
 
 type Any = any; // Dawn's objects are native classes with no TypeScript surface here.
 
-export const dawnRequested = (): boolean => process.env.KINETOGRAPH_WEBGPU === 'dawn';
+/** The one place the provider is chosen: Dawn unless `KINETOGRAPH_WEBGPU=builtin` (the CLI sets that itself when Dawn cannot be had). */
+export const dawnRequested = (): boolean => process.env.KINETOGRAPH_WEBGPU !== 'builtin';
 
 interface Hooks {
   /** A frame waits for this promise (`trackPending`). */
@@ -179,8 +180,8 @@ export function setDawnLoader(fn: (() => unknown) | null): void {
 export function dawnLoadMessage(error: unknown, override?: string): string {
   const e = error as NodeJS.ErrnoException;
   const first = String(e?.message ?? e).split('\n')[0]!;
-  const head = 'KINETOGRAPH_WEBGPU=dawn: ';
-  const unset = 'Unset KINETOGRAPH_WEBGPU to use the built-in WebGPU.';
+  const head = 'Dawn: ';
+  const unset = 'KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU.';
   if (override) return `${head}KINETOGRAPH_DAWN_MODULE=${override} cannot be loaded (${first}). ${unset}`;
   if (error instanceof DawnBinaryError) return `${head}${first}. ${unset}`;
   if (e?.code === 'ERR_DLOPEN_FAILED') {
@@ -323,7 +324,7 @@ export function dawnFlags(env: Record<string, string | undefined> = process.env,
 /** The library lists the backends or the adapters it has when its flags name one it does not know: that list is the answer. */
 function startError(error: unknown): Error {
   const flags = dawnFlags();
-  return new Error(`KINETOGRAPH_WEBGPU=dawn: Dawn could not start with ${flags.length === 0 ? 'no flags' : flags.join(' ')}: ${String((error as Error).message).split('\n').map((line) => line.trim()).filter(Boolean).join('; ')}`);
+  return new Error(`Dawn could not start with ${flags.length === 0 ? 'no flags' : flags.join(' ')}: ${String((error as Error).message).split('\n').map((line) => line.trim()).filter(Boolean).join('; ')}`);
 }
 
 function createGpu(d: NonNullable<typeof dawn>): Any {
@@ -429,7 +430,7 @@ function noAdapterMessage(): string {
   const hint = process.platform === 'linux'
     ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, or on a host without one the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), or Mesa\'s lavapipe'
     : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
-  return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and unsetting KINETOGRAPH_WEBGPU uses the built-in WebGPU`;
+  return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU`;
 }
 
 /** The adapter a page was given in this process, or null when none asked yet. */
@@ -451,7 +452,7 @@ export async function describeDawn(): Promise<DawnStatus> {
     const probe = createGpu(d);
     const request = patchOf(d.globals)?.requestAdapter ?? d.globals.GPU.prototype.requestAdapter;
     const chosen = await chooseAdapter((gpu, options) => request.call(gpu, options), probe, d);
-    if (chosen === null) return { ok: false, error: `KINETOGRAPH_WEBGPU=dawn: ${noAdapterMessage()}` };
+    if (chosen === null) return { ok: false, error: noAdapterMessage() };
     return { ok: true, flags, adapter: describeAdapter(chosen) };
   } catch (error) {
     return { ok: false, error: (error as Error).message };

@@ -1,4 +1,4 @@
-// WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn), on the built CLI and the real addon: a frame drawn alone (a still, a worker that
+// WebGPU through Dawn (the default, here set explicitly as KINETOGRAPH_WEBGPU=dawn), on the built CLI and the real addon: a frame drawn alone (a still, a worker that
 // starts at it) is the frame of a sequence, whichever way it is drawn, for a stateless page, for a page that keeps GPU state
 // from frame to frame (an animation-frame page and a React project that draws from an effect), and for a canvas drawn into a
 // 2D canvas; errors are said with their frame and `--strict` fails. Needs dawn.node (the `dawn/` folder of the addon's platform package, `node scripts/fetch-dawn.mjs <platform>`
@@ -112,8 +112,8 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     expect(absent.status, absent.stderr).toBe(0);
     expect(absent.stderr.match(/WebGPU through Dawn cannot be used here/g)).toHaveLength(1);
     expect(absent.stderr).toMatch(/built-in WebGPU layer draws this render instead: .*KINETOGRAPH_DAWN_MODULE=.*no-such-webgpu cannot be loaded/);
-    // The default provider does not look for the library, so it is not affected by it.
-    const plain = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'plain.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: '', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
+    // The built-in provider does not look for the library, so it is not affected by it.
+    const plain = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'plain.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: 'builtin', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
     expect(plain.status, plain.stderr).toBe(0);
   });
 
@@ -127,8 +127,12 @@ describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
     const none = JSON.parse(doctor({ KINETOGRAPH_DAWN_BACKEND: process.platform === 'darwin' ? 'vulkan' : 'metal' }).stdout);
     expect(none.dawn.ok).toBe(false);
     expect(none.dawn.error).toMatch(/Dawn found no adapter/);
-    // Not the provider: not mentioned.
-    const plain = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: '' } });
+    // The default provider with nothing set: shown.
+    const { KINETOGRAPH_WEBGPU: _unset, ...unset } = process.env;
+    const byDefault = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...unset, KINETOGRAPH_DAWN_MODULE: '' } });
+    expect(JSON.parse(byDefault.stdout).dawn.ok).toBe(true);
+    // The built-in provider: not mentioned.
+    const plain = spawnSync(process.execPath, [cli, 'doctor', '--json'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: 'builtin' } });
     expect(JSON.parse(plain.stdout).dawn).toBeUndefined();
   });
 
