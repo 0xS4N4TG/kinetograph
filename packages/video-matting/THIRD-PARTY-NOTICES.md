@@ -9,3 +9,7 @@ The package is licensed under the Apache License 2.0 (`LICENSE.md`). It ships no
 ## BEN2 Base, as exported by onnx-community (MIT)
 
 `ben2-base`: https://huggingface.co/onnx-community/BEN2-ONNX, the ONNX export of BEN2 Base by PramaLLC (https://huggingface.co/PramaLLC/BEN2), licensed under the MIT License. Downloaded unchanged (`onnx/model_fp16.onnx`, revision `c552aa82688edce09f0ac9d2e31ad53d9d629010`).
+
+## ONNX Runtime (MIT)
+
+ONNX Runtime (https://github.com/microsoft/onnxruntime), Copyright (c) Microsoft Corporation, licensed under the MIT License. It is not part of this package: the first use of matting downloads Microsoft's NuGet package `Microsoft.ML.OnnxRuntime` 1.31.0 from nuget.org, checks it against a pinned SHA-512, and keeps this platform's library in the model cache.

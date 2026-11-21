@@ -64,8 +64,8 @@ into files the user owns; no model output is sent anywhere.
 The matting crate (`crates/matte`) runs the models with ONNX Runtime through the `ort` crate.
 
 - ONNX Runtime (https://github.com/microsoft/onnxruntime), Copyright (c) Microsoft Corporation, licensed under the MIT
-  License. It is not part of the addon: Microsoft's release archive (the CPU build, version 1.31.0)
-  is downloaded on the first use of matting, checked against a pinned SHA-256 and kept in the model cache. The archive
-  carries its own third-party notices.
+  License. It is not part of the addon: Microsoft's NuGet package `Microsoft.ML.OnnxRuntime` (version 1.31.0, from
+  nuget.org, the CPU build) is downloaded on the first use of matting, checked against a pinned SHA-512, and this
+  platform's library is kept in the model cache. The package carries its own third-party notices.
 - `ort` (https://github.com/pykeio/ort), Copyright (c) pyke.io, licensed under the Apache License, Version 2.0 or the
   MIT License, at your option.
