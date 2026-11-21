@@ -3,16 +3,17 @@
 // which evaluates the module again over the same library (Node's own module cache keeps the library).
 
 import { createRequire } from 'node:module';
+import { loadDawnBinary } from '../src/shim/dawn-binary.js';
 import { describe, expect, it, vi } from 'vitest';
 
 type Shim = typeof import('../src/shim/webgpu-dawn.js');
 
 const missing = ((): string | null => {
   try {
-    createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu');
+    (process.env.KINETOGRAPH_DAWN_MODULE ? createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE) : loadDawnBinary());
     return null;
   } catch (error) {
-    return `the "webgpu" package cannot be loaded (${(error as Error).message.split('\n')[0]})`;
+    return `Dawn cannot be loaded (${(error as Error).message.split('\n')[0]})`;
   }
 })();
 

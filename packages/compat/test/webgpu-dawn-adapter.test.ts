@@ -2,15 +2,16 @@
 // was chosen kept for `doctor`, and a clear message when there is none or the flags name one Dawn does not have.
 
 import { createRequire } from 'node:module';
+import { loadDawnBinary } from '../src/shim/dawn-binary.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dawnFlags } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
   try {
-    createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu');
+    (process.env.KINETOGRAPH_DAWN_MODULE ? createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE) : loadDawnBinary());
     return null;
   } catch (error) {
-    return `the "webgpu" package cannot be loaded (${(error as Error).message.split('\n')[0]})`;
+    return `Dawn cannot be loaded (${(error as Error).message.split('\n')[0]})`;
   }
 })();
 

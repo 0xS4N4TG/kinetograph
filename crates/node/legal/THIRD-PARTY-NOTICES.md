@@ -84,6 +84,18 @@ third-party code (SPIRV-Tools, glslang and others) whose licences are in `angle/
 Windows packages add SwiftShader, a software Vulkan driver (Apache-2.0), its ICD file and the Khronos Vulkan loader (Apache-2.0); their licences are in
 `angle/THIRD-PARTY-NOTICES.txt` (`angle/SWIFTSHADER-LICENSE` and `angle/VULKAN-LOADER-LICENSE` in Chrome for Testing builds). ANGLE uses them on a machine with no GPU device; macOS does not ship them.
 
+## Dawn (BSD-3-Clause), the `dawn/` folder
+
+Not part of the addon and not linked into it: `dawn/` holds `dawn.node`, Google's Dawn (the WebGPU implementation of Chrome) with its Node
+bindings, taken unchanged from the `webgpu` npm package (<https://github.com/dawn-gpu/node-webgpu>, MIT) at the release `dawn/SOURCE.txt` names,
+checked against SHA-256 values by `scripts/fetch-dawn.mjs` in <https://github.com/0xS4N4TG/kinetograph>. Node opens it at run time, by full path,
+and only when a project asks for WebGPU through Dawn. The licence is `dawn/DAWN-LICENSE` (Dawn and Tint, BSD-3-Clause). The binary also contains
+third-party code built into it: abseil-cpp (Apache-2.0), and on Linux and Windows SPIRV-Tools and SPIRV-Headers (Apache-2.0 and MIT-style), the Vulkan
+headers (Apache-2.0) and the DirectX headers (MIT) for the backends it supports. The Windows package adds Microsoft's DirectX Shader Compiler
+(`dxcompiler.dll`, University of Illinois/NCSA, Apache-2.0 with LLVM exceptions and other notices in `dawn/dxcompiler-LICENSE.TXT` and
+`dawn/dxcompiler-ThirdPartyNotices.txt`) and the Direct3D shader compiler `d3dcompiler_47.dll`, Microsoft's redistributable, which Dawn uses when the DXC cannot.
+On macOS Dawn uses Metal; on Linux the system's Vulkan driver (or the SwiftShader that `angle/` carries); on Windows Direct3D 12.
+
 ## Others
 
 The addon also links Skia (BSD-3-Clause), wgpu, Vello and the other Rust crates listed in `Cargo.lock` of the repository,

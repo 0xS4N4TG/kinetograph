@@ -1,4 +1,4 @@
-// WebGPU through Dawn (Chrome's WebGPU library, the `webgpu` package's dawn.node), behind KINETOGRAPH_WEBGPU=dawn.
+// WebGPU through Dawn (Chrome's WebGPU library, dawn.node from the addon's platform package), behind KINETOGRAPH_WEBGPU=dawn.
 //
 // The page gets Dawn's real GPUAdapter, GPUDevice, GPUBuffer, GPUTexture, ... objects. This file adds what dawn.node has no
 // notion of (it has no canvas) and what the engine's rules ask of it:
@@ -17,6 +17,8 @@ import { createRequire } from 'node:module';
 import { threadId } from 'node:worker_threads';
 import { CANVAS_SOURCE, type CanvasCommand, type CanvasSource } from '@kinetographdev/scene';
 import { addonFunction, hasAddonFunction } from '../addon.js';
+import { DawnBinaryError, loadDawnBinary } from './dawn-binary.js';
+import { softwareChoice, swiftshaderIcd, useSwiftshader } from './dawn-software.js';
 import { lap, stamp } from '../profile.js';
 import { beginRewind, newCarry, trackCarry, carryNeedsReplay, startsCleared, stillCarries, untracked, useCarry, type Carry } from './webgpu-dawn-carry.js';
 
@@ -71,7 +73,7 @@ const CANVAS_FORMATS = new Set(['rgba8unorm', 'bgra8unorm', 'rgba16float']);
 const RENDER_ATTACHMENT = 0x10;
 const COPY_SRC = 0x01;
 
-let dawn: { create(flags: string[]): Any; globals: Record<string, Any> } | null = null;
+let dawn: { create(flags: string[]): Any; globals: Record<string, Any>; directory?: string } | null = null;
 let hooks: Hooks | null = null;
 let gpu: Any = null;
 
@@ -162,8 +164,8 @@ export function takeDawnReports(): string[] {
 }
 
 /**
- * How the host finds the library (`setDawnLoader`): the CLI resolves "webgpu" from its own install, where a bundle in a project's cache
- * would look from the project. It sits on `globalThis` because the host's copy of this module is not the project bundle's.
+ * How the host finds the library (`setDawnLoader`): the CLI resolves the platform package from its own install, where a bundle in a project's
+ * cache would look from the project. It sits on `globalThis` because the host's copy of this module is not the project bundle's.
  */
 const LOADER = Symbol.for('kinetograph.dawn.loader');
 
@@ -176,32 +178,22 @@ export function dawnLoadMessage(error: unknown, override?: string): string {
   const e = error as NodeJS.ErrnoException;
   const first = String(e?.message ?? e).split('\n')[0]!;
   const head = 'KINETOGRAPH_WEBGPU=dawn: ';
-  const platform = `${process.platform}-${process.platform === 'darwin' ? 'universal' : process.arch}`;
   const unset = 'Unset KINETOGRAPH_WEBGPU to use the built-in WebGPU.';
   if (override) return `${head}KINETOGRAPH_DAWN_MODULE=${override} cannot be loaded (${first}). ${unset}`;
-  const notFound = e?.code === 'MODULE_NOT_FOUND' || e?.code === 'ERR_MODULE_NOT_FOUND';
-  if (notFound && /dawn\.node/.test(first)) {
-    return `${head}the "webgpu" package has no Dawn binary for this platform (${platform}); it ships macOS, Linux (glibc) and Windows, each for x64 and arm64. ${unset}`;
-  }
-  if (notFound && /Cannot find (module|package) 'webgpu'/.test(first)) {
-    return `${head}the optional package "webgpu" (Dawn for Node) is not installed. Install it with \`npm install webgpu@${DAWN_PACKAGE_VERSION}\`. ${unset}`;
-  }
+  if (error instanceof DawnBinaryError) return `${head}${first}. ${unset}`;
   if (e?.code === 'ERR_DLOPEN_FAILED') {
     const linux = process.platform === 'linux' ? ' (Linux needs glibc 2.34 or newer; musl, as on Alpine, is not supported)' : '';
-    return `${head}the Dawn binary of the "webgpu" package (${platform}) cannot be loaded on this system${linux}: ${first}. ${unset}`;
+    return `${head}the Dawn binary (${process.platform}-${process.arch}) cannot be loaded on this system${linux}: ${first}. ${unset}`;
   }
-  return `${head}the "webgpu" package cannot be loaded (${first}). ${unset}`;
+  return `${head}Dawn cannot be loaded (${first}). ${unset}`;
 }
-
-/** The version of the "webgpu" package the engine is tested with (the CLI's optional dependency). */
-export const DAWN_PACKAGE_VERSION = '0.6.2';
 
 function load(): NonNullable<typeof dawn> {
   if (dawn !== null) return dawn;
   const override = process.env.KINETOGRAPH_DAWN_MODULE || undefined;
   let found: Any;
   try {
-    found = override ? createRequire(import.meta.url)(override) : typeof (globalThis as Any)[LOADER] === 'function' ? (globalThis as Any)[LOADER]() : createRequire(import.meta.url)('webgpu');
+    found = override ? createRequire(import.meta.url)(override) : typeof (globalThis as Any)[LOADER] === 'function' ? (globalThis as Any)[LOADER]() : loadDawnBinary();
   } catch (error) {
     throw new Error(dawnLoadMessage(error, override));
   }

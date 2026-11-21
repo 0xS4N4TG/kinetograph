@@ -1,9 +1,9 @@
-// Finding the Dawn library (src/shim/webgpu-dawn.ts `load`): one clear message that names the cause when the optional "webgpu"
-// package is absent, has no binary for the platform, or does not load; the override and the host's loader are used before
+// Finding the Dawn library (src/shim/webgpu-dawn.ts `load`): one clear message that names the cause when the platform
+// package's dawn.node is absent, has no binary for the platform, or does not load; the override and the host's loader are used before
 // plain resolution; and the default (hand-built) provider never looks for it.
 
-import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dawnDirectory } from '../src/shim/dawn-binary.js';
 
 const fresh = async () => {
   vi.resetModules();
@@ -14,14 +14,12 @@ const fresh = async () => {
 
 const installed = ((): boolean => {
   try {
-    createRequire(import.meta.url).resolve('webgpu');
+    dawnDirectory();
     return true;
   } catch {
     return false;
   }
 })();
-
-const missingError = (message: string): Error => Object.assign(new Error(message), { code: 'MODULE_NOT_FOUND' });
 
 beforeEach(() => {
   vi.stubEnv('KINETOGRAPH_DAWN_MODULE', '');
@@ -29,24 +27,25 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('finding the Dawn library', () => {
-  it('says the optional package is not installed, and how to install it', async () => {
-    const { dawnGlobals, setDawnLoader, DAWN_PACKAGE_VERSION } = await fresh();
-    setDawnLoader(() => {
-      throw missingError("Cannot find module 'webgpu'\nRequire stack:\n- /x/y.js");
-    });
+  it('says the platform package has no dawn.node in the folder KINETOGRAPH_DAWN_DIR names', async () => {
+    const { dawnGlobals } = await fresh();
+    vi.stubEnv('KINETOGRAPH_DAWN_DIR', '/no/such/dawn');
     const message = (() => { try { dawnGlobals(); return ''; } catch (error) { return (error as Error).message; } })();
-    expect(message).toMatch(/the optional package "webgpu" \(Dawn for Node\) is not installed/);
-    expect(message).toContain(`npm install webgpu@${DAWN_PACKAGE_VERSION}`);
+    expect(message).toMatch(/KINETOGRAPH_DAWN_DIR=\/no\/such\/dawn has no dawn\.node/);
     expect(message).toMatch(/Unset KINETOGRAPH_WEBGPU/);
     expect(message.split('\n')).toHaveLength(1);
   });
 
-  it('says the package has no binary for this platform', async () => {
-    const { dawnGlobals, setDawnLoader } = await fresh();
-    setDawnLoader(() => {
-      throw missingError("Cannot find module '/n/webgpu/dist/linux-riscv64/dawn.node'\nRequire stack:\n- /n/webgpu/index.js");
-    });
-    expect(() => dawnGlobals()).toThrow(new RegExp(`no Dawn binary for this platform \\(${process.platform}-`));
+  it('wants KINETOGRAPH_DAWN_DIR to be an absolute path', async () => {
+    const { dawnGlobals } = await fresh();
+    vi.stubEnv('KINETOGRAPH_DAWN_DIR', 'relative/dawn');
+    expect(() => dawnGlobals()).toThrow(/KINETOGRAPH_DAWN_DIR must be an absolute path/);
+  });
+
+  it('names the platform packages and the fetch script when none holds a dawn.node', async () => {
+    const { dawnDirectory } = await import('../src/shim/dawn-binary.js');
+    const from = new URL('file:///no/such/place/x.js').href;
+    expect(() => dawnDirectory(from, {})).toThrow(/scripts\/fetch-dawn\.mjs|is not installed|no Dawn binary for this platform/);
   });
 
   it('says a binary that does not load is that, with its first line', async () => {
@@ -82,7 +81,7 @@ describe('finding the Dawn library', () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
-  it.skipIf(!installed)('finds an installed "webgpu" by Node resolution when nothing else is set', async () => {
+  it.skipIf(!installed)('finds the platform package\'s dawn.node when nothing else is set', async () => {
     const { dawnGlobals } = await fresh();
     expect(typeof (dawnGlobals() as any).GPUDevice).toBe('function');
   });

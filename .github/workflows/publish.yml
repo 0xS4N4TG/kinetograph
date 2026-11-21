@@ -88,6 +88,11 @@ jobs:
             mkdir -p "npm/$p/angle"
             cp artifacts/bindings-$p/npm/$p/angle/* "npm/$p/angle/"
           done
+          # Dawn (dawn/: dawn.node, its licence and SOURCE.txt; on Windows also the DXC and FXC compilers) rides in the same artifact.
+          for p in darwin-arm64 linux-x64-gnu win32-x64-msvc; do
+            mkdir -p "npm/$p/dawn"
+            cp artifacts/bindings-$p/npm/$p/dawn/* "npm/$p/dawn/"
+          done
           chmod +x npm/darwin-arm64/bin/ffmpeg npm/linux-x64-gnu/bin/ffmpeg
           npm run legal
           npx napi pre-publish -t npm --skip-optional-publish --no-gh-release
@@ -114,7 +119,11 @@ jobs:
           # Linux and Windows also carry SwiftShader, its ICD file and the Vulkan loader (macOS has Metal).
           ls crates/node/npm/linux-x64-gnu/angle/libvk_swiftshader.so crates/node/npm/linux-x64-gnu/angle/vk_swiftshader_icd.json crates/node/npm/linux-x64-gnu/angle/libvulkan.so.1
           ls crates/node/npm/win32-x64-msvc/angle/vk_swiftshader.dll crates/node/npm/win32-x64-msvc/angle/vk_swiftshader_icd.json crates/node/npm/win32-x64-msvc/angle/vulkan-1.dll
+          # Each platform package carries Dawn: dawn.node, its licence and SOURCE.txt (check-packages.mjs checks that they are packed).
+          for d in crates/node/npm/*; do ls "$d"/dawn/dawn.node "$d"/dawn/DAWN-LICENSE "$d"/dawn/SOURCE.txt; done
+          ls crates/node/npm/win32-x64-msvc/dawn/dxcompiler.dll crates/node/npm/win32-x64-msvc/dawn/d3dcompiler_47.dll
           du -sh crates/node/npm/*/angle
+          du -sh crates/node/npm/*/dawn
           du -sh crates/node/npm/*/bin
           test -f packages/studio/ui/dist/index.html
 

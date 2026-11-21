@@ -3,7 +3,7 @@
 // differ slightly from the hand-written layer's (tests/golden/webgpu_*.png, untouched), so each has its own, recorded on the M4 (Metal)
 // with `UPDATE_GOLDEN=1 npx vitest run webgpu-dawn-golden`. No channel of any pixel may differ by more than DAWN_GOLDEN_TOLERANCE (default 3:
 // the same machine and backend give the same bytes, the slack is for a driver or Dawn update that moves a rounding).
-// Skipped, with the reason, when the `webgpu` package, the built addon or the built CLI is missing, or on a platform other than macOS (the goldens
+// Skipped, with the reason, when dawn.node, the built addon or the built CLI is missing, or on a platform other than macOS (the goldens
 // are Metal's: Vulkan and D3D12 need their own, see the PR notes).
 
 import { spawnSync } from 'node:child_process';
@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadDawnBinary } from '@kinetographdev/compat/shim';
 import { decodePng } from '../src/png.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 30_000 });
@@ -23,16 +24,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
 const cases = join(here, '..', '..', '..', 'crates', 'dom', 'tests', 'webgpu');
 const goldens = join(here, '..', '..', '..', 'crates', 'dom', 'tests', 'golden', 'dawn');
-const dawnModule = process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu';
 const update = process.env.UPDATE_GOLDEN !== undefined;
 const tolerance = Number(process.env.DAWN_GOLDEN_TOLERANCE ?? 3);
 
 const missing = ((): string | null => {
   if (process.platform !== 'darwin') return `the goldens are Metal's (macOS); this is ${process.platform}`;
   try {
-    createRequire(import.meta.url)(dawnModule);
+    if (process.env.KINETOGRAPH_DAWN_MODULE) createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE);
+    else loadDawnBinary(import.meta.url);
   } catch (error) {
-    return `the "webgpu" package at ${dawnModule} cannot be loaded (${(error as Error).message.split('\n')[0]})`;
+    return `Dawn cannot be loaded (${(error as Error).message.split('\n')[0]})`;
   }
   try {
     createRequire(import.meta.url)('@kinetographdev/native');

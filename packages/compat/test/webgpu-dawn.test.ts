@@ -1,9 +1,9 @@
 // The Dawn WebGPU provider (src/shim/webgpu-dawn.ts) on the real library: one adapter on every machine, timestamp queries that
 // measure nothing, errors that become frame warnings, devices that are destroyed when a renderer is disposed. The library is
-// the `webgpu` package (dawn.node), an optional dependency of the CLI: found by Node resolution, or set KINETOGRAPH_DAWN_MODULE to its
-// folder. These tests are skipped, with the reason, where it is not there.
+// dawn.node, from `dawn/` in the addon's platform package (or KINETOGRAPH_DAWN_DIR). These tests are skipped, with the reason, where it is not there.
 
 import { createRequire } from 'node:module';
+import { loadDawnBinary } from '../src/shim/dawn-binary.js';
 import { describe, expect, it, vi } from 'vitest';
 import { CANVAS_SOURCE } from '@kinetographdev/scene';
 import { carryDepends, carryNeedsReplay, resetCarry } from '../src/shim/webgpu-dawn-carry.js';
@@ -11,12 +11,12 @@ import { hasAddonFunction } from '../src/addon.js';
 import { DAWN_FEATURES, DAWN_LIMITS, DawnCanvasContext, createDawnScope, dawnCommandsOf, dawnGlobals, dawnPictureSource, dawnReadCommands, duringAnimationFrames, enterDawnScope, flushDawnCanvases, installDawn, noteDawnRewind, releaseDawn, setDawnClock, takeDawnReports } from '../src/shim/webgpu-dawn.js';
 
 const missing = ((): string | null => {
-  const spec = process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu';
   try {
-    createRequire(import.meta.url)(spec);
+    if (process.env.KINETOGRAPH_DAWN_MODULE) createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE);
+    else loadDawnBinary();
     return null;
   } catch (error) {
-    return `the "webgpu" package at ${spec} cannot be loaded (${(error as Error).message.split('\n')[0]})`;
+    return `Dawn cannot be loaded (${(error as Error).message.split('\n')[0]})`;
   }
 })();
 

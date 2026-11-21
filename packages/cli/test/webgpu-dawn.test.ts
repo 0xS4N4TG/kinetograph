@@ -1,8 +1,8 @@
 // WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn), on the built CLI and the real addon: a frame drawn alone (a still, a worker that
 // starts at it) is the frame of a sequence, whichever way it is drawn, for a stateless page, for a page that keeps GPU state
 // from frame to frame (an animation-frame page and a React project that draws from an effect), and for a canvas drawn into a
-// 2D canvas; errors are said with their frame and `--strict` fails. Needs the `webgpu` package (dawn.node, an optional dependency of the CLI:
-// found by Node resolution, or KINETOGRAPH_DAWN_MODULE names its folder), the built addon and `npm run build`, and a GPU. Skipped, with the reason,
+// 2D canvas; errors are said with their frame and `--strict` fails. Needs dawn.node (the `dawn/` folder of the addon's platform package, `node scripts/fetch-dawn.mjs <platform>`
+// in a checkout; KINETOGRAPH_DAWN_DIR names another folder), the built addon and `npm run build`, and a GPU. Skipped, with the reason,
 // where one is missing. Optional: KINETOGRAPH_THREE_BUILD, the folder of three.js's build (three.webgpu.js), adds a lit scene.
 
 import { spawnSync } from 'node:child_process';
@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { loadDawnBinary } from '@kinetographdev/compat/shim';
 import { decodePng } from '../src/png.js';
 
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 30_000 });
@@ -22,14 +23,14 @@ const SPAWN_TIMEOUT = 170_000;
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, '..', 'dist', 'cli.js');
 const fixtures = join(here, 'fixtures', 'dawn');
-const dawnModule = process.env.KINETOGRAPH_DAWN_MODULE || 'webgpu';
 const threeBuild = process.env.KINETOGRAPH_THREE_BUILD;
 
 const missing = ((): string | null => {
   try {
-    createRequire(import.meta.url)(dawnModule);
+    if (process.env.KINETOGRAPH_DAWN_MODULE) createRequire(import.meta.url)(process.env.KINETOGRAPH_DAWN_MODULE);
+    else loadDawnBinary(import.meta.url);
   } catch (error) {
-    return `the "webgpu" package at ${dawnModule} cannot be loaded (${(error as Error).message.split('\n')[0]})`;
+    return `Dawn cannot be loaded (${(error as Error).message.split('\n')[0]})`;
   }
   try {
     createRequire(import.meta.url)('@kinetographdev/native');
@@ -100,15 +101,17 @@ function hashes(entry: string, frames: number[], last: number): { still: string[
 }
 
 describe.skipIf(missing !== null)('WebGPU through Dawn, rendered', () => {
-  it('finds the library from the CLI for a project that sits outside any node_modules, and names a library that does not load', () => {
-    // `dir` is in the temporary folder: resolving "webgpu" from the project's bundle would not find it there.
+  it('finds the library from the CLI for a project that sits outside any node_modules, and falls back to the built-in WebGPU, saying so, when it does not load', () => {
+    // `dir` is in the temporary folder: resolving the platform package from the project's bundle would not find it there.
     const page = join(dir, 'outside.html');
     cpSync(join(fixtures, 'stateless.html'), page);
     const found = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'outside.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: '' } });
     expect(found.status, found.stderr).toBe(0);
     const absent = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'absent.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...env, KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
-    expect(absent.status).not.toBe(0);
-    expect(absent.stderr).toMatch(/KINETOGRAPH_WEBGPU=dawn: KINETOGRAPH_DAWN_MODULE=.*no-such-webgpu cannot be loaded/);
+    // Dawn that cannot be used is given up for the built-in WebGPU, with one warning.
+    expect(absent.status, absent.stderr).toBe(0);
+    expect(absent.stderr.match(/WebGPU through Dawn cannot be used here/g)).toHaveLength(1);
+    expect(absent.stderr).toMatch(/built-in WebGPU layer draws this render instead: .*KINETOGRAPH_DAWN_MODULE=.*no-such-webgpu cannot be loaded/);
     // The default provider does not look for the library, so it is not affected by it.
     const plain = spawnSync(process.execPath, [cli, 'still', page, '2', '--offline', '-o', join(dir, 'plain.png')], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, killSignal: 'SIGKILL', env: { ...process.env, KINETOGRAPH_WEBGPU: '', KINETOGRAPH_DAWN_MODULE: join(dir, 'no-such-webgpu') } });
     expect(plain.status, plain.stderr).toBe(0);
