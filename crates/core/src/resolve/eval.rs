@@ -764,11 +764,18 @@ pub(crate) fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedE
     out
 }
 
-/// A blur, backdrop blur, glow or shadow blur radius, 0..=`MAX_BLUR_RADIUS`: any radius above 0 blurs, however small,
+/// The smallest radius that blurs: invisible even at `--scale 8` (under 0.01 px), so a residue does not pay for a blur.
+const MIN_BLUR_RADIUS: f32 = 1e-3;
+
+/// A blur, backdrop blur, glow or shadow blur radius, 0..=`MAX_BLUR_RADIUS`: any radius from `MIN_BLUR_RADIUS` blurs,
 /// so a render at another scale (`ResolvedEffect::scaled`) blurs exactly when the full render does.
 fn blur_radius(radius: f64) -> f32 {
     let radius = radius.clamp(0.0, MAX_BLUR_RADIUS) as f32;
-    if radius > 0.0 { radius } else { 0.0 }
+    if radius >= MIN_BLUR_RADIUS {
+        radius
+    } else {
+        0.0
+    }
 }
 
 fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {

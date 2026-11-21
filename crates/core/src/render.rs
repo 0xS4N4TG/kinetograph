@@ -2668,14 +2668,22 @@ mod tests {
     }
     #[test]
     fn a_faint_backdrop_blur_needs_the_backdrop() {
-        // Any radius above 0 blurs, at every scale; only 0 does not.
+        // A faint radius blurs, at every scale; 0, or a residue under `MIN_BLUR_RADIUS`, does not.
         let layers = resolve_layers(
             r##"[{"id": "faint", "type": "group", "children": [],
-                  "effects": [{"type": "backdropBlur", "radius": 0.6}]},
+                  "effects": [{"type": "backdropBlur", "radius": 0.5}]},
                  {"id": "none", "type": "group", "children": [],
-                  "effects": [{"type": "backdropBlur", "radius": 0}]}]"##,
+                  "effects": [{"type": "backdropBlur", "radius": 0}]},
+                 {"id": "residue", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0.0001}]}]"##,
         );
         assert!(uses_backdrop(&layers, &layers[0]));
         assert!(!uses_backdrop(&layers, &layers[1]));
+        assert!(!uses_backdrop(&layers, &layers[2]));
+        let radius = |i: usize| match layers[i].effects[..] {
+            [ResolvedEffect::BackdropBlur { radius, .. }] => radius,
+            _ => unreachable!(),
+        };
+        assert_eq!((radius(0), radius(2)), (0.5, 0.0));
     }
 }
