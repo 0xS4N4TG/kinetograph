@@ -429,6 +429,19 @@ fn fix_hint(hw: Hw, device: Option<&str>) -> String {
     }
 }
 
+/// Reads `pipe` to its end into `raw`, through `read` and not `read_to_end`. On Windows std's `ChildStderr::read_to_end`
+/// goes to `Handle::read_to_end`, which reads the overlapped pipe with `synchronous_read` (it aborts the process if the
+/// read is still pending); `read` and `read_buf` use std's alertable `ReadFileEx` path for these pipes.
+fn drain(pipe: &mut impl Read, raw: &mut Vec<u8>) {
+    let mut chunk = [0u8; 4096];
+    while let Ok(n) = pipe.read(&mut chunk) {
+        if n == 0 {
+            break;
+        }
+        raw.extend_from_slice(&chunk[..n]);
+    }
+}
+
 /// Runs `program` with `args`, sends it `pictures` copies of `picture` and waits for it, at most 20 seconds. `Err` is
 /// the last of what it said on stderr.
 fn run_probe(
@@ -448,7 +461,7 @@ fn run_probe(
     let mut err = child.stderr.take().ok_or("no stderr on the ffmpeg child")?;
     let reader = thread::spawn(move || {
         let mut raw = Vec::new();
-        let _ = err.read_to_end(&mut raw);
+        drain(&mut err, &mut raw);
         String::from_utf8_lossy(&raw).into_owned()
     });
     let data = picture.to_vec();
@@ -754,7 +767,7 @@ impl ExternalEncoder {
         let stderr = thread::spawn(move || {
             let mut text = String::new();
             let mut raw = Vec::new();
-            let _ = err.read_to_end(&mut raw);
+            drain(&mut err, &mut raw);
             text.push_str(&String::from_utf8_lossy(&raw));
             text
         });
