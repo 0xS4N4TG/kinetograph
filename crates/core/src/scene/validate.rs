@@ -16,6 +16,12 @@ impl Scene {
         if !(self.fps.is_finite() && self.fps > 0.0) {
             return bad(format!("fps must be positive, got {}", self.fps));
         }
+        if !(self.render_scale.is_finite() && self.render_scale > 0.0) {
+            return bad(format!(
+                "renderScale must be positive, got {}",
+                self.render_scale
+            ));
+        }
         if self.duration_in_frames == 0 {
             return bad("durationInFrames must be at least 1".into());
         }
