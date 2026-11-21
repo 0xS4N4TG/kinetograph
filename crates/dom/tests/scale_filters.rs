@@ -142,3 +142,64 @@ fn a_scaled_render_is_the_full_render_shrunk_on_the_compositor() {
     eprintln!("worst {worst}, mean {mean:.3}");
     assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
 }
+
+/// Grey boxes with a pattern of cells: grain that Skia draws at x 20..120, grain in a preserve3d group, which the wgpu
+/// compositor draws, at x 150..250, and an ordered dither, which only the compositor has, at x 280..380.
+fn pattern_layers() -> Vec<Value> {
+    let rect = |id: &str, x: f64, effect: Value| {
+        json!({
+            "id": id, "type": "shape", "fill": "#808080", "transform": { "x": x, "y": 30 },
+            "shape": { "kind": "rect", "width": 100, "height": 100 }, "effects": [effect],
+        })
+    };
+    let grain = json!({ "type": "grain", "amount": 0.5, "size": 16, "seed": 3 });
+    vec![
+        rect("grain", 20.0, grain.clone()),
+        json!({ "id": "g", "type": "group", "preserve3d": true, "children": [rect("grain3d", 150.0, grain)] }),
+        rect(
+            "dither",
+            280.0,
+            json!({ "type": "dither", "mode": "ordered", "levels": 2, "size": 8 }),
+        ),
+    ]
+}
+
+/// The mean absolute step of the green channel to the right and down neighbours over `x0..x1` x `y0..y1`: cells twice
+/// as large step half as often.
+fn roughness(at: impl Fn(u32, u32) -> f64, (x0, x1): (u32, u32), (y0, y1): (u32, u32)) -> f64 {
+    let mut sum = 0.0;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            sum += (at(x + 1, y) - at(x, y)).abs() + (at(x, y + 1) - at(x, y)).abs();
+        }
+    }
+    sum / f64::from((x1 - x0) * (y1 - y0))
+}
+
+#[test]
+fn grain_and_dither_cells_shrink_with_the_canvas() {
+    let (full, half) = (render(pattern_layers(), 1.0), render(pattern_layers(), 0.5));
+    let green = |f: &Frame, x: u32, y: u32| f64::from(f.rgba[((y * f.width + x) * 4) as usize + 1]);
+    let shrunk = |x: u32, y: u32| {
+        [(0, 0), (1, 0), (0, 1), (1, 1)]
+            .iter()
+            .map(|(dx, dy)| green(&full, x * 2 + dx, y * 2 + dy))
+            .sum::<f64>()
+            / 4.0
+    };
+    // Inside each box, in half-size pixels.
+    for (what, xs) in [
+        ("grain", (14, 56)),
+        ("grain3d", (79, 121)),
+        ("dither", (144, 186)),
+    ] {
+        let want = roughness(shrunk, xs, (19, 61));
+        let got = roughness(|x, y| green(&half, x, y), xs, (19, 61));
+        eprintln!("{what}: roughness {got:.2}, full render shrunk {want:.2}");
+        assert!(want > 1.0, "{what}: no pattern");
+        assert!(
+            (0.75..1.34).contains(&(got / want)),
+            "{what}: roughness {got:.2}, full render shrunk {want:.2}"
+        );
+    }
+}

@@ -260,8 +260,8 @@ pub enum ResolvedEffect {
 }
 
 impl ResolvedEffect {
-    /// The effect with its lengths in canvas pixels times `k` (`Scene::render_scale`): the lengths the Skia painter
-    /// divides by the layer scale. Lengths in layer units (a filter graph's, a halftone's) scale with the layer already.
+    /// The effect with its lengths in canvas pixels times `k` (`Scene::render_scale`), grain and dither cells kept at
+    /// least 1. Lengths in layer units (a filter graph's, a halftone's) scale with the layer already.
     pub fn scaled(&self, k: f32) -> ResolvedEffect {
         let mut effect = self.clone();
         match &mut effect {
@@ -270,6 +270,8 @@ impl ResolvedEffect {
             }
             ResolvedEffect::Glow(glow) => glow.radius *= k,
             ResolvedEffect::ChromaticAberration { amount, .. } => *amount *= k,
+            ResolvedEffect::Grain(ResolvedGrain { size, .. })
+            | ResolvedEffect::Dither(ResolvedDither { size, .. }) => *size = (*size * k).max(1.0),
             ResolvedEffect::DropShadow(shadow) | ResolvedEffect::InsetShadow(shadow) => {
                 *shadow = shadow.scaled(k)
             }
