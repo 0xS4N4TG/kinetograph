@@ -3,6 +3,10 @@
 //! `diag::line` waits for the write.
 #![cfg(windows)]
 
+// The module is included as a file, as in `crash_report.rs`: the addon is a `cdylib` and needs no test-only export.
+#[path = "../../core/src/diag.rs"]
+mod diag;
+
 use std::io::Read;
 use std::os::windows::io::{FromRawHandle, RawHandle};
 use std::ptr::null;
@@ -48,7 +52,7 @@ fn a_line_is_written_whole_to_an_overlapped_stderr_with_a_slow_reader() {
     });
 
     let message = "x".repeat(1 << 20);
-    kinetograph_core::diag::line(format_args!("{message}"));
+    diag::line(format_args!("{message}"));
     let seen = reader.join().unwrap();
     assert_eq!(seen.len(), message.len() + 1);
 }
