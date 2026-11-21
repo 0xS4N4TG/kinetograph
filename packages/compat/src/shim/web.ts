@@ -14,7 +14,7 @@ import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageDat
 import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
 import { pendingMediaLoads, reportMediaIssue } from './media.js';
-import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
+import { OffscreenCanvasShim, rasterizeCanvas } from './canvas.js';
 import { dawnGlobals, dawnRequested, installDawn } from './webgpu-dawn.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { XmlElement } from './xml.js';
@@ -738,7 +738,7 @@ export function installDomGlobals(): void {
       enumerable: false,
     });
   }
-  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: dawn ?? createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
+  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: dawn ?? createGpu({ rasterize: rasterizeCanvas }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);

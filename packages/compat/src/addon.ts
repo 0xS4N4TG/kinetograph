@@ -54,8 +54,6 @@ export interface DomAddon {
   getCanvasPixels?(key: string, version: number): Uint8Array | null;
   /** Forgets every version of the canvas `key` that `putCanvasPixels` kept. */
   releaseCanvasPixels?(key: string): void;
-  /** The engine device's `{ features, limits }` as JSON, for `navigator.gpu`; null without a GPU. Opens the GPU once. */
-  webgpuDeviceInfo?(): string | null;
   webglCompressedFormats?(): string[];
   /** A Rive file played to a time, as a canvas's commands: `{ src, baseDir, artboard, animation, stateMachine, time, width, height, fit, alignment }` as JSON in, the commands as a JSON array out. */
   riveFrame?(requestJson: string): string;

@@ -2892,6 +2892,7 @@ export class WebGLContext {
     if (s.kind === 'pixels') return { pixels: s.data, ...sized };
     if (s.kind === 'layer') throw new WebGLUnsupportedError('a texture from a layer picture outside layerPicture()');
     if (s.kind === 'ref') throw new WebGLUnsupportedError('a texture from a sources table entry (only a written scene holds one)');
+    if (s.kind === 'stored') throw new WebGLUnsupportedError('a texture from the read-back of a WebGPU canvas');
     const drawn = this.rasterized(s, width, height);
     if (drawn === null) throw new WebGLUnsupportedError(`a texture from a ${s.kind} here (its pixels need the addon)`);
     return { pixels: toBase64(drawn), ...sized };

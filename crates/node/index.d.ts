@@ -741,9 +741,3 @@ export interface WebglBackend {
  * failed when ANGLE cannot start (a page's WebGL is then an error). Loads and starts ANGLE (once per process).
  */
 export declare function webglBackend(): WebglBackend
-
-/**
- * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
- * (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
- */
-export declare function webgpuDeviceInfo(): string | null
