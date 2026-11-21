@@ -640,7 +640,7 @@ draws the island's layers wrongly), see below).
   WebGPU on a canvas runs on Dawn (Chrome's WebGPU library, `dawn.node` in the platform package) by default; with no adapter or
   no `dawn.node` the built-in layer draws, with one warning, and `KINETOGRAPH_WEBGPU=builtin` picks it. The built-in layer
   (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's GPU device; its gaps are in
-  `/docs/compat/#webgpu`. Linux needs the system Vulkan loader (`libvulkan1`) for Dawn. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
+  `/docs/compat/#webgpu`. Dawn brings its own Vulkan loader on Linux (no `libvulkan1`). `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
   HyperFrames: AUTHORING.md §11.10 and §11.11.
 
 ### Paint order

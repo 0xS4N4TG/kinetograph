@@ -436,7 +436,7 @@ function noteAdapter(chosen: Chosen): void {
 function noAdapterMessage(): string {
   const flags = dawnFlags();
   const hint = process.platform === 'linux'
-    ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, Mesa\'s lavapipe, or the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), which on a host with other Vulkan drivers is added beside them and needs Vulkan loader 1.3.234 or newer'
+    ? 'on Linux that needs a Vulkan driver: a GPU\'s, Mesa\'s lavapipe, or the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), which on a host with other Vulkan drivers is added beside them and needs Vulkan loader 1.3.234 or newer'
     : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
   return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU`;
 }

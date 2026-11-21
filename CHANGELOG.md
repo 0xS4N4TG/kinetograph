@@ -13,7 +13,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `kinetograph matte` and `@kinetographdev/video-matting` remove a video's background with MODNet or BEN2, with no browser and no Python. Studio has a Remove background dialog. Models download on first use.
 - `kinetograph add hyperframes/<name>` installs a block or component from the HyperFrames registry.
 - Dawn is the default WebGPU provider; `KINETOGRAPH_WEBGPU=builtin` uses the earlier built-in layer. `dawn.node` ships in each platform package (`dawn/`), pinned by checksum, at 5.9 MB (macOS), 7.2 MB (Linux) and 14.3 MB (Windows) compressed; there is no `webgpu` package to install.
-- Dawn with no GPU: Windows uses WARP, Linux uses the SwiftShader that `angle/` carries (`KINETOGRAPH_WEBGPU_BACKEND=swiftshader` forces it); with no adapter or no `dawn.node` the built-in WebGPU draws, with one warning. Linux needs the system Vulkan loader (`libvulkan1`) for Dawn. `doctor` shows the provider and backend.
+- Dawn with no GPU: Windows uses WARP, Linux uses the SwiftShader that `angle/` carries (`KINETOGRAPH_WEBGPU_BACKEND=swiftshader` forces it); with no adapter or no `dawn.node` the built-in WebGPU draws, with one warning. Linux and Windows packages carry the Vulkan loader for Dawn in `dawn/`, so Dawn needs no `libvulkan1`. `doctor` shows the provider and backend.
 - `--timeout <ms>` on every command that opens a project sets the `delayRender()` timeout; `delayRender(label, { timeoutInMilliseconds })` wins over it (#101).
 - CSS `clip-path: path(evenodd, ...)` and `polygon(evenodd, ...)` cut holes (#106).
 - `image-rendering: pixelated` and `crisp-edges` on `<img>`, CSS backgrounds, border images and SVG `<image>` (#105).

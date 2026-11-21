@@ -157,7 +157,8 @@ jobs:
           ls -l crates/node/npm/${{ matrix.platform }}/angle
 
       # Dawn (WebGPU, KINETOGRAPH_WEBGPU=dawn): dawn.node of the pinned `webgpu` npm package for the platform package's dawn/ folder,
-      # checked against the package's integrity and a SHA-256 per file (scripts/fetch-dawn.mjs).
+      # checked against the package's integrity and a SHA-256 per file (scripts/fetch-dawn.mjs). On Linux and Windows it also takes the
+      # Vulkan loader of the ANGLE files fetched above.
       - name: Fetch Dawn for the platform package
         shell: bash
         run: |
@@ -414,7 +415,7 @@ jobs:
         run: node scripts/smoke/clean-install.mjs
 
   # WebGPU through Dawn (KINETOGRAPH_WEBGPU=dawn) on the three platforms' own backends: Metal, Vulkan on SwiftShader (the Linux runner
-  # has the Vulkan loader and no driver, so the SwiftShader of the platform package is the only one), Direct3D 12 on WARP.
+  # has no Vulkan driver, so the SwiftShader of the platform package is the only one), Direct3D 12 on WARP.
   dawn:
     name: dawn (${{ matrix.platform }})
     needs: build
@@ -437,13 +438,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The loader only: no Mesa driver, so Dawn finds no adapter of its own on a runner with no GPU.
-      - name: Install the Vulkan loader, without a driver (Linux)
+      # No system Vulkan loader and no driver: Dawn opens the loader in dawn/ (copied from the ANGLE files by scripts/fetch-dawn.mjs), and finds
+      # no adapter of its own on a runner with no GPU, so SwiftShader is the one. The CLI's rendered cases install the loader below: the
+      # compositor (wgpu) opens the system's.
+      - name: No system Vulkan loader (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libvulkan1 vulkan-tools
-          vulkaninfo --summary || true
+          if ldconfig -p | grep -q 'libvulkan\.so\.1 '; then sudo apt-get remove -y libvulkan1; fi
+          if ldconfig -p | grep 'libvulkan\.so\.1 '; then echo "a system Vulkan loader is still installed"; exit 1; fi
 
       - uses: actions/download-artifact@v8
         with:
@@ -465,7 +467,7 @@ jobs:
       # WebGPU through Dawn (dawn.node of the platform package, KINETOGRAPH_WEBGPU=dawn): the adapter tests, the rendered cases on
       # the built CLI and addon, and the goldens. These runners have no GPU, so Dawn takes its software adapter
       # (packages/compat/src/shim/webgpu-dawn.ts, dawn-software.ts): on Linux SwiftShader, from the `angle/` folder of the platform package
-      # (this job installs the Vulkan loader and no driver: no lavapipe), on Windows WARP.
+      # (this job has no driver and, until the CLI's cases, no system Vulkan loader), on Windows WARP.
       # On macOS it asks Metal for the runner's own (virtual) GPU (a run of this job showed one there). The goldens are Metal's and skip off macOS, saying so. The tests skip when dawn.node does not load, so the first step
       # makes that a failure instead; the second prints which backend and adapter Dawn took.
       - name: Dawn loads
@@ -493,6 +495,8 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then
             (cd packages/cli && npx vitest run --reporter=verbose -t drawImage test/webgpu-dawn.test.ts)
           else
+            # The engine's own renderer (wgpu) opens the system's Vulkan loader, which the Dawn tests above ran without.
+            if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update && sudo apt-get install -y --no-install-recommends libvulkan1; fi
             # The engine's own renderer (wgpu) needs a Vulkan driver in every CLI process, and has no SwiftShader switch of its own:
             # on Linux the loader is told to read SwiftShader's ICD file, the only driver on this runner (Dawn then takes it as well).
             if [ "$RUNNER_OS" = Linux ]; then export VK_DRIVER_FILES="$GITHUB_WORKSPACE/crates/node/npm/linux-x64-gnu/angle/vk_swiftshader_icd.json"; fi

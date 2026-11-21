@@ -88,7 +88,7 @@ jobs:
             mkdir -p "npm/$p/angle"
             cp artifacts/bindings-$p/npm/$p/angle/* "npm/$p/angle/"
           done
-          # Dawn (dawn/: dawn.node, its licence and SOURCE.txt; on Windows also the DXC and FXC compilers) rides in the same artifact.
+          # Dawn (dawn/: dawn.node, its licence and SOURCE.txt; on Windows also the DXC and FXC compilers; on Linux and Windows the Vulkan loader) rides in the same artifact.
           for p in darwin-arm64 linux-x64-gnu win32-x64-msvc; do
             mkdir -p "npm/$p/dawn"
             cp artifacts/bindings-$p/npm/$p/dawn/* "npm/$p/dawn/"
@@ -122,6 +122,8 @@ jobs:
           # Each platform package carries Dawn: dawn.node, its licence and SOURCE.txt (check-packages.mjs checks that they are packed).
           for d in crates/node/npm/*; do ls "$d"/dawn/dawn.node "$d"/dawn/DAWN-LICENSE "$d"/dawn/SOURCE.txt; done
           ls crates/node/npm/win32-x64-msvc/dawn/dxcompiler.dll crates/node/npm/win32-x64-msvc/dawn/d3dcompiler_47.dll
+          # The Vulkan loader Dawn opens from its own folder, copied from angle/ by scripts/fetch-dawn.mjs.
+          ls crates/node/npm/linux-x64-gnu/dawn/libvulkan.so.1 crates/node/npm/win32-x64-msvc/dawn/vulkan-1.dll
           du -sh crates/node/npm/*/angle
           du -sh crates/node/npm/*/dawn
           du -sh crates/node/npm/*/bin

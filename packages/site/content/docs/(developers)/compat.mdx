@@ -100,7 +100,7 @@ A `<canvas>` with a `webgl` or `webgl2` context runs on the GPU. What works, wha
 
 WebGPU runs on Dawn, Chrome's WebGPU library, by default (`dawn.node` ships in each platform package). `KINETOGRAPH_WEBGPU=builtin` uses the engine's own layer instead. `doctor` shows the provider and backend.
 
-- Dawn needs an adapter: Metal on macOS, Vulkan on Linux (the system Vulkan loader, `libvulkan1`, and a driver; with none, the SwiftShader in the platform package), Direct3D 12 on Windows (WARP when there is no GPU).
+- Dawn needs an adapter: Metal on macOS, Vulkan on Linux (a driver, or with none the SwiftShader in the platform package; the Vulkan loader comes in the package), Direct3D 12 on Windows (WARP when there is no GPU).
 - With no adapter, no `dawn.node` or no Vulkan loader, the built-in layer draws, with one warning.
 
 The rest of this section describes the built-in layer: a canvas's `getContext('webgpu')` records its calls, and the passes it submits are drawn on the engine's own device.

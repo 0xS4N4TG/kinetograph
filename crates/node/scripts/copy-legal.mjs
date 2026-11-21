@@ -21,7 +21,7 @@ ${angle ? `- The libraries in \`angle/\` are Google's ANGLE (BSD-3-Clause, \`ang
 ` : ''}${dawn ? `- \`dawn/dawn.node\` is Dawn, Chrome's WebGPU library, in the build of the \`webgpu\` npm package (MIT, \`dawn/DAWN-LICENSE\`; \`dawn/SOURCE.txt\` says
   which release), taken unchanged. Node opens it at run time; the addon does not link it. It contains third-party code (abseil, SPIRV-Tools and
   others; see THIRD-PARTY-NOTICES.md). The Windows package also holds Microsoft's DirectX Shader Compiler (\`dxcompiler.dll\`, \`dawn/dxcompiler-LICENSE.TXT\`)
-  and FXC (\`d3dcompiler_47.dll\`) beside it.
+  and FXC (\`d3dcompiler_47.dll\`) beside it. On Linux and Windows \`dawn/\` also holds a copy of the Khronos Vulkan loader of \`angle/\` (Apache-2.0).
 ` : ''}
 ---
 

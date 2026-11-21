@@ -4,7 +4,7 @@
 // licence files, and its size is reported. On Linux and Windows it must also pack SwiftShader (the software Vulkan driver, its ICD file,
 // the Vulkan loader), which a server with no GPU draws WebGL on; macOS always has Metal and ships none.
 // ANGLE is optional: a platform package without the folder passes. The same holds for `dawn/` (scripts/fetch-dawn.mjs): dawn.node, its
-// licence and SOURCE.txt (and on Windows the DXC and FXC compilers beside it), whose size is reported.
+// licence and SOURCE.txt (on Windows the DXC and FXC compilers beside it, on Linux and Windows the Vulkan loader), whose size is reported.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,7 +28,12 @@ const angleFiles = (dir) => {
   const licences = swiftshader.length && !own ? ['SWIFTSHADER-LICENSE', 'VULKAN-LOADER-LICENSE'] : [];
   return [`libEGL.${ext}`, `libGLESv2.${ext}`, 'ANGLE-LICENSE', 'SOURCE.txt', ...(own ? ['THIRD-PARTY-NOTICES.txt'] : ['CHROMIUM-CREDITS.txt']), ...swiftshader, ...licences];
 };
-const dawnFiles = (dir) => ['dawn.node', 'DAWN-LICENSE', 'SOURCE.txt', ...(path.basename(dir).includes('win32') ? ['dxcompiler.dll', 'd3dcompiler_47.dll', 'dxcompiler-LICENSE.TXT', 'dxcompiler-ThirdPartyNotices.txt'] : [])];
+// On Linux and Windows dawn/ also holds the Vulkan loader of the ANGLE files, which Dawn opens before the system's.
+const dawnFiles = (dir) => {
+  const name = path.basename(dir);
+  const own = name.includes('win32') ? ['dxcompiler.dll', 'd3dcompiler_47.dll', 'dxcompiler-LICENSE.TXT', 'dxcompiler-ThirdPartyNotices.txt', 'vulkan-1.dll'] : name.includes('linux') ? ['libvulkan.so.1'] : [];
+  return ['dawn.node', 'DAWN-LICENSE', 'SOURCE.txt', ...own];
+};
 let bad = 0;
 for (const dir of dirs) {
   const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, 'utf8'));

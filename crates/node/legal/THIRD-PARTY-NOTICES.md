@@ -94,7 +94,9 @@ third-party code built into it: abseil-cpp (Apache-2.0), and on Linux and Window
 headers (Apache-2.0) and the DirectX headers (MIT) for the backends it supports. The Windows package adds Microsoft's DirectX Shader Compiler
 (`dxcompiler.dll`, University of Illinois/NCSA, Apache-2.0 with LLVM exceptions and other notices in `dawn/dxcompiler-LICENSE.TXT` and
 `dawn/dxcompiler-ThirdPartyNotices.txt`) and the Direct3D shader compiler `d3dcompiler_47.dll`, Microsoft's redistributable, which Dawn uses when the DXC cannot.
-On macOS Dawn uses Metal; on Linux the system's Vulkan driver (or the SwiftShader that `angle/` carries); on Windows Direct3D 12.
+On Linux and Windows `dawn/` also holds a copy of the Khronos Vulkan loader of `angle/` (`libvulkan.so.1`, `vulkan-1.dll`, Apache-2.0, licence in
+`angle/THIRD-PARTY-NOTICES.txt`), which Dawn opens before the system's. On macOS Dawn uses Metal; on Linux the system's Vulkan driver (or the
+SwiftShader that `angle/` carries); on Windows Direct3D 12.
 
 ## Others
 

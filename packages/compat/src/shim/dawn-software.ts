@@ -8,8 +8,10 @@
 // The rest of the process (the compositor's wgpu, Skia on wgpu's device, ANGLE, ffmpeg) reads the same environment, so SwiftShader is added
 // beside the host's own drivers (`VK_ADD_DRIVER_FILES`, Vulkan loader 1.3.234 and newer), where wgpu, which ranks a CPU adapter last, keeps
 // the GPU it had. Only when the host has no Vulkan driver at all is it named in place of them (`VK_DRIVER_FILES`, and `VK_ICD_FILENAMES`, the
-// older name, which a loader as old as Ubuntu 22.04's 1.3.204 reads): there is nothing to lose, and every loader reads those. A loader older
-// than 1.3.234 on a host with drivers ignores the addition, Dawn then finds no SwiftShader and the built-in WebGPU layer draws. The loader of
+// older name, which a loader as old as Ubuntu 22.04's 1.3.204 reads): there is nothing to lose, and the system's loader, which the compositor
+// opens, reads those. Dawn opens the loader in its own folder (`dawn/libvulkan.so.1`, copied from the ANGLE files by scripts/fetch-dawn.mjs),
+// which reads the addition; a dawn.node from elsewhere (KINETOGRAPH_DAWN_MODULE, KINETOGRAPH_DAWN_DIR) may open a system loader older than
+// 1.3.234, which ignores it: on a host with drivers Dawn then finds no SwiftShader and the built-in WebGPU layer draws. The loader of
 // an elevated process ignores all of them (the lesson of the ANGLE work); Windows does not need them.
 
 import { existsSync, readdirSync } from 'node:fs';
