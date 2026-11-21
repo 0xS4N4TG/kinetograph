@@ -1714,14 +1714,28 @@ impl Renderer {
         } else {
             None
         };
+        // `render --scale`: the effects' lengths in canvas pixels shrink with the canvas, as the Skia painter's do. Every
+        // effect the wgpu path draws passes through here.
+        let render_scale = self.scene.render_scale as f32;
+        let scaled: Vec<ResolvedEffect>;
+        let effects = if render_scale == 1.0 {
+            &layer.effects
+        } else {
+            scaled = layer
+                .effects
+                .iter()
+                .map(|e| e.scaled(render_scale))
+                .collect();
+            &scaled
+        };
         // The first effect, if it is a drop shadow with a formula.
-        let box_shadow = BoxShadow::plan(layer, matrix);
+        let box_shadow = BoxShadow::plan(layer, matrix, render_scale);
         let mut src = self.timed(Stage::Composite, |s| {
             s.compositor.apply_effects(
                 src,
                 matrix,
                 layer_box,
-                &layer.effects,
+                effects,
                 backdrop,
                 coverage.as_ref(),
                 box_shadow.as_ref(),

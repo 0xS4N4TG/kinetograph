@@ -259,6 +259,26 @@ pub enum ResolvedEffect {
     Shader(ResolvedShader),
 }
 
+impl ResolvedEffect {
+    /// The effect with its lengths in canvas pixels times `k` (`Scene::render_scale`): the lengths the Skia painter
+    /// divides by the layer scale. Lengths in layer units (a filter graph's, a halftone's) scale with the layer already.
+    pub fn scaled(&self, k: f32) -> ResolvedEffect {
+        let mut effect = self.clone();
+        match &mut effect {
+            ResolvedEffect::Blur { radius } | ResolvedEffect::BackdropBlur { radius, .. } => {
+                *radius *= k
+            }
+            ResolvedEffect::Glow(glow) => glow.radius *= k,
+            ResolvedEffect::ChromaticAberration { amount, .. } => *amount *= k,
+            ResolvedEffect::DropShadow(shadow) | ResolvedEffect::InsetShadow(shadow) => {
+                *shadow = shadow.scaled(k)
+            }
+            _ => {}
+        }
+        effect
+    }
+}
+
 /// A corner pin at one frame: where each corner of the layer's box goes, in
 /// layer space, or `None` to leave it where the box has it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -418,6 +438,19 @@ pub struct ResolvedShadow {
     /// shrinks it.
     pub spread: f32,
     pub color: Color,
+}
+
+impl ResolvedShadow {
+    /// The shadow with its offset, blur and spread times `k`.
+    pub fn scaled(self, k: f32) -> ResolvedShadow {
+        ResolvedShadow {
+            x: self.x * k,
+            y: self.y * k,
+            blur: self.blur * k,
+            spread: self.spread * k,
+            ..self
+        }
+    }
 }
 
 /// A clip in layer space. Counterpart of `scene::Clip`.

@@ -1,6 +1,7 @@
 //! `render --scale` wraps the scene in a group at the scale on a canvas of the scaled size and sets `renderScale`
 //! (`scaleScene` in packages/cli/src/scenes.ts). A scaled render must equal the full render shrunk: the lengths in CSS
-//! `filter` functions and in SVG filter primitives scale with everything else (issue #166).
+//! `filter` functions and in SVG filter primitives scale with everything else (issue #166), on layers Skia draws and on
+//! layers the wgpu compositor draws for it.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -57,15 +58,15 @@ fn layers() -> Vec<Value> {
     out.layers
 }
 
-/// The page at `scale`, as `scaleScene` builds it.
-fn render(scale: f64) -> Frame {
+/// `layers` at `scale`, as `scaleScene` builds it.
+fn render(layers: Vec<Value>, scale: f64) -> Frame {
     let size = |n: u32| (f64::from(n) * scale) as u32;
     let layers = if scale == 1.0 {
-        layers()
+        layers
     } else {
         vec![json!({
             "id": "kinetograph-draft", "type": "group",
-            "transform": { "scale": scale }, "children": layers(),
+            "transform": { "scale": scale }, "children": layers,
         })]
     };
     let scene = json!({
@@ -105,7 +106,39 @@ fn difference(full: &Frame, half: &Frame) -> (u8, f64) {
 
 #[test]
 fn a_scaled_render_is_the_full_render_shrunk() {
-    let (worst, mean) = difference(&render(1.0), &render(0.5));
+    let (worst, mean) = difference(&render(layers(), 1.0), &render(layers(), 0.5));
+    eprintln!("worst {worst}, mean {mean:.3}");
+    assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
+}
+
+/// Black boxes the wgpu compositor draws: in a preserve3d group, one blurred and one with a drop shadow (drawn in closed
+/// form), and outside it one with a chromatic aberration, which only the compositor has.
+fn compositor_layers() -> Vec<Value> {
+    let rect = |id: &str, x: f64, effect: Value| {
+        json!({
+            "id": id, "type": "shape", "fill": "#000000", "transform": { "x": x, "y": 40 },
+            "shape": { "kind": "rect", "width": 60, "height": 60 }, "effects": [effect],
+        })
+    };
+    vec![
+        json!({ "id": "g", "type": "group", "preserve3d": true, "children": [
+            rect("blur", 20.0, json!({ "type": "blur", "radius": 8 })),
+            rect("shadow", 120.0, json!({ "type": "dropShadow", "x": 24, "y": 16, "blur": 6, "color": "#0000ff" })),
+        ]}),
+        rect(
+            "aberration",
+            260.0,
+            json!({ "type": "chromaticAberration", "amount": 16 }),
+        ),
+    ]
+}
+
+#[test]
+fn a_scaled_render_is_the_full_render_shrunk_on_the_compositor() {
+    let (worst, mean) = difference(
+        &render(compositor_layers(), 1.0),
+        &render(compositor_layers(), 0.5),
+    );
     eprintln!("worst {worst}, mean {mean:.3}");
     assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
 }

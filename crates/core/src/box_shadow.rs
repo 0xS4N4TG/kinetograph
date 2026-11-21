@@ -73,7 +73,8 @@ pub struct BoxShadow {
 
 impl BoxShadow {
     /// The closed form of `layer`'s first effect if that is a drop shadow it
-    /// covers, drawn under `matrix` (layer space to padded texture pixels).
+    /// covers, drawn under `matrix` (layer space to padded texture pixels),
+    /// with the shadow's lengths times `render_scale` (`ResolvedShadow::scaled`).
     /// `None` leaves the shadow to the blurred path. It covers:
     ///
     /// - a shape that is a `rect`, `roundedRect` or `ellipse` (an ellipse
@@ -90,10 +91,11 @@ impl BoxShadow {
     /// - with no spread, or a spread on a rectangle or rounded rectangle
     ///   whose sides run along the canvas axes, that does not shrink the
     ///   shape to nothing or below its corner radius (see the module).
-    pub fn plan(layer: &ResolvedLayer, matrix: Affine) -> Option<BoxShadow> {
+    pub fn plan(layer: &ResolvedLayer, matrix: Affine, render_scale: f32) -> Option<BoxShadow> {
         let ResolvedEffect::DropShadow(shadow) = layer.effects.first()? else {
             return None;
         };
+        let shadow = shadow.scaled(render_scale);
         let ResolvedKind::Shape {
             geometry,
             fill: Some(ResolvedPaint::Solid(fill)),
@@ -570,7 +572,7 @@ mod tests {
     const RECT: &str = r#"{"kind": "rect", "width": 120, "height": 80}"#;
 
     fn plan(layer: &ResolvedLayer) -> Option<BoxShadow> {
-        BoxShadow::plan(layer, Affine::translate((50.0, 40.0)))
+        BoxShadow::plan(layer, Affine::translate((50.0, 40.0)), 1.0)
     }
 
     #[test]
@@ -593,7 +595,7 @@ mod tests {
         );
         // A scale of 2 and a move: the layer's own units are twice the pixels.
         let matrix = Affine::translate((50.0, 40.0)) * Affine::scale(2.0);
-        let shadow = BoxShadow::plan(&layer, matrix).unwrap();
+        let shadow = BoxShadow::plan(&layer, matrix, 1.0).unwrap();
         let u = shadow.uniform();
         // The centre of the box (60, 40) is at (170, 120), then the offset.
         assert_eq!((u[0], u[1]), (173.0, 128.0));
@@ -625,7 +627,7 @@ mod tests {
     fn a_turned_layer_keeps_its_offset_in_pixels_and_gets_the_inverse_turn() {
         let layer = shape(RECT, SHADOW);
         let matrix = Affine::rotate(90f64.to_radians());
-        let u = BoxShadow::plan(&layer, matrix).unwrap().uniform();
+        let u = BoxShadow::plan(&layer, matrix, 1.0).unwrap().uniform();
         // Rotating by 90 degrees takes (x, y) to (-y, x): the box's centre
         // (60, 40) to (-40, 60), and the offset (0, 8) is added as it is.
         assert!((u[0] - -40.0).abs() < 1e-5 && (u[1] - 68.0).abs() < 1e-5);
@@ -687,7 +689,7 @@ mod tests {
     #[test]
     fn only_a_rotation_and_a_uniform_scale_keep_the_shape() {
         let layer = shape(RECT, SHADOW);
-        let draw = |m: Affine| BoxShadow::plan(&layer, m);
+        let draw = |m: Affine| BoxShadow::plan(&layer, m, 1.0);
         assert!(draw(Affine::rotate(0.3) * Affine::scale(1.7)).is_some());
         assert!(draw(Affine::scale(-1.0)).is_some());
         assert!(draw(Affine::scale_non_uniform(2.0, 1.0)).is_none());
@@ -706,25 +708,31 @@ mod tests {
         let flat = Affine::translate((50.0, 40.0));
         // Along the axes (turned a quarter too), a rectangle and a rounded
         // rectangle grow by the spread on every side.
-        let grown = BoxShadow::plan(&shape(RECT, &spread(5.0)), flat).unwrap();
+        let grown = BoxShadow::plan(&shape(RECT, &spread(5.0)), flat, 1.0).unwrap();
         assert_eq!(grown.half, [65.0, 45.0]);
-        let u = BoxShadow::plan(&shape(rounded, &spread(5.0)), Affine::scale(2.0) * flat)
-            .unwrap()
-            .uniform();
+        let u = BoxShadow::plan(
+            &shape(rounded, &spread(5.0)),
+            Affine::scale(2.0) * flat,
+            1.0,
+        )
+        .unwrap()
+        .uniform();
         // 2.5 layer units either side at scale 2.
         assert_eq!((u[8], u[9], u[10]), (62.5, 42.5, 12.0));
-        assert!(BoxShadow::plan(&shape(rounded, &spread(5.0)), Affine::rotate(PI / 2.0)).is_some());
+        assert!(
+            BoxShadow::plan(&shape(rounded, &spread(5.0)), Affine::rotate(PI / 2.0), 1.0).is_some()
+        );
         // Shrinking works while the corner arc still fits.
-        let shrunk = BoxShadow::plan(&shape(rounded, &spread(-20.0)), flat).unwrap();
+        let shrunk = BoxShadow::plan(&shape(rounded, &spread(-20.0)), flat, 1.0).unwrap();
         assert_eq!(shrunk.half, [40.0, 20.0]);
-        assert!(BoxShadow::plan(&shape(rounded, &spread(-30.0)), flat).is_none());
-        assert!(BoxShadow::plan(&shape(RECT, &spread(-60.0)), flat).is_none());
+        assert!(BoxShadow::plan(&shape(rounded, &spread(-30.0)), flat, 1.0).is_none());
+        assert!(BoxShadow::plan(&shape(RECT, &spread(-60.0)), flat, 1.0).is_none());
         // Turned another way, or an ellipse, the blurred path keeps it.
-        assert!(BoxShadow::plan(&shape(RECT, &spread(5.0)), Affine::rotate(0.3)).is_none());
-        assert!(BoxShadow::plan(&shape(ellipse, &spread(5.0)), flat).is_none());
+        assert!(BoxShadow::plan(&shape(RECT, &spread(5.0)), Affine::rotate(0.3), 1.0).is_none());
+        assert!(BoxShadow::plan(&shape(ellipse, &spread(5.0)), flat, 1.0).is_none());
         // With none, any turn does.
-        assert!(BoxShadow::plan(&shape(RECT, &spread(0.0)), Affine::rotate(0.3)).is_some());
-        assert!(BoxShadow::plan(&shape(ellipse, &spread(0.0)), flat).is_some());
+        assert!(BoxShadow::plan(&shape(RECT, &spread(0.0)), Affine::rotate(0.3), 1.0).is_some());
+        assert!(BoxShadow::plan(&shape(ellipse, &spread(0.0)), flat, 1.0).is_some());
     }
 
     #[test]
@@ -757,7 +765,7 @@ mod tests {
         // 4 * 6 + 1 = 25.
         assert_eq!(shadow.extent(), PixelRect::new(25, 23, 195, 153));
         // Turned, it is the box of the turned box.
-        let turned = BoxShadow::plan(&layer, Affine::rotate(PI / 2.0)).unwrap();
+        let turned = BoxShadow::plan(&layer, Affine::rotate(PI / 2.0), 1.0).unwrap();
         // (0, 0)-(120, 80) turns to (-80, 0)-(0, 120); moved down by 8 and
         // grown by 25. The turn leaves a rounding error of 1e-14 in a
         // coordinate, which may cost a pixel on a side.
