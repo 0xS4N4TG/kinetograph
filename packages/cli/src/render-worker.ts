@@ -1,7 +1,7 @@
 // A render worker (`render --concurrency N`, packages/cli/skills/kinetograph-markup/references/AUTHORING.md §9): a worker thread that opens the composition itself,
 // runs its JS for the chunks of frames it is given, draws them with a renderer of its own and posts the pixels back.
 
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort, threadId, workerData } from 'node:worker_threads';
 import type { ArtifactRecord } from '@kinetographdev/core';
 import type { SceneJson, Unsupported, AudioClipJson, PageAudioOp } from '@kinetographdev/scene';
 import { setPreferredEffectBackend } from './effects.js';
@@ -129,7 +129,18 @@ try {
     const collect = (): void => {
       const { index, out, row } = started!;
       const t0 = log ? now() : 0;
-      const drawn = renderer.finishFrame();
+      let drawn: ReturnType<typeof renderer.finishFrame>;
+      try {
+        drawn = renderer.finishFrame();
+      } catch (error) {
+        // Which frame and which worker, for a failure the renderer reports without them (a GPU that has run out of memory).
+        const e = error as Error;
+        const was = e.message;
+        e.message = `frame ${origin + index * step} (render worker ${threadId}): ${was}`;
+        // `fail` posts the stack, which holds the old message.
+        e.stack = e.stack?.replace(was, e.message);
+        throw e;
+      }
       const t1 = log ? now() : 0;
       // The colour conversion the encoder does is done here (or on the GPU), in parallel, so the encoder thread only has
       // to send. A frame the same as the one before (`repeated`) has that frame's pixels, so it has its conversion too.
