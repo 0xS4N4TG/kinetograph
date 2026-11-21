@@ -637,8 +637,10 @@ draws the island's layers wrongly), see below).
   has `opacity`, a filter, `clip-path`, `mask`, `mix-blend-mode`, `isolation`, `contain: paint`, `backdrop-filter` or
   `overflow: hidden` is flattened (as CSS Transforms 2 does) and drawn as a flat group with its effect.
 - A canvas (2D, WebGL or WebGPU) starts empty each frame; `preserveDrawingBuffer` does not carry a frame into the next.
-  WebGPU on a canvas (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's
-  GPU device; its gaps are in `/docs/compat/#webgpu`. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
+  WebGPU on a canvas runs on Dawn (Chrome's WebGPU library, `dawn.node` in the platform package) by default; with no adapter or
+  no `dawn.node` the built-in layer draws, with one warning, and `KINETOGRAPH_WEBGPU=builtin` picks it. The built-in layer
+  (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's GPU device; its gaps are in
+  `/docs/compat/#webgpu`. Linux needs the system Vulkan loader (`libvulkan1`) for Dawn. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
   HyperFrames: AUTHORING.md §11.10 and §11.11.
 
 ### Paint order
@@ -720,7 +722,7 @@ them, with the context attributes of a case's second line) in Chrome for Testing
 a mean of 1 level (1.5 for the cube render target on Metal), and compares ANGLE's picture with its golden
 (`tests/golden/angle`, from Metal on the M4; SwiftShader is held to Chrome's picture only).
 
-A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
+With `KINETOGRAPH_WEBGPU=builtin`, a canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
 records the device (buffers, WGSL modules, bind group layouts, render and compute pipelines, bind groups, command encoders with render
 and compute passes into `getCurrentTexture()` or into a 2D texture, textures, views and samplers, `queue.writeBuffer`, `writeTexture`,
 `copyExternalImageToTexture`, `submit`) and the canvas context writes the `webgpu` part of the
