@@ -253,3 +253,36 @@ fn a_small_backdrop_blur_blurs_as_the_full_render_does() {
         );
     }
 }
+
+/// Yellow boxes with a blue shadow blurred by `blur`: a drop and an inset shadow Skia draws at x 20 and 120, and the
+/// same in a preserve3d group, which the wgpu compositor draws (the drop shadow in closed form), at x 220 and 320.
+fn shadow_layers(blur: f64) -> Vec<Value> {
+    let rect = |id: &str, x: f64, kind: &str| {
+        json!({
+            "id": id, "type": "shape", "fill": "#ffff00", "transform": { "x": x, "y": 40 },
+            "shape": { "kind": "rect", "width": 60, "height": 60 },
+            "effects": [{ "type": kind, "x": 8, "y": 6, "blur": blur, "color": "#0000ff" }],
+        })
+    };
+    vec![
+        rect("drop", 20.0, "dropShadow"),
+        rect("inset", 120.0, "insetShadow"),
+        json!({ "id": "g", "type": "group", "preserve3d": true, "children": [
+            rect("drop3d", 220.0, "dropShadow"),
+            rect("inset3d", 320.0, "insetShadow"),
+        ]}),
+    ]
+}
+
+#[test]
+fn a_small_shadow_blur_is_drawn_scaled() {
+    // At half the size a shadow blur of 1.6 is drawn as 0.8, under the blur's minimum: still blurred.
+    let (worst, mean) = difference(
+        &render(shadow_layers(1.6), 1.0),
+        &render(shadow_layers(1.6), 0.5),
+    );
+    eprintln!(
+        "scale 0.5, shadow blur 1.6, against the full render shrunk: worst {worst}, mean {mean:.3}"
+    );
+    assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
+}

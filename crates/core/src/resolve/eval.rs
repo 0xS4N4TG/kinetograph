@@ -764,7 +764,7 @@ pub(crate) fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedE
     out
 }
 
-/// A blur, backdrop blur or glow radius: 0 (no blur) under `blur::MIN_RADIUS`. The authored radius decides whether
+/// A blur, backdrop blur, glow or shadow blur radius: 0 (no blur) under `blur::MIN_RADIUS`. The authored radius decides whether
 /// there is a blur, so a render at another scale (`ResolvedEffect::scaled`) blurs exactly when the full render does.
 fn blur_radius(radius: f64) -> f32 {
     let radius = radius.clamp(0.0, MAX_BLUR_RADIUS) as f32;
@@ -963,7 +963,7 @@ fn resolve_shadow(s: &Shadow, f: f64) -> ResolvedShadow {
     ResolvedShadow {
         x: s.x.at(f) as f32,
         y: s.y.at(f) as f32,
-        blur: s.blur.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+        blur: blur_radius(s.blur.at(f)),
         spread: s.spread.at(f).clamp(-MAX_SHADOW_SIZE, MAX_SHADOW_SIZE) as f32,
         color: s.color,
     }

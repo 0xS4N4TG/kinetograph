@@ -986,7 +986,7 @@ impl Translator {
                         inverted
                     };
                     let moved = image_filters::offset((sh.x / s, sh.y / s), grown, None);
-                    let blurred = if sg >= 0.3 { image_filters::blur((sg, sg), TileMode::Clamp, moved, None) } else { moved };
+                    let blurred = if sg > 0.0 { image_filters::blur((sg, sg), TileMode::Clamp, moved, None) } else { moved };
                     let inside = image_filters::blend(SkBlend::DstIn, blurred, input.clone(), None);
                     filter = image_filters::merge([input, inside], None);
                 }

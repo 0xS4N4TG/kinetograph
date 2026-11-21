@@ -213,7 +213,7 @@ impl ResolvedTransform {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedEffect {
     /// Standard deviation in pixels; 0, no blur, when the scene's is under
-    /// `blur::MIN_RADIUS` (and the same for the backdrop blur and glow).
+    /// `blur::MIN_RADIUS` (and the same for the backdrop blur, glow and shadows).
     Blur {
         radius: f32,
     },

@@ -32,7 +32,6 @@
 
 use kurbo::{Affine, Rect};
 
-use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::resolve::{
     ResolvedEffect, ResolvedGeometry, ResolvedKind, ResolvedLayer, ResolvedPaint,
@@ -86,8 +85,8 @@ impl BoxShadow {
     /// - drawn under a rotation and a uniform scale, which turn a Gaussian
     ///   into one of the same shape and keep the shape a rectangle or an
     ///   ellipse in the layer's own units. A shear or a stretch does not;
-    /// - with a blur of at least `blur::MIN_RADIUS`; below that the blurred
-    ///   path does not blur at all, so there is no blur to replace;
+    /// - with a blur (one under `blur::MIN_RADIUS` resolves to none); without
+    ///   one the blurred path does not blur at all, so there is none to replace;
     /// - with no spread, or a spread on a rectangle or rounded rectangle
     ///   whose sides run along the canvas axes, that does not shrink the
     ///   shape to nothing or below its corner radius (see the module).
@@ -122,7 +121,7 @@ impl BoxShadow {
             return None;
         }
         if shadow.blur.is_nan()
-            || shadow.blur < MIN_RADIUS
+            || shadow.blur <= 0.0
             || ![shadow.x, shadow.y, shadow.spread]
                 .iter()
                 .all(|v| v.is_finite())

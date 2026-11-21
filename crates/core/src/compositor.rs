@@ -98,7 +98,7 @@ use glam::DMat3;
 use kurbo::{Affine, Rect};
 use wgpu::{self, util::DeviceExt};
 
-use crate::blur::{self, Blur};
+use crate::blur::Blur;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::bsp::Cut;
@@ -2329,9 +2329,7 @@ impl Compositor {
     /// Whether the inset shadow `shadow` has no blur and no spread, which
     /// lets one pass draw it from the layer itself (`shadow`).
     pub fn is_sharp_inset(&self, shadow: &ResolvedShadow) -> bool {
-        self.fusion
-            && shadow.spread == 0.0
-            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
+        self.fusion && shadow.spread == 0.0 && !(shadow.blur > 0.0)
     }
 
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
@@ -3955,7 +3953,7 @@ fn shadow_plan(
     wanted: PixelRect,
 ) -> ShadowPlan {
     let whole = PixelRect::whole(size.0, size.1);
-    let blurred = blur >= blur::MIN_RADIUS;
+    let blurred = blur > 0.0;
     // How many pixels either side a spread pass reads along its axis.
     let reach = spread.abs().ceil() as i32;
     let needed = match (invert, blurred) {
@@ -4766,7 +4764,7 @@ mod tests {
                 }
             }
         }
-        if blur >= blur::MIN_RADIUS {
+        if blur > 0.0 {
             let (input, output) = plan
                 .and_then(|p| p.blur)
                 .unwrap_or((PixelRect::EMPTY, PixelRect::EMPTY));
