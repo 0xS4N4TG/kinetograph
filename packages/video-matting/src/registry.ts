@@ -45,18 +45,24 @@ export const DEFAULT_MODEL: VideoMattingModel = 'modnet';
 /** The release of ONNX Runtime (Microsoft's, CPU build) the addon loads at run time; `ort` needs 1.17 or newer. */
 export const RUNTIME_VERSION = '1.31.0';
 
-/** Microsoft's archive for one platform, pinned by SHA-256, and the files of it the addon needs (all in `lib/`). */
+/**
+ * Microsoft's NuGet package `Microsoft.ML.OnnxRuntime` on nuget.org: one zip with every platform's library under
+ * `runtimes/<rid>/native/`, pinned by the SHA-512 NuGet publishes for it (`packageHash` in its catalog entry).
+ */
+export const RUNTIME_PACKAGE = {
+  url: `https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${RUNTIME_VERSION}/microsoft.ml.onnxruntime.${RUNTIME_VERSION}.nupkg`,
+  size: 159_626_085,
+  sha512: '27b6ab4e7fbb9eb59d67e3c5d9297d68d5b5fc16b90c2b75cb0677af99772caab38f7c3ca02ec297fb9a806dd7a758afb98258400312b9ec3479fffbe1fed70b',
+};
+
+/** The files of the package one platform needs: where in the cache each goes, and the package entry it comes from. */
 export interface RuntimeSpec {
-  /** Where `lib/` of the archive is: the archive's top folder. */
+  /** The folder of the cache the files go in, as `<folder>/lib/<file>`. */
   folder: string;
-  /** The archive's file name; its URL is under github.com/microsoft/onnxruntime/releases. */
-  archive: string;
-  size: number;
-  sha256: string;
-  /** The library `ort` opens. */
+  /** The library `ort` opens: a key of `files`. */
   library: string;
-  /** Beside it, loaded by it when an execution provider is: the file names to keep. */
-  others: string[];
+  /** Cache file name to the package entry it is read from. Beside the library, so it can load what an execution provider needs. */
+  files: Record<string, string>;
 }
 
 /**
@@ -66,26 +72,23 @@ export interface RuntimeSpec {
 export const RUNTIMES: Record<string, RuntimeSpec> = {
   'darwin-arm64': {
     folder: `onnxruntime-osx-arm64-${RUNTIME_VERSION}`,
-    archive: `onnxruntime-osx-arm64-${RUNTIME_VERSION}.tgz`,
-    size: 36_549_009,
-    sha256: '1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc',
     library: `libonnxruntime.${RUNTIME_VERSION}.dylib`,
-    others: [],
+    files: { [`libonnxruntime.${RUNTIME_VERSION}.dylib`]: 'runtimes/osx-arm64/native/libonnxruntime.dylib' },
   },
   'linux-x64': {
     folder: `onnxruntime-linux-x64-${RUNTIME_VERSION}`,
-    archive: `onnxruntime-linux-x64-${RUNTIME_VERSION}.tgz`,
-    size: 11_408_003,
-    sha256: 'cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57',
     library: `libonnxruntime.so.${RUNTIME_VERSION}`,
-    others: ['libonnxruntime_providers_shared.so'],
+    files: {
+      [`libonnxruntime.so.${RUNTIME_VERSION}`]: 'runtimes/linux-x64/native/libonnxruntime.so',
+      'libonnxruntime_providers_shared.so': 'runtimes/linux-x64/native/libonnxruntime_providers_shared.so',
+    },
   },
   'win32-x64': {
     folder: `onnxruntime-win-x64-${RUNTIME_VERSION}`,
-    archive: `onnxruntime-win-x64-${RUNTIME_VERSION}.zip`,
-    size: 82_887_349,
-    sha256: '3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195',
     library: 'onnxruntime.dll',
-    others: ['onnxruntime_providers_shared.dll'],
+    files: {
+      'onnxruntime.dll': 'runtimes/win-x64/native/onnxruntime.dll',
+      'onnxruntime_providers_shared.dll': 'runtimes/win-x64/native/onnxruntime_providers_shared.dll',
+    },
   },
 };
