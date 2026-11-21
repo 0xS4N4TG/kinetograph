@@ -1,9 +1,9 @@
 // Dawn on a machine with no GPU. macOS has Metal on every Mac. Windows has Direct3D 12's software adapter, WARP, which Dawn gives when it is
 // asked for the fallback adapter (`forceFallbackAdapter`; webgpu-dawn.ts `chooseAdapter`). Linux has a software Vulkan driver only when Mesa's
 // lavapipe is installed, which Dawn takes as the fallback adapter; else Dawn's Vulkan is given the SwiftShader ICD that the platform package
-// already carries for ANGLE (`angle/vk_swiftshader_icd.json`, a path relative to the JSON file). The Vulkan loader reads its driver files when an
-// instance is made, so they are set before Dawn's instance is created (webgpu-dawn.ts `createGpu`), and only when no hardware or system
-// software adapter was found or KINETOGRAPH_WEBGPU_BACKEND=swiftshader.
+// already carries for ANGLE (`angle/vk_swiftshader_icd.json`, a path relative to the JSON file). The Vulkan loader reads its driver files when Dawn
+// makes its Vulkan instance, so they are set from the making of Dawn's instance until its first adapter request has settled (webgpu-dawn.ts
+// `chooseAdapter`), and only when no hardware or system software adapter was found or KINETOGRAPH_WEBGPU_BACKEND=swiftshader.
 //
 // The rest of the process (the compositor's wgpu, Skia on wgpu's device, ANGLE, ffmpeg) reads the same environment, so SwiftShader is added
 // beside the host's own drivers (`VK_ADD_DRIVER_FILES`, Vulkan loader 1.3.234 and newer), where wgpu, which ranks a CPU adapter last, keeps
@@ -14,6 +14,7 @@
 // 1.3.234, which ignores it: on a host with drivers Dawn then finds no SwiftShader and the built-in WebGPU layer draws. The loader of
 // an elevated process ignores all of them (the lesson of the ANGLE work); Windows does not need them.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { isMainThread } from 'node:worker_threads';
@@ -92,22 +93,50 @@ export function useSwiftshader(icd: string, env: Env = process.env, folders: str
 }
 
 /**
- * Runs `make` (the making of a Dawn instance, which reads the Vulkan loader's environment) with the loader on the ICD file, and puts the environment
- * back after, so the rest of the process (the compositor, ANGLE, Skia, ffmpeg) keeps its own drivers. Not when the environment already names it
- * (`keepSwiftshader` set it for the process, or it was set by hand), and never in a worker: there `process.env` is a copy that native code does not read, so the main
- * thread's decision (`keepSwiftshader`, before the workers start) is the one that counts.
+ * The scoped changes of the loader's variables (`withSwiftshader`), one at a time in the process: each project bundle has a copy of this module,
+ * so this sits on `globalThis`. `last` settles when the latest scope has put the variables back, `inside` is set in a scope's own work (a scope
+ * opened from it runs in it instead of waiting for it), and `open` is the scope that holds them now.
  */
-export function withSwiftshader<T>(icd: string, make: () => T, env: Env = process.env, main: boolean = isMainThread, folders: string[] = icdFolders(env)): T {
-  if (!main || pointed(icd, env)) return make();
-  const undo = useSwiftshader(icd, env, folders);
+interface Scopes {
+  last: Promise<void>;
+  inside: AsyncLocalStorage<true>;
+  open: { env: Env; kept: boolean } | null;
+}
+const scopes: Scopes = ((globalThis as Record<symbol, Scopes>)[Symbol.for('kinetograph.dawn.loader-env')] ??= { last: Promise.resolve(), inside: new AsyncLocalStorage(), open: null });
+
+/**
+ * Runs `make` (the making of a Dawn instance and its first adapter request, which read the Vulkan loader's environment) with the loader on the ICD
+ * file, until what it returns has settled, and puts the environment back after, so the rest of the process (the compositor, ANGLE, Skia, ffmpeg)
+ * keeps its own drivers. When Dawn reads the variables (in the call, on a later tick, on a thread of its own) does not matter. Scopes wait for
+ * each other, so two at once do not put back each other's values. Not when the environment already names it (`keepSwiftshader` set it for the
+ * process, or it was set by hand), and never in a worker: there `process.env` is a copy that native code does not read, so the main thread's
+ * decision (`keepSwiftshader`, before the workers start) is the one that counts. The main thread asks before it makes workers (`prepareCliDawn`).
+ */
+export async function withSwiftshader<T>(icd: string, make: () => T | Promise<T>, env: Env = process.env, main: boolean = isMainThread, folders: string[] = icdFolders(env)): Promise<T> {
+  if (!main || scopes.inside.getStore()) return await make();
+  const before = scopes.last;
+  let release = (): void => undefined;
+  scopes.last = new Promise<void>((resolve) => (release = resolve));
+  await before;
   try {
-    return make();
+    if (pointed(icd, env)) return await make();
+    const undo = useSwiftshader(icd, env, folders);
+    const open = (scopes.open = { env, kept: false });
+    try {
+      return await scopes.inside.run(true, make);
+    } finally {
+      scopes.open = null;
+      if (!open.kept) undo();
+    }
   } finally {
-    undo();
+    release();
   }
 }
 
 /** For the whole process, from the main thread before its workers are made: Dawn needs SwiftShader and the workers' instances are made where this thread's real environment applies. */
 export function keepSwiftshader(icd: string, env: Env = process.env, main: boolean = isMainThread, folders: string[] = icdFolders(env)): void {
-  if (main && !pointed(icd, env)) useSwiftshader(icd, env, folders);
+  if (!main) return;
+  // During a scope: what it set is kept for the process, not put back when it ends.
+  if (scopes.open?.env === env) scopes.open.kept = true;
+  else if (!pointed(icd, env)) useSwiftshader(icd, env, folders);
 }

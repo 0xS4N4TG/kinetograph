@@ -4,7 +4,8 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { icdFolders, keepSwiftshader, otherVulkanDrivers, softwareChoice, swiftshaderIcd, useSwiftshader, withSwiftshader } from '../src/shim/dawn-software.js';
 
 /** A platform package's folders: `dawn/` and a sibling `angle/` that holds the ICD file and the driver library of the platform. */
@@ -91,29 +92,90 @@ describe('the Vulkan loader\'s environment', () => {
 describe('the loader\'s environment around the making of an instance', () => {
   const icd = '/p/angle/vk_swiftshader_icd.json';
 
-  it('has SwiftShader while the instance is made, and is the process\'s own again right after', () => {
+  it('has SwiftShader while the instance is made, and is the process\'s own again right after', async () => {
     const env: Record<string, string | undefined> = { VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' };
-    const seen = withSwiftshader(icd, () => ({ ...env }), env, true, []);
+    const seen = await withSwiftshader(icd, () => ({ ...env }), env, true, []);
     expect(seen).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json', VK_ADD_DRIVER_FILES: icd });
     expect(env).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' });
-    expect(() => withSwiftshader(icd, () => { throw new Error('no'); }, env, true, [])).toThrow('no');
+    await expect(withSwiftshader(icd, () => { throw new Error('no'); }, env, true, [])).rejects.toThrow('no');
     expect(env).toEqual({ VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp.json' });
   });
 
-  it('is left as it is when the process was already pointed at SwiftShader (the main thread chose, before the workers were made)', () => {
+  it('has SwiftShader until the work settles, not only while it is started', async () => {
+    const env: Record<string, string | undefined> = {};
+    const seen = await withSwiftshader(icd, async () => { await new Promise((resolve) => setImmediate(resolve)); return { ...env }; }, env, true, []);
+    expect(seen).toEqual({ VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd });
+    expect(env).toEqual({});
+  });
+
+  it('runs two scopes at once one after the other, each with SwiftShader, and leaves the environment as it was before either', async () => {
+    const env: Record<string, string | undefined> = { VK_ADD_DRIVER_FILES: '/opt/extra.json' };
+    const seen: (string | undefined)[] = [];
+    const later = async (): Promise<void> => {
+      await new Promise((resolve) => setImmediate(resolve));
+      seen.push(env.VK_ADD_DRIVER_FILES);
+    };
+    await Promise.all([withSwiftshader(icd, later, env, true, ['/no/such/icd.d']), withSwiftshader(icd, later, env, true, ['/no/such/icd.d'])]);
+    expect(seen).toEqual([`${icd}:/opt/extra.json`, `${icd}:/opt/extra.json`]);
+    expect(env).toEqual({ VK_ADD_DRIVER_FILES: '/opt/extra.json' });
+  });
+
+  it('runs a scope opened inside another in it, and keeps for the process what `keepSwiftshader` asks for during one', async () => {
+    const env: Record<string, string | undefined> = {};
+    const inner = await withSwiftshader(icd, () => withSwiftshader(icd, async () => { await null; return { ...env }; }, env, true, []), env, true, []);
+    expect(inner).toEqual({ VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd });
+    expect(env).toEqual({});
+    await withSwiftshader(icd, async () => { await null; keepSwiftshader(icd, env, true, []); }, env, true, []);
+    expect(env).toEqual({ VK_DRIVER_FILES: icd, VK_ICD_FILENAMES: icd });
+  });
+
+  it('is left as it is when the process was already pointed at SwiftShader (the main thread chose, before the workers were made)', async () => {
     for (const env of [{}, { VK_ADD_DRIVER_FILES: '/opt/extra.json' }] as Record<string, string | undefined>[]) {
       keepSwiftshader(icd, env, true, []);
       const kept = { ...env };
-      expect(withSwiftshader(icd, () => 1, env, true, [])).toBe(1);
+      expect(await withSwiftshader(icd, () => 1, env, true, [])).toBe(1);
       keepSwiftshader(icd, env, true, []);
       expect(env).toEqual(kept);
     }
   });
 
-  it('is never touched in a worker, where it is a copy that native code does not read', () => {
+  it('is never touched in a worker, where it is a copy that native code does not read', async () => {
     const env: Record<string, string | undefined> = {};
-    expect(withSwiftshader(icd, () => ({ ...env }), env, false, [])).toEqual({});
+    expect(await withSwiftshader(icd, () => ({ ...env }), env, false, [])).toEqual({});
     keepSwiftshader(icd, env, false, []);
     expect(env).toEqual({});
+  });
+});
+
+// A Dawn whose Vulkan loader reads its variables on a later tick of the first adapter request, or when the instance is made
+// (fixtures/fake-dawn-late.cjs), on a Linux host with no Vulkan driver: SwiftShader is found either way, and the variables are put back after.
+describe('the loader\'s environment for a Dawn that reads it late', () => {
+  const NAMES = ['VK_DRIVER_FILES', 'VK_ICD_FILENAMES', 'VK_ADD_DRIVER_FILES'] as const;
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const { angle } = platformPackage('libvk_swiftshader.so');
+  const empty = mkdtempSync(join(tmpdir(), 'kg-xdg-'));
+
+  beforeEach(() => Object.defineProperty(process, 'platform', { ...platform, value: 'linux' }));
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    vi.unstubAllEnvs();
+  });
+
+  it('has SwiftShader until the adapter request settles, and while the instance is made, found or forced', async () => {
+    for (const [reads, forced] of [['later', false], ['create', false], ['later', true], ['create', true]] as const) {
+      for (const name of NAMES) vi.stubEnv(name, undefined);
+      for (const name of ['KINETOGRAPH_DAWN_BACKEND', 'KINETOGRAPH_DAWN_ADAPTER']) vi.stubEnv(name, '');
+      vi.stubEnv('KINETOGRAPH_WEBGPU_BACKEND', forced ? 'swiftshader' : '');
+      vi.stubEnv('KINETOGRAPH_DAWN_MODULE', fileURLToPath(new URL('./fixtures/fake-dawn-late.cjs', import.meta.url)));
+      vi.stubEnv('KINETOGRAPH_ANGLE_DIR', angle);
+      vi.stubEnv('FAKE_DAWN_READS', reads);
+      for (const name of ['XDG_CONFIG_HOME', 'XDG_CONFIG_DIRS', 'XDG_DATA_HOME', 'XDG_DATA_DIRS']) vi.stubEnv(name, empty);
+      const shared = (globalThis as any)[Symbol.for('kinetograph.dawn.shared')];
+      if (shared) Object.assign(shared, { adapter: null, probe: null, softwareInstances: [] });
+      vi.resetModules();
+      const { describeDawn } = await import('../src/shim/webgpu-dawn.js');
+      expect(await describeDawn(), `${reads}${forced ? ', forced' : ''}`).toMatchObject({ ok: true, adapter: { via: 'swiftshader' } });
+      expect(NAMES.map((name) => process.env[name])).toEqual([undefined, undefined, undefined]);
+    }
   });
 });
