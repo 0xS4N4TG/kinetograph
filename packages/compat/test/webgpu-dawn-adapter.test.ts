@@ -82,3 +82,19 @@ describe.skipIf(missing !== null)('the adapter Dawn gives', () => {
     expect(status).toEqual({ ok: true, flags: dawnFlags(), adapter: chosen });
   });
 });
+
+describe.skipIf(missing !== null)('the instance `describeDawn` asks', () => {
+  it('is made once, not for every project a process opens (Studio opens one for each preview and render)', async () => {
+    vi.resetModules();
+    Object.assign((globalThis as any)[Symbol.for('kinetograph.dawn.shared')], { probe: null, adapter: null });
+    const real = loadDawnBinary();
+    let made = 0;
+    const { setDawnLoader, describeDawn } = await import('../src/shim/webgpu-dawn.js');
+    setDawnLoader(() => ({ ...real, create: (flags: string[]) => { made++; return real.create(flags); } }));
+    vi.stubEnv('KINETOGRAPH_DAWN_MODULE', '');
+    const first = await describeDawn();
+    const second = await describeDawn();
+    expect(first.ok && second.ok).toBe(true);
+    expect(made).toBe(1);
+  });
+});

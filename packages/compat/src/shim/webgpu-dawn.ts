@@ -130,11 +130,13 @@ interface Shared {
   adapter: DawnAdapter | null;
   /** The Dawn instances made on SwiftShader (`softwareInstance`), kept as long as the process runs: their adapters belong to them. */
   softwareInstances: Any[];
+  /** The instance `describeDawn` asks, made once for each set of flags. */
+  probe: { flags: string; gpu: Any } | null;
 }
 
 const SHARED = Symbol.for('kinetograph.dawn.shared');
 const defaultScope = new DawnScope();
-const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null, softwareInstances: [] });
+const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null, softwareInstances: [], probe: null });
 useCarry(defaultScope.carry);
 
 export function createDawnScope(): DawnScope {
@@ -350,6 +352,8 @@ function softwareInstance(d: NonNullable<typeof dawn>): Any | null {
   if (process.platform !== 'linux') return null;
   const icd = swiftshaderIcd(d.directory ?? null);
   if (icd === null) return null;
+  // One for the process: each `requestAdapter` (a page's, a probe's) asks the same instance, not a new one.
+  if (shared.softwareInstances[0] !== undefined) return shared.softwareInstances[0];
   const instance = withSwiftshader(icd, () => createGpu(d));
   shared.softwareInstances.push(instance);
   return instance;
@@ -454,7 +458,9 @@ export async function describeDawn(): Promise<DawnStatus> {
   try {
     if (shared.adapter !== null) return { ok: true, flags, adapter: shared.adapter };
     const d = load();
-    const probe = createGpu(d);
+    const key = flags.join(' ');
+    if (shared.probe === null || shared.probe.flags !== key) shared.probe = { flags: key, gpu: createGpu(d) };
+    const probe = shared.probe.gpu;
     const request = patchOf(d.globals)?.requestAdapter ?? d.globals.GPU.prototype.requestAdapter;
     const chosen = await chooseAdapter((gpu, options) => request.call(gpu, options), probe, d);
     if (chosen === null) return { ok: false, error: noAdapterMessage() };
