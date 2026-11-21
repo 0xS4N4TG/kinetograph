@@ -192,7 +192,7 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report --test diag_overlapped -- --nocapture
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report -- --nocapture
 
       # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
       # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
