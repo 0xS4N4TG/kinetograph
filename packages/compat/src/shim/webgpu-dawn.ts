@@ -331,12 +331,10 @@ function startError(error: unknown): Error {
 
 function createGpu(d: NonNullable<typeof dawn>): Any {
   try {
-    // KINETOGRAPH_WEBGPU_BACKEND=swiftshader: the Vulkan loader is pointed at SwiftShader before the instance that reads its drivers is made.
+    // KINETOGRAPH_WEBGPU_BACKEND=swiftshader: SwiftShader is added to the Vulkan loader's drivers when the instance's first adapter is asked for (`chooseAdapter`).
     if (softwareChoice() === 'swiftshader') {
       if (process.platform !== 'linux') throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader is for Linux; Windows falls back to WARP by itself and macOS always has Metal');
-      const icd = swiftshaderIcd(d.directory ?? null);
-      if (icd === null) throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader: this install has no SwiftShader (the angle/ folder of the platform package, or KINETOGRAPH_ANGLE_DIR, holds vk_swiftshader_icd.json)');
-      return withSwiftshader(icd, () => d.create(dawnFlags()));
+      if (swiftshaderIcd(d.directory ?? null) === null) throw new Error('KINETOGRAPH_WEBGPU_BACKEND=swiftshader: this install has no SwiftShader (the angle/ folder of the platform package, or KINETOGRAPH_ANGLE_DIR, holds vk_swiftshader_icd.json)');
     }
     return d.create(dawnFlags());
   } catch (error) {
@@ -345,18 +343,18 @@ function createGpu(d: NonNullable<typeof dawn>): Any {
 }
 
 /**
- * Linux, no hardware adapter: a new Dawn instance with its Vulkan on the SwiftShader the platform package carries (the loader reads its driver
- * files when an instance is made, so it takes a new one). Null where there is no SwiftShader to use (other systems, a package made without it).
+ * Linux, no hardware or system software adapter: a new Dawn instance, whose Vulkan is to have the SwiftShader the platform package carries as
+ * well (`icd`). Dawn makes its Vulkan instance, which reads the loader's driver files, at the first `requestAdapter` of the instance, not at
+ * `create` (seen in an Ubuntu container), so that first request is made inside `withSwiftshader`. Null where there is no SwiftShader to use
+ * (other systems, a package made without it).
  */
-function softwareInstance(d: NonNullable<typeof dawn>): Any | null {
+function softwareInstance(d: NonNullable<typeof dawn>): { gpu: Any; icd: string } | null {
   if (process.platform !== 'linux') return null;
   const icd = swiftshaderIcd(d.directory ?? null);
   if (icd === null) return null;
   // One for the process: each `requestAdapter` (a page's, a probe's) asks the same instance, not a new one.
-  if (shared.softwareInstances[0] !== undefined) return shared.softwareInstances[0];
-  const instance = withSwiftshader(icd, () => createGpu(d));
-  shared.softwareInstances.push(instance);
-  return instance;
+  if (shared.softwareInstances[0] === undefined) shared.softwareInstances.push(createGpu(d));
+  return { gpu: shared.softwareInstances[0], icd };
 }
 
 /** What Dawn chose, as `doctor` says it. */
@@ -383,28 +381,35 @@ interface Chosen {
 
 const SOFTWARE = /llvmpipe|lavapipe|swiftshader|\bwarp\b|basic render|software|\bcpu\b/i;
 
+/** The adapter is SwiftShader's (Dawn's info: vendor `google`, architecture `swiftshader`), not another software one (lavapipe). */
+const isSwiftshader = (adapter: Any): boolean => {
+  const info = adapter?.info;
+  return info !== undefined && /swiftshader/i.test(`${info.vendor ?? ''} ${info.architecture ?? ''} ${info.device ?? ''} ${info.description ?? ''}`);
+};
+
 /**
- * The best adapter of the backend; else a software one: on Linux SwiftShader (a new instance, see `softwareInstance`), when there is none
- * there the system's own (lavapipe), on Windows WARP (Dawn's fallback adapter of Direct3D 12); else null. `request(gpu, options)` is the
- * library's own `requestAdapter`, `first` the instance it is asked of.
+ * The best adapter of the backend; else the system's own software one, which needs no change to the Vulkan loader's environment (Mesa's lavapipe,
+ * on Windows WARP, Dawn's fallback adapter of Direct3D 12); else, on Linux, SwiftShader (a new instance, see `softwareInstance`); else null.
+ * `request(gpu, options)` is the library's own `requestAdapter`, `first` the instance it is asked of. SwiftShader is taken only when Dawn's
+ * fallback adapter is SwiftShader: a loader that ignored `VK_ADD_DRIVER_FILES` (older than 1.3.234) gives none, or the system's.
  */
 async function chooseAdapter(request: (gpu: Any, options: Any) => Promise<Any>, first: Any, d: NonNullable<typeof dawn>): Promise<Chosen | null> {
   const given = (adapter: unknown): boolean => adapter !== null && adapter !== undefined;
   try {
-    // Forced software (KINETOGRAPH_WEBGPU_BACKEND=swiftshader): `createGpu` has pointed Vulkan at it, and it is a fallback adapter.
+    // Forced software (KINETOGRAPH_WEBGPU_BACKEND=swiftshader): added to Vulkan's drivers for the instance's first request, and it is a fallback adapter.
     if (softwareChoice() === 'swiftshader') {
-      const forced = await request(first, { forceFallbackAdapter: true });
-      return given(forced) ? { adapter: forced, fallback: true, via: 'swiftshader' } : null;
+      const icd = swiftshaderIcd(d.directory ?? null);
+      const forced = icd === null ? null : await withSwiftshader(icd, () => request(first, { forceFallbackAdapter: true }));
+      return isSwiftshader(forced) ? { adapter: forced, fallback: true, via: 'swiftshader' } : null;
     }
     const best = await request(first, { powerPreference: 'high-performance' });
     if (given(best)) return { adapter: best, fallback: false, via: 'hardware' };
-    const soft = softwareInstance(d);
-    if (soft !== null) {
-      const swiftshader = await request(soft, { forceFallbackAdapter: true });
-      if (given(swiftshader)) return { adapter: swiftshader, fallback: true, via: 'swiftshader' };
-    }
     const software = await request(first, { forceFallbackAdapter: true });
-    return given(software) ? { adapter: software, fallback: true, via: process.platform === 'win32' ? 'warp' : 'system-software' } : null;
+    if (given(software)) return { adapter: software, fallback: true, via: process.platform === 'win32' ? 'warp' : 'system-software' };
+    const soft = softwareInstance(d);
+    if (soft === null) return null;
+    const swiftshader = await withSwiftshader(soft.icd, () => request(soft.gpu, { forceFallbackAdapter: true }));
+    return isSwiftshader(swiftshader) ? { adapter: swiftshader, fallback: true, via: 'swiftshader' } : null;
   } catch (error) {
     // The library finds its adapters when the first is asked for, and says so then (a backend or an adapter name it does not know).
     throw startError(error);
@@ -431,12 +436,12 @@ function noteAdapter(chosen: Chosen): void {
 function noAdapterMessage(): string {
   const flags = dawnFlags();
   const hint = process.platform === 'linux'
-    ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, or on a host without one the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), or Mesa\'s lavapipe'
+    ? 'on Linux that needs the Vulkan loader (the package libvulkan1) and a driver: a GPU\'s, Mesa\'s lavapipe, or the SwiftShader of the platform package (KINETOGRAPH_WEBGPU_BACKEND=swiftshader forces it), which on a host with other Vulkan drivers is added beside them and needs Vulkan loader 1.3.234 or newer'
     : process.platform === 'win32' ? 'on Windows a Direct3D 12 adapter: a GPU\'s, or WARP' : 'a Metal device';
   return `Dawn found no adapter (${flags.length === 0 ? 'no flags' : flags.join(' ')}; ${hint}); KINETOGRAPH_DAWN_BACKEND or KINETOGRAPH_DAWN_ADAPTER name another, and KINETOGRAPH_WEBGPU=builtin uses the built-in WebGPU`;
 }
 
-/** Linux, when the adapter Dawn would take is SwiftShader: the Vulkan loader of this whole process is pointed at it, before workers are made (see `keepSwiftshader`). */
+/** Linux, when the adapter Dawn would take is SwiftShader: it is added to the Vulkan loader's drivers for this whole process, before workers are made (see `keepSwiftshader`). */
 export function keepDawnSoftware(): void {
   const icd = swiftshaderIcd(load().directory ?? null);
   if (icd !== null) keepSwiftshader(icd);
