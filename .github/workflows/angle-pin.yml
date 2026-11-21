@@ -1,0 +1,77 @@
+# Keeps the ANGLE pin in scripts/fetch-angle.mjs on the newest published release of 0xS4N4TG/kinetograph-angle: opens a
+# pull request when there is a newer one. Needs the repository setting Settings > Actions > General > "Allow GitHub
+# Actions to create and approve pull requests".
+name: angle-pin
+
+on:
+  schedule:
+    - cron: "43 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Find the newest release
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Newest published (not draft, not prerelease) release by publish time.
+          tag=$(gh api "repos/0xS4N4TG/kinetograph-angle/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false and (.tag_name | test("^angle-[0-9a-f]{10}(-[A-Za-z0-9]+)?$")))] | sort_by(.published_at) | last | .tag_name')
+          [[ "$tag" =~ ^angle-[0-9a-f]{10}(-[A-Za-z0-9]+)?$ ]] || { echo "no usable release found: '$tag'"; exit 1; }
+          pinned=$(sed -n "s/^  tag: '\(.*\)',$/\1/p" scripts/fetch-angle.mjs)
+          echo "newest release $tag, pinned $pinned"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ "$tag" = "$pinned" ]; then
+            echo "The pin is current ($tag)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --heads origin "bot/angle-$tag" >/dev/null; then
+            echo "Branch bot/angle-$tag already exists: nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$(gh pr list --state all --head "bot/angle-$tag" --json number --jq '.[].number')" ]; then
+            echo "A pull request for bot/angle-$tag already exists: nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Rewrite the pin
+        if: steps.find.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.find.outputs.tag }}
+        run: node scripts/update-angle-pin.mjs "$TAG"
+      - name: Push a branch and open the pull request
+        if: steps.find.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.find.outputs.tag }}
+        run: |
+          branch="bot/angle-$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add scripts/fetch-angle.mjs
+          git commit -m "build(angle): take ANGLE from release $TAG" \
+            -m "Rewritten by .github/workflows/angle-pin.yml: the tag, the asset names and the SHA-256s of the archives and of the files in them."
+          git push origin "$branch"
+          # If this fails (the setting above is off), remove the branch again so the next run tries again.
+          gh pr create --base main --head "$branch" \
+            --title "build(angle): take ANGLE from release $TAG" \
+            --body "The newest published release of 0xS4N4TG/kinetograph-angle is [$TAG](https://github.com/0xS4N4TG/kinetograph-angle/releases/tag/$TAG). This changes the pin in \`scripts/fetch-angle.mjs\` to it: the tag, the asset names, and the SHA-256s of each archive and of the libraries in it. Opened by \`.github/workflows/angle-pin.yml\`.
+
+          Check the release notes and the packages before merging." \
+            || { git push origin --delete "$branch"; exit 1; }
+          # A push or pull request made with GITHUB_TOKEN starts no workflows, so start the checks by hand on the branch.
+          gh workflow run native.yml --ref "$branch"
+          echo "Opened a pull request for $TAG and started native.yml on $branch." | tee -a "$GITHUB_STEP_SUMMARY"

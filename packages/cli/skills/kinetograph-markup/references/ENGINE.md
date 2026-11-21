@@ -699,76 +699,26 @@ box as the box its fractions are of) and puts the graph in (`{ type: "graph" }`)
 draws or repeats; one that names nothing stays, is reported as an unsupported `filter` of the canvas, and is drawn
 without. The Skia canvas path runs a graph with `filter_graph` like a layer's, in order with the other functions.
 
-A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). The core
-translates each program once (`crates/core/src/glsl.rs`: a token-level rewrite of GLSL ES 100 and 300 es to the Vulkan
-flavour naga's GLSL frontend reads, then naga's IR goes to wgpu directly, with no WGSL text in between, which would
-not keep the uniform array strides), and `compositor/glsl.rs` replays the draws into an Rgba8 drawing buffer
-(`shaders/glsl_blit.wgsl` then places it on the canvas in linear light). Findings: naga cannot lay out a `matCx2` in a
-uniform block, and Metal packs arrays of floats and `vec2`s tighter than the block's 16 bytes an element, so those
-travel as `vec4`s; bools are not allowed in a block, so they travel as ints; a WebGL 2 uniform block is not given to naga at
-all (`glsl_blocks.rs`): its std140 bytes travel as a `uvec4` array at binding 512 + the block's index, and `main` fills
-private variables of the real types from the words, so the layout is the recorder's (`webgl-blocks.ts`), `instance.member`
-is read as a variable of its own (a struct would hold a `mat2` naga cannot lay out), and the device asks for 16 uniform
-buffers a stage; wgpu bounds each vertex by a whole stride
-from the start of its binding, so an interleaved attribute's offset goes in the vertex, not in the binding.
-What a framebuffer draws into is a second kind of target: colour (Rgba8, `Rgba8UnormSrgb` for `SRGB8_ALPHA8`, which draws write and blend in linear light and keep encoded as GL
-does, `R8Unorm` and `Rg8Unorm` for `R8` and `RG8`, or a float format, with mip levels when the
-texture has storage for them; a colour renderbuffer is one too; blending into a 32-bit float one, `EXT_float_blend`,
-needs wgpu's `FLOAT32_BLENDABLE`, which the device is asked for and every Apple GPU has) or a depth, stencil or depth-and-stencil buffer (`Depth32Float`,
-`Stencil8`, `Depth24PlusStencil8`, which is 32-bit float depth with 8 bits of stencil on Apple GPUs). An op names its
-colour attachment for each fragment output and its depth-and-stencil target (`GlslDest`), and the replay makes one
-render pass for each run of ops to the same attachments, in the order recorded; a pass has the depth-and-stencil
-attachment when an op in it tests or clears depth or stencil, and the pipeline's targets follow the pass's
-attachments (an output with no attachment is dropped by wgpu, an attachment the shader does not write gets an empty
-write mask). wgpu takes one stencil reference and one pair of masks for both faces, which is exactly what WebGL
-allows (it refuses a draw whose faces differ). GL's rows count up from the bottom and a texture's first row is its
-bottom one, so a program that draws into a framebuffer is translated upside down (`flip_y`: the vertex shader negates
-`gl_Position.y`, `gl_FragCoord.y` is wgpu's own) with the viewport, scissor and front face turned to match, and
-sampling needs nothing. A frame starts every colour target zeroed (wgpu's lazy clear) and every depth target at 1 and
-stencil 0 (a clear pass before the others, what Chrome's new depth textures and renderbuffers hold, measured), so a
-target is a function of the frame's own ops. A depth texture a draw samples is copied first into an `R32Float`
-texture (`shaders/glsl_depth_colour.wgsl`) so it reads `(d, 0, 0, 1)` as WebGL 2 does in Chrome (Metal would give
-`(d, d, d, 1)` from the depth texture itself), or into an `Rgba32Float` one as `(d, d, d, 1)` for WebGL 1's
-`WEBGL_depth_texture` (Chrome, measured); the copy is made before the pass and reused until something draws into the
-depth target again. A cube map's faces are 2D textures of their own on the JS side, so `framebufferTexture2D` of a
-face attaches it as a colour target, and a cube that framebuffers drew in is `targets` (the six) in the recording; the
-replay copies the six targets, every level, into the layers of a cube texture before the pass that samples it
-(`Step::CubeCopy`), and again after a pass draws in a face. A `texSubImage2D` of a whole face at level 0 (how three.js
-fills a `texStorage2D` cube map) specifies the face again in its format. `generateMipmap` of a texture a framebuffer drew in (a 2D
-one, or a cube's faces) is recorded as `LINEAR` blits from each level to the next, so it lands in order with the draws;
-a texture without `texStorage2D` levels is given the full chain, as GL does. A sampler's `TEXTURE_BASE_LEVEL` is a view
-of the levels from it (`glsl_sampler`), with `TEXTURE_MAX_LEVEL` counted from it; past the last level it is black. A depth and stencil blit (`shaders/glsl_ds_copy.wgsl`) writes `frag_depth` from the source, and
-the stencil, which a fragment shader cannot write, by one draw that zeroes it and eight that each set one bit with a
-write mask of that bit, discarding where the source lacks it. `texSubImage2D` of a picture file is decoded and written
-like pixels; of a layer, a `copy_texture_to_texture` from the child's picture; over an uploaded texture, the texture
-carries `patches` that are laid over its picture (on the CPU, or on the GPU when a layer is among them).
-`crates/dom/tests/webgl.rs` runs eight cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
-them, with the context attributes of a case's second line) in Chrome for Testing on SwiftShader and natively:
-gradient 0.004, noise 0.0, texture sampling 0.05, two render-to-texture passes 0.002, several outputs 0.52, a depth
-texture 0.06, renderbuffers with a colour, depth and stencil blit and a level 1 target 0.60, none more than 1 level
-off, and the stencil test 0.85 (five edge pixels of the stars, where the two rasterisers round differently).
-Points, instancing and the copies between buffers are made of the same pieces (`tests/glsl.rs` pins each). A point is
-one instance of a six-vertex quad: its attributes advance for each instance (indexed points gather them in the order
-of the list first), and the vertex shader's wrapper places the quad after `main` ran, `gl_PointSize` pixels across in
-the viewport, clamped to 1..511, with `gl_PointCoord` as a varying at location 15; a point whose centre is outside
-the clip volume is dropped, as GL does, and culling does not apply. `gl_VertexID` is wgpu's `vertex_index` (which
-counts from the draw's `first`), or the instance index in a draw of points; `gl_InstanceID` is the instance index. An
-attribute with `vertexAttribDivisor(1)` is a vertex buffer of step mode `Instance`; one with a larger divisor `n` is
-gathered into a buffer of one element for each instance (instance `i` reads element `i / n`), as wgpu's step is 1. Lines are wgpu's `LineList` and
-`LineStrip` (a loop is a strip with its first vertex again), which on Metal are Metal's one-pixel lines, the primitive
-ANGLE draws Chrome's with; `ALIASED_LINE_WIDTH_RANGE` is 1 to 1, so `lineWidth` above 1 changes nothing, as in Chrome. `blitFramebuffer` is an op of its
-own, one pass (`shaders/glsl_copy.wgsl`) that stretches the source rectangle over the destination with `textureLoad`
-(NEAREST) or the bilinear sampler (LINEAR), keeping the rows of the drawing buffer (top first) and of a target
-(GL's bottom first) apart, with a pipeline for each destination format (a 32-bit float source is read through a
-NEAREST sampler, LINEAR or not, as it cannot be filtered); the replay keeps a canvas draw that a blit reads even when a later clear would have
-dropped it. A multisampled renderbuffer (`renderbufferStorageMultisample`, any count of samples being `MAX_SAMPLES`, 4) is
-a target of 4 samples, and a pass into it is multisampled; a colour blit from it reads a texture of one sample it was
-resolved into before the pass (`Step::Resolve`, the GPU's own resolve), and a depth and stencil blit reads its first
-sample (`glsl_ds_copy.wgsl` with multisampled textures). `copyTexImage2D` and `copyTexSubImage2D` are NEAREST blits from the read buffer into the texture, which becomes a target.
-`texSubImage2D` into a target is an `upload` op: a pass of its own that submits what is recorded and
-then `write_texture`s, so it lands between the draws around it. A frame is a function of its own calls: the context
-empties its drawing buffer before each frame, `preserveDrawingBuffer` or not. `renderCanvas` (the addon) keeps one renderer, so a call no longer
-opens the GPU: about 31 ms a small canvas before, 1.1 ms after.
+A canvas with a WebGL context is the same with `data-kg-webgl` and a `glsl` layer (SCENE.md, "glsl"). ANGLE, Google's
+OpenGL ES library, is the only replay: `crates/core/src/angle.rs` loads `libEGL` and `libGLESv2` at run time (from the
+platform package's `angle/` folder, or `KINETOGRAPH_ANGLE_DIR`) and makes an ES 3.0 context with WebGL validation on, and
+`angle_replay.rs` plays the recorded calls into it with the page's own GLSL, untranslated. The drawing buffer is read back
+as RGBA8 rows; `compositor/glsl.rs` writes them into a texture and `shaders/glsl_blit.wgsl` places it on the canvas in
+linear light. The device is Metal on macOS, Vulkan on Linux and Direct3D 11 on Windows, and SwiftShader (a CPU rasteriser
+shipped beside `libEGL` in the Linux and Windows packages) where there is no GPU device (`angle_select.rs`;
+`KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it). Each thread has one context for each set of extensions a page enabled,
+because an extension stays on once asked for. A frame makes its objects and deletes them after it, except programs (kept
+by source), and uploaded textures and buffers (kept by content, bounded). A shader that does not compile, or a draw that
+GL refuses, is an error that names the op and the program. A WebGL texture whose source is a shader group's child
+(`layerPicture`) is the picture the compositor drew for it (`glsl_input`: the child through the group's matrix, flipped and
+premultiplied as the upload asks) read back to the CPU, and uploaded as it is; such a texture is not kept across frames.
+When ANGLE cannot load or start, a WebGL layer is an error saying why, and `doctor` says WebGL will not work. A frame is a
+function of its own calls: the context empties its drawing buffer before each frame, `preserveDrawingBuffer` or not.
+`renderCanvas` (the addon) keeps one renderer, so a call no longer opens the GPU: about 31 ms a small canvas before, 1.1 ms
+after. `crates/dom/tests/webgl.rs` runs the cases (`tests/webgl/*.js`; `node crates/dom/tools/webgl-cases.mjs` records
+them, with the context attributes of a case's second line) in Chrome for Testing on SwiftShader and in ANGLE, each held to
+a mean of 1 level (1.5 for the cube render target on Metal), and compares ANGLE's picture with its golden
+(`tests/golden/angle`, from Metal on the M4; SwiftShader is held to Chrome's picture only).
 
 A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
 records the device (buffers, WGSL modules, bind group layouts, render and compute pipelines, bind groups, command encoders with render

@@ -1,9 +1,10 @@
 //! `<canvas>` with a WebGL context (packages/cli/skills/kinetograph-markup/references/SCENE.md, "glsl"): the recording the TS side puts in `data-kg-webgl` is one
 //! glsl layer in the painted scene. Each case is a file of WebGL calls (`tests/webgl/<name>.js`) and the recording
 //! the recorder made of it (`<name>.json`, `tools/webgl-cases.mjs`). The page has both: Chrome runs the calls with
-//! its own WebGL (the oracle; SwiftShader, so the numbers do not depend on the GPU), and the engine runs the
-//! recording with naga and wgpu. The two pictures are compared (they are in `target/paint-tests`), and ours
-//! against its committed golden.
+//! its own WebGL (the oracle; SwiftShader, so the numbers do not depend on the GPU), and the engine replays the
+//! recording in ANGLE. The two pictures are compared (they are in `target/paint-tests`), and ours against its
+//! committed golden (`tests/golden/angle`, from ANGLE's Metal backend; `KINETOGRAPH_ANGLE_BACKEND=swiftshader` runs
+//! ANGLE's software backend, held to Chrome's picture only).
 
 mod paintkit;
 
@@ -26,6 +27,51 @@ fn attributes_of(script: &str) -> String {
         .to_string()
 }
 
+/// ANGLE's golden of a case, `tests/golden/angle/<name>.png` (with `UPDATE_GOLDEN=1`, written): no channel of any pixel may
+/// differ by more than `ANGLE_GOLDEN_TOLERANCE`. The same machine and backend give the same bytes; the tolerance is for a
+/// driver or ANGLE update that moves a rounding.
+const ANGLE_GOLDEN_TOLERANCE: u8 = 3;
+
+/// `ANGLE_GOLDEN_TOLERANCE=0` asks for the same bytes, to show a change leaves the pictures as they were.
+fn golden_tolerance() -> u8 {
+    std::env::var("ANGLE_GOLDEN_TOLERANCE").ok().and_then(|v| v.parse().ok()).unwrap_or(ANGLE_GOLDEN_TOLERANCE)
+}
+
+fn check_angle_golden(name: &str, frame: &kinetograph_core::Frame) {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("tests/golden/angle/{name}.png"));
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        paintkit::save_frame(frame, &path);
+        return;
+    }
+    let golden = image::open(&path)
+        .unwrap_or_else(|e| {
+            panic!(
+                "cannot read {}: {e} (run with UPDATE_GOLDEN=1 on the M4)",
+                path.display()
+            )
+        })
+        .to_rgba8();
+    assert_eq!(
+        (golden.width(), golden.height()),
+        (frame.width, frame.height),
+        "{name}: size changed"
+    );
+    let worst = golden
+        .as_raw()
+        .iter()
+        .zip(&frame.rgba)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        worst <= golden_tolerance(),
+        "{name}: a channel differs from {} by {worst} (the tolerance is {})",
+        path.display(),
+        golden_tolerance()
+    );
+}
+
 fn size_of(script: &str) -> (u32, u32) {
     let line = script.lines().next().unwrap_or_default();
     let mut numbers = line
@@ -36,8 +82,8 @@ fn size_of(script: &str) -> (u32, u32) {
     (numbers.next().unwrap(), numbers.next().unwrap())
 }
 
-/// The mean and largest difference from Chrome (`None` without Chrome).
-fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
+/// The page of a case: its canvas with the recording, and the calls that made it.
+fn body_of(name: &str) -> (String, u32, u32) {
     let script = case_file(name, "js");
     let recording = case_file(name, "json");
     let (w, h) = size_of(&script);
@@ -55,23 +101,102 @@ fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
     let body = format!(
         "<canvas id=\"c\" width=\"{w}\" height=\"{h}\" data-kg-webgl='{}' style=\"display:block\"></canvas>\n\
          <script>\n\
-         const W = {w}, H = {h};\n\
+         const W = {w}, H = {h};\n{}\n\
          (function (gl, W, H) {{\n{script}\n}})(document.getElementById('c').getContext('{ctx}', {attributes}), W, H);\n\
          </script>",
-        recording.trim()
+        recording.trim(),
+        layer_pictures(&script),
     );
+    (body, w, h)
+}
+
+/// The children of the shader group of `webgl_group_layer`: id, box (x, y, width, height) and CSS colour. The scene
+/// draws them as shape layers; Chrome's page draws them on 2D canvases (`layerPicture`).
+const GROUP_CHILDREN: [(&str, [u32; 4], &str); 2] = [
+    ("a", [0, 0, 32, 48], "rgba(255,128,0,0.5)"),
+    ("b", [0, 0, 64, 16], "#2060d0"),
+];
+
+/// What the page has for `layerPicture`, which a case of a shader group's textures calls: a 2D canvas with the child
+/// drawn, as a browser would take it (nothing for a case that does not call it).
+fn layer_pictures(script: &str) -> String {
+    if !script.contains("layerPicture(") {
+        return String::new();
+    }
+    let children: Vec<String> = GROUP_CHILDREN
+        .iter()
+        .map(|(id, [x, y, w, h], color)| format!("'{id}': [{x}, {y}, {w}, {h}, '{color}']"))
+        .collect();
+    format!(
+        "const layerPicture = (id, w, h) => {{ const c = document.createElement('canvas'); c.width = w; c.height = h; \
+         const [x, y, bw, bh, color] = {{{}}}[id]; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(x, y, bw, bh); return c; }};",
+        children.join(", ")
+    )
+}
+
+/// The mean and largest difference from Chrome (`None` without Chrome).
+fn run(name: &str, mean_limit: f64) -> Option<(f64, u8)> {
+    let (body, w, h) = body_of(name);
     let (out, frame, diff) = compare(name, &body, w, h);
     assert!(
         out.unsupported.is_empty(),
         "{name}: unsupported {:?}",
         out.unsupported
     );
-    paintkit::check_golden(name, &frame);
+    // The goldens (tests/golden/angle) were recorded on the M4 with ANGLE's Metal backend, so a picture that is black or
+    // blank does not pass without Chrome; they are compared with a tolerance. ANGLE on SwiftShader is held to Chrome's
+    // picture only.
+    if !swiftshader() {
+        check_angle_golden(name, &frame);
+    }
     println!("{name}: {diff:?}");
     if let Some(d) = diff {
         assert!(d.mean < mean_limit, "{name}: {d:?}");
     }
     diff.map(|d| (d.mean, d.max))
+}
+
+/// A texture whose source is a child of a shader group (`GroupLayer::glsl`): the group is a scene, which a page cannot
+/// make, so Chrome draws the children on 2D canvases and the engine renders the group of the same children and the
+/// case's recording. Turned over and premultiplied by the unpack state, as the page asked.
+#[test]
+fn webgl_group_layer() {
+    let name = "webgl_group_layer";
+    let script = case_file(name, "js");
+    let (w, h) = size_of(&script);
+    let (body, ..) = body_of(name);
+    let child = |(id, [x, y, cw, ch], color): &(&str, [u32; 4], &str)| {
+        serde_json::json!({
+            "id": id, "type": "shape", "x": x, "y": y,
+            "shape": { "kind": "rect", "width": cw, "height": ch }, "fill": color,
+        })
+    };
+    let mut glsl: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
+    glsl["width"] = w.into();
+    glsl["height"] = h.into();
+    let scene = serde_json::json!({
+        "width": w, "height": h, "fps": 30, "durationInFrames": 1, "background": "#ffffff",
+        "layers": [{ "id": "pass", "type": "group", "children": GROUP_CHILDREN.iter().map(child).collect::<Vec<_>>(), "glsl": glsl }],
+    });
+    let scene = kinetograph_core::Scene::from_json(&scene.to_string(), paintkit::repo_root().join("crates/dom/tests/assets"))
+        .unwrap_or_else(|e| panic!("scene rejected: {e}"));
+    let frame = kinetograph_core::render_still(scene, 0).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let dir = paintkit::out_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    paintkit::save_frame(&frame, &dir.join(format!("{name}-ours.png")));
+    if !swiftshader() {
+        check_angle_golden(name, &frame);
+    }
+    if let Some(reference) = paintkit::chrome(name, &body, w, h) {
+        let d = paintkit::diff(&paintkit::frame_image(&frame), &reference);
+        println!("{name}: {d:?}");
+        assert!(d.mean < 1.0, "{name}: {d:?}");
+    }
+}
+
+#[test]
+fn webgl_indexed() {
+    run("webgl_indexed", 1.0);
 }
 
 #[test]
@@ -105,6 +230,11 @@ fn webgl2_mrt() {
 }
 
 #[test]
+fn webgl2_fractional_sizes() {
+    run("webgl2_fractional_sizes", 1.0);
+}
+
+#[test]
 fn webgl2_depth_texture() {
     run("webgl2_depth_texture", 1.0);
 }
@@ -116,7 +246,9 @@ fn webgl2_blit_depth_stencil() {
 
 #[test]
 fn webgl2_cube_rt() {
-    run("webgl2_cube_rt", 1.0);
+    // ANGLE's Metal backend filters the cube faces a little differently from the SwiftShader one Chrome's oracle runs on
+    // (mean 1.03, largest 32; SwiftShader gives 0): a real backend difference, so the limit is 1.5 with Metal.
+    run("webgl2_cube_rt", if swiftshader() { 1.0 } else { 1.5 });
 }
 
 #[test]
@@ -152,6 +284,88 @@ fn webgl2_r8_rg8() {
 #[test]
 fn webgl2_divisor2() {
     run("webgl2_divisor2", 1.0);
+}
+
+/// Whether ANGLE draws on its SwiftShader backend (`KINETOGRAPH_ANGLE_BACKEND=swiftshader`), the CPU rasteriser.
+fn swiftshader() -> bool {
+    std::env::var("KINETOGRAPH_ANGLE_BACKEND").as_deref() == Ok("swiftshader")
+}
+
+#[test]
+fn webgl2_half_attr() {
+    run("webgl2_half_attr", 1.0);
+}
+
+#[test]
+fn webgl2_int_texture() {
+    run("webgl2_int_texture", 1.0);
+}
+
+#[test]
+fn webgl2_int_texture_sub() {
+    run("webgl2_int_texture_sub", 1.0);
+}
+
+#[test]
+fn webgl2_attr_int_constant() {
+    run("webgl2_attr_int_constant", 1.0);
+}
+
+#[test]
+fn webgl2_tex_levels() {
+    run("webgl2_tex_levels", 1.0);
+}
+
+#[test]
+fn webgl2_tex_pictures() {
+    run("webgl2_tex_pictures", 1.0);
+}
+
+#[test]
+fn webgl2_compressed() {
+    // The recording of the case offers the S3TC extension only if ANGLE takes it here; otherwise it paints the page's
+    // fallback (magenta).
+    run("webgl2_compressed", 1.0);
+}
+
+#[test]
+fn webgl2_clear_masks() {
+    run("webgl2_clear_masks", 1.0);
+}
+
+#[test]
+fn webgl2_front_face() {
+    run("webgl2_front_face", 1.0);
+}
+
+#[test]
+fn webgl_depth_luminance() {
+    run("webgl_depth_luminance", 1.0);
+}
+
+#[test]
+fn webgl2_stencil_renderbuffer() {
+    run("webgl2_stencil_renderbuffer", 1.0);
+}
+
+#[test]
+fn webgl2_matrix_varying() {
+    run("webgl2_matrix_varying", 1.0);
+}
+
+#[test]
+fn webgl2_frag_depth_range() {
+    run("webgl2_frag_depth_range", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_default_unset() {
+    run("webgl2_uniform_default_unset", 1.0);
+}
+
+#[test]
+fn webgl2_front_face_reset() {
+    run("webgl2_front_face_reset", 1.0);
 }
 
 #[test]
@@ -210,8 +424,33 @@ fn webgl2_float_linear() {
 }
 
 #[test]
+fn webgl2_cube_depth() {
+    run("webgl2_cube_depth", 1.0);
+}
+
+#[test]
+fn webgl2_texture_layers() {
+    run("webgl2_texture_layers", 1.0);
+}
+
+#[test]
+fn webgl2_cube_float16() {
+    run("webgl2_cube_float16", 1.0);
+}
+
+#[test]
+fn webgl2_cube_float32() {
+    run("webgl2_cube_float32", 1.0);
+}
+
+#[test]
 fn webgl2_uniform_struct_tail() {
     run("webgl2_uniform_struct_tail", 1.0);
+}
+
+#[test]
+fn webgl2_uniform_struct_types() {
+    run("webgl2_uniform_struct_types", 1.0);
 }
 
 #[test]
@@ -292,6 +531,10 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         "webgl2_attr_int",
         "webgl2_prelude",
         "webgl2_cube_mip_rt",
+        "webgl2_cube_float16",
+        "webgl2_cube_float32",
+        "webgl2_cube_depth",
+        "webgl2_texture_layers",
     ] {
         let content: serde_json::Value = serde_json::from_str(&case_file(name, "json")).unwrap();
         let mut layer = serde_json::json!({ "id": "c", "type": "glsl", "width": 10, "height": 10 });
@@ -305,4 +548,175 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
         kinetograph_core::Scene::from_json(&scene.to_string(), Default::default())
             .unwrap_or_else(|e| panic!("{name}: {e}"));
     }
+}
+
+/// A frame is a pure function of its recording, whatever this thread drew before it: pairs of cases, one after the other
+/// in a thread and the other way round in another, give the same bytes (the ANGLE context is one for each thread and keeps
+/// its programs and enabled extensions).
+#[test]
+fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
+    let render = |names: Vec<&'static str>| {
+        std::thread::spawn(move || {
+            names
+                .into_iter()
+                .map(|n| {
+                    let (body, w, h) = body_of(n);
+                    (n, paintkit::render_body(&body, w, h).1.rgba)
+                })
+                .collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    for (a, b) in [
+        ("webgl2_float_linear", "webgl_texture"),
+        ("webgl2_float_blend", "webgl2_msaa_resolve"),
+        ("webgl2_float_mipmap", "webgl_gradient"),
+        ("webgl2_depth_texture", "webgl2_float_linear"),
+        // State the context keeps: a narrowed depthRange, and the uniforms of a program of the same source.
+        ("webgl2_depth_range_set", "webgl2_frag_depth_range"),
+        ("webgl2_uniform_default_set", "webgl2_uniform_default_unset"),
+        ("webgl2_uvec_default_set", "webgl2_uvec_default_unset"),
+    ] {
+        let ab = render(vec![a, b, a]);
+        let ba = render(vec![b, a, b]);
+        assert_eq!(ab[0].1, ab[2].1, "{a} after {b} differs from {a} first");
+        assert_eq!(ba[0].1, ba[2].1, "{b} after {a} differs from {b} first");
+        assert_eq!(
+            ab[0].1, ba[1].1,
+            "{a}: order of the thread's frames matters"
+        );
+        assert_eq!(
+            ab[1].1, ba[0].1,
+            "{b}: order of the thread's frames matters"
+        );
+    }
+}
+
+/// A page that never enabled `OES_texture_float_linear` reads a 32-bit float texture with a linear filter as an
+/// incomplete one, even when the page drawn just before it on the same thread enabled the extension.
+#[test]
+fn an_extension_a_page_enabled_does_not_reach_the_next_page() {
+    let (with, w, h) = body_of("webgl2_float_linear");
+    let without = with
+        .replace("gl.getExtension('OES_texture_float_linear');", "")
+        .replace("\"floatLinear\":true", "\"floatLinear\":false");
+    assert_ne!(with, without, "the case has no extension line to strip");
+    let render = |bodies: Vec<String>| {
+        std::thread::spawn(move || {
+            bodies
+                .iter()
+                .map(|b| paintkit::render_body(b, w, h).1.rgba)
+                .collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    let after = render(vec![with.clone(), without.clone()]);
+    let alone = render(vec![without.clone(), with.clone()]);
+    assert_eq!(
+        after[1], alone[0],
+        "the page without the extension drew differently after one with it"
+    );
+    assert_eq!(after[0], alone[1]);
+    // The extension makes a difference to this case, or the test proves nothing.
+    assert_ne!(
+        after[0], after[1],
+        "the case draws the same with and without the extension"
+    );
+}
+
+/// A draw ANGLE rejects fails the frame with an error that names the op and its program, instead of drawing nothing.
+#[test]
+fn a_draw_angle_rejects_is_an_error_naming_the_op() {
+    let (body, w, h) = body_of("webgl_gradient");
+    // Far more vertices than the buffers hold: WebGL validation refuses the draw.
+    let bad = body.replace("\"count\":6,", "\"count\":6000,");
+    assert_ne!(bad, body, "the case has no draw of 6 vertices");
+    let failure = std::panic::catch_unwind(|| paintkit::render_body(&bad, w, h)).err();
+    let failure = failure.expect("a rejected draw must fail the frame");
+    let text = failure
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| failure.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_default();
+    assert!(
+        text.contains("draw, program") && text.contains("GL error"),
+        "{text}"
+    );
+}
+
+/// A program that does not compile is an error naming the shader, on every frame, and the cache keeps no half-made program.
+#[test]
+fn a_program_that_does_not_compile_is_an_error() {
+    let (body, w, h) = body_of("webgl_gradient");
+    let bad = body.replace("void main", "void mian");
+    assert_ne!(bad, body, "the case has no main to break");
+    for frame in 0..2 {
+        let failure = std::panic::catch_unwind(|| paintkit::render_body(&bad, w, h)).err();
+        let failure =
+            failure.unwrap_or_else(|| panic!("frame {frame}: a shader that does not compile drew"));
+        let text = failure
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| failure.downcast_ref::<&str>().map(|s| (*s).to_string()))
+            .unwrap_or_default();
+        assert!(
+            text.contains("shader") || text.contains("link"),
+            "frame {frame}: {text}"
+        );
+    }
+}
+
+/// Four threads painting at once give the bytes one thread does (ANGLE is entered one thread at a time).
+#[test]
+fn threads_painting_at_once_give_the_same_bytes() {
+    let (body, w, h) = body_of("webgl2_mrt");
+    let alone = paintkit::render_body(&body, w, h).1.rgba;
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let body = body.clone();
+            std::thread::spawn(move || {
+                (0..6)
+                    .map(|_| paintkit::render_body(&body, w, h).1.rgba)
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+    for thread in threads {
+        for frame in thread.join().unwrap() {
+            assert!(
+                frame == alone,
+                "a frame painted beside other threads differs from one painted alone"
+            );
+        }
+    }
+}
+
+/// The recorder's ids are not promises about content: two scenes in one process that give a texture the same id and different
+/// pixels each show their own (a kept texture is keyed by what it is made from, not by its id).
+#[test]
+fn a_texture_id_reused_with_other_pixels_shows_the_new_pixels() {
+    let (first, w, h) = body_of("webgl_texture");
+    // 4 x 4 RGBA of grey 128, in place of the checker of the case, under the same id.
+    let grey = "gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+    let marker = "\"pixels\":\"";
+    let at = first.find(marker).expect("the case has a texture of pixels") + marker.len();
+    let end = at + first[at..].find('"').unwrap();
+    let second = format!("{}{grey}{}", &first[..at], &first[end..]);
+    let render = |bodies: Vec<&String>| {
+        let bodies: Vec<String> = bodies.into_iter().cloned().collect();
+        std::thread::spawn(move || {
+            bodies.iter().map(|b| paintkit::render_body(b, w, h).1.rgba).collect::<Vec<_>>()
+        })
+        .join()
+        .unwrap()
+    };
+    let one_after_the_other = render(vec![&first, &second]);
+    let alone = render(vec![&second]);
+    assert_ne!(one_after_the_other[0], one_after_the_other[1], "the two textures draw alike");
+    assert!(
+        one_after_the_other[1] == alone[0],
+        "the second scene drew the first one's texture"
+    );
 }

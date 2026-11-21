@@ -881,14 +881,67 @@ export interface GlslTexture {
    */
   cube?: boolean;
   faces?: GlslFace[];
-  /** With `cube`, in place of `faces`: the six colour targets framebuffers drew the faces in, in the same order. */
+  /**
+   * With `cube`, in place of `faces`: the six targets framebuffers drew the faces in, in the same order (colour, or a
+   * depth cube a shadow sampler reads). With `depth` (a 3D or array texture), in place of pixels: one colour target per
+   * layer, in order (`framebufferTextureLayer`).
+   */
   targets?: string[];
+  /**
+   * The texture as raw GL calls, in order, in place of `src`, `pixels`, `floats`, `faces` and `patches` (all absent):
+   * the integer and compressed formats, parts of mip levels and the like. `cube`, `depth` and `array` say which target
+   * it is of. ANGLE replays it.
+   */
+  calls?: GlslTexCall[];
 }
 
-/** One face of a cube map: a picture file, a `data:` URL or base64 RGBA8 (straight alpha, `width * width * 4` bytes). */
+/**
+ * One texture call as the page made it, with GL's own enums and the bytes the call reads (the pixel-store state already
+ * applied, so they are tightly packed). ANGLE replays it as it is.
+ */
+export interface GlslTexCall {
+  /** `image` is `texImage2D`/`texImage3D`, `sub` `texSubImage2D`/`3D`, `storage` `texStorage2D`/`3D`, `compressed` and `compressedSub` their compressed forms. */
+  op: 'image' | 'sub' | 'storage' | 'compressed' | 'compressedSub' | 'mipmap';
+  /** `TEXTURE_2D`, a cube face, `TEXTURE_3D` or `TEXTURE_2D_ARRAY`, as GL's number. */
+  target: number;
+  level?: number;
+  /** The internal format of `image`, `storage` and `compressed`. */
+  internal?: number;
+  /** The format and type of the bytes (`image`, `sub`); `format` is the internal format of `compressedSub`. */
+  format?: number;
+  type?: number;
+  /** `storage`: the mip levels. */
+  levels?: number;
+  x?: number;
+  y?: number;
+  z?: number;
+  width?: number;
+  height?: number;
+  /** The layers or depth of a 3D or array texture. */
+  depth?: number;
+  /** Base64 of the texels, tightly packed; none for an upload of null. */
+  data?: string;
+  /** Instead of `data`, a picture as the page gave it, uploaded as RGBA8: a picture file, base64 RGBA8 or a child of the shader group. */
+  src?: string;
+  pixels?: string;
+  layer?: string;
+  /** The picture's own size, for its window. */
+  pictureWidth?: number;
+  pictureHeight?: number;
+  flipY?: boolean;
+  premultiply?: boolean;
+  /** `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` of a picture: its window starts there. */
+  skipPixels?: number;
+  skipRows?: number;
+}
+
+/** One face of a cube map: a picture file, a `data:` URL, base64 RGBA8 (straight alpha, `width * width * 4` bytes) or floats. */
 export interface GlslFace {
   src?: string;
   pixels?: string;
+  /** Instead of a picture or pixels: float texels (`RGBA16F`, `RGBA32F`, ...), base64 little-endian `f32`s, four for each, kept as half floats or in full with `float32`. */
+  floats?: string;
+  float32?: boolean;
   flipY?: boolean;
   premultiply?: boolean;
 }
@@ -936,7 +989,7 @@ export interface GlslStencil {
 export interface GlslAttribute {
   buffer: string;
   size: number;
-  type: 'f32' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32';
+  type: 'f32' | 'f16' | 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32';
   normalized?: boolean;
   /**
    * `vertexAttribIPointer`: the shader reads the values as integers (`ivecN`, `uvecN`, `int`, `uint`), unconverted.
@@ -953,12 +1006,15 @@ export interface GlslAttribute {
    * for every vertex. `buffer` then only names the value (it is not in `buffers`), and `size` is 4 of `f32`.
    */
   constant?: [number, number, number, number];
+  /** As `constant`, for an integer input (`vertexAttribI4i`, `vertexAttribI4ui`): the values it reads as `ivec4` or `uvec4`. ANGLE replays it. */
+  intConstant?: { unsigned?: boolean; value: [number, number, number, number] };
 }
 
 export interface GlslUniform {
   /** `f` for `uniform*f`, `i` for `uniform*i`, `m` for `uniformMatrix*` (column-major). */
   kind: 'f' | 'i' | 'm';
-  value: number[];
+  /** The values; a NaN is `null`, which JSON can carry. */
+  value: (number | null)[];
   /** The array element the first value goes to. */
   index?: number;
 }
@@ -1021,6 +1077,10 @@ export interface GlslDraw {
   alphaToCoverage?: true;
   /** `OES_texture_float_linear` was enabled: a 32-bit float texture may be read with a linear filter (else it is incomplete). */
   floatLinear?: true;
+  /** `EXT_float_blend` was enabled: a draw may blend into a 32-bit float target. */
+  floatBlend?: true;
+  /** `frontFace(CW)` was in effect: `gl_FrontFacing` is true for a clockwise triangle, culling or not (absent: counter-clockwise). */
+  frontFace?: 'CW';
   /** The depth test, when it was on and the buffer drawn into has a depth buffer (`depthFunc`, `depthMask`, `depthRange`). */
   depth?: GlslDepth;
   /** `polygonOffset(factor, units)` with `POLYGON_OFFSET_FILL` on; only with `depth`. */
@@ -1078,10 +1138,11 @@ export interface GlslUpload {
 /**
  * `clear` (and `clearBuffer*`): the colour of the buffers drawn into (`COLOR_BUFFER_BIT`), the depth buffer
  * (`DEPTH_BUFFER_BIT`, to `depth`), the stencil buffer (`STENCIL_BUFFER_BIT`, to `stencil`), or several. Where it
- * clears is given as for a draw.
+ * clears is given as for a draw. `colorMask` and `stencilMask` are the masks the clear went through when they were not full,
+ * and `scissor` the box of the scissor test; ANGLE replays them as GL does.
  */
 export type GlslOp =
-  | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string }
+  | { op: 'clear'; color?: [number, number, number, number]; depth?: number; stencil?: number; target?: string; level?: number; outputs?: (GlslOutput | null)[]; depthStencil?: string; colorMask?: [boolean, boolean, boolean, boolean]; stencilMask?: number; scissor?: [number, number, number, number] }
   | ({ op: 'draw' } & GlslDraw)
   | ({ op: 'blit' } & GlslBlit)
   | ({ op: 'upload' } & GlslUpload);

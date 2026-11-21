@@ -975,6 +975,18 @@ function GlMounted() {
   return <canvas ref={ref} width={64} height={64} />;
 }
 
+/** A canvas drawn once when the component mounts and left alone (a page that draws when its controls change). */
+function GlOnce() {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    const gl = ref.current.getContext('webgl');
+    const g = glSetup(gl);
+    glSprite(gl, g, 3);
+    glShow(gl, g);
+  }, []);
+  return <canvas ref={ref} width={64} height={64} />;
+}
+
 /** The glsl layers of a frame, as JSON with the ids a context numbers its textures with counted from 0. */
 function glsl(layers: unknown): { json: string; ops: number } {
   const found: any[] = [];
@@ -1005,6 +1017,7 @@ describe('a WebGL canvas that holds render targets', () => {
         <Composition id="Blurred" component={GlTrailBlurred} width={64} height={64} fps={30} durationInFrames={20} />
         <Composition id="Heavy" component={GlHeavy} width={64} height={64} fps={30} durationInFrames={20} />
         <Composition id="Mounted" component={GlMounted} width={64} height={64} fps={30} durationInFrames={20} />
+        <Composition id="Once" component={GlOnce} width={64} height={64} fps={30} durationInFrames={20} />
       </>
     ));
   });
@@ -1040,6 +1053,16 @@ describe('a WebGL canvas that holds render targets', () => {
     expect((await frameAfter('Trail', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
     // Frame 9 shows what it does to the trail, so a render that began there starts over and renders the frames before it.
     expect((await frameAfter('Trail', 9, [9])).seen).toEqual(sequential);
+  });
+
+  it('shows a canvas drawn once and left alone in every later frame, the same on every path', async () => {
+    const first = await frameAfter('Once', 0, [0]);
+    expect(first.ops).toBeGreaterThanOrEqual(1);
+    const whole = await frameAfter('Once', 9, sequential);
+    expect(whole.ops).toBe(first.ops);
+    expect((await frameAfter('Once', 9, [9])).json).toBe(whole.json);
+    expect((await frameAfter('Once', 9, [0, 4, 9])).json).toBe(whole.json);
+    expect((await frameAfter('Once', 9, [0, 1, 2, 3, 4], [5, 6, 7, 8, 9])).json).toBe(whole.json);
   });
 
   it('draws frame 8 of a ping-pong that swaps its targets each frame the same on every path', async () => {

@@ -157,6 +157,14 @@ pub fn render_output(out: &IslandOutput, w: u32, h: u32) -> Frame {
     render_still(scene, 0).unwrap()
 }
 
+/// Paints `body` and renders it, with the render's error (what the replay reports) instead of a panic.
+pub fn try_render_body(body: &str, w: u32, h: u32) -> Result<Frame, String> {
+    let out = paint_html(&page(body), w, h);
+    let json = scene_json(&out, w, h).to_string();
+    let scene = Scene::from_json(&json, repo_root().join("crates/dom/tests/assets")).map_err(|e| e.to_string())?;
+    render_still(scene, 0).map_err(|e| e.to_string())
+}
+
 /// Paints `body` and renders it.
 pub fn render_body(body: &str, w: u32, h: u32) -> (IslandOutput, Frame) {
     let out = paint_html(&page(body), w, h);

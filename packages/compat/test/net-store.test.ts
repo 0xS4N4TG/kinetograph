@@ -73,8 +73,8 @@ const allText = (dir: string): string => {
 
 describe('netKey', () => {
   it('removes secret parameters (default, user-named, any case) and the fragment, keeps the rest in order', () => {
-    expect(netKey('get', 'https://t.example/a/1/2/3.pbf?v=2&access_token=abc&z=1#frag')).toBe('GET https://t.example/a/1/2/3.pbf?v=2&z=1');
-    expect(netKey('GET', 'https://t.example/s.json?Key=abc&API_KEY=1&token=2&apikey=3')).toBe('GET https://t.example/s.json');
+    expect(netKey('get', 'https://t.example/a/1/2/3.pbf?v=2&access_token=abc&z=1#frag', null)).toBe('GET https://t.example/a/1/2/3.pbf?v=2&z=1');
+    expect(netKey('GET', 'https://t.example/s.json?Key=abc&API_KEY=1&token=2&apikey=3', null)).toBe('GET https://t.example/s.json');
     expect(netKey('GET', 'https://t.example/s.json?sig=abc&k=1', null, ['sig'])).toBe('GET https://t.example/s.json?k=1');
     expect(netKey('GET', 'https://u:p@t.example/f.pmtiles', 'bytes=0-9')).toBe('GET https://t.example/f.pmtiles bytes=0-9');
   });
@@ -87,7 +87,7 @@ describe('what counts as a secret', () => {
     }
     for (const name of ['z', 'x', 'y', 'v', 'layer', 'size', 'x-other']) expect(isSecretParam(name), name).toBe(false);
     expect(isSecretParam('Sess', ['sess'])).toBe(true);
-    expect(netKey('GET', 'https://t.example/a.png?X-Amz-Date=1&X-Amz-Signature=fake&sv=1&Sig=fake&w=2')).toBe('GET https://t.example/a.png?w=2');
+    expect(netKey('GET', 'https://t.example/a.png?X-Amz-Date=1&X-Amz-Signature=fake&sv=1&Sig=fake&w=2', null)).toBe('GET https://t.example/a.png?w=2');
   });
 
   it('flags long mixed values and long base64 or hex runs, never a coordinate or a short value', () => {
@@ -326,7 +326,7 @@ describe('record then replay', () => {
     });
 
     it('keeps user info out of the key and the error of a miss', () => {
-      expect(netKey('GET', 'https://user:pass@t.example/a.pbf')).toBe('GET https://t.example/a.pbf');
+      expect(netKey('GET', 'https://user:pass@t.example/a.pbf', null)).toBe('GET https://t.example/a.pbf');
     });
   });
 });

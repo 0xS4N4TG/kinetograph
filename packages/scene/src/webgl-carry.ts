@@ -15,6 +15,7 @@
 // Pure functions of the ops and what they name: nothing here reads the context.
 
 import type { GlslDraw, GlslOp, GlslProgram, GlslTexture } from './types.js';
+import { withoutComments } from './glsl-cpp.js';
 
 type Textures = Map<string, GlslTexture>;
 
@@ -59,6 +60,32 @@ interface Write {
   key: string;
   /** Every texel of it is written, whatever it held. */
   whole: boolean;
+  /** The rectangle (x, y, width, height) of the level that every texel of is written, when `whole` is not shown but a scissored clear does it. */
+  box?: Rect;
+  /** The rectangle the op may write inside (its scissor and viewport); not set when that is not known, which is the whole level. */
+  extent?: Rect;
+}
+
+type Rect = [number, number, number, number];
+
+/** The rectangles of the clears a context made with the scissor test on (a draw of a quad over the scissor box), by the op. */
+const clearBoxes = new WeakMap<GlslOp, Rect>();
+
+/** Notes that `op` is a clear of `box` (colour with every channel written, depth or stencil), which overwrites all of it. */
+export function noteClearBox(op: GlslOp, box: Rect): void {
+  clearBoxes.set(op, box);
+}
+
+const insideRect = (a: Rect, b: Rect): boolean => a[0] >= b[0] && a[1] >= b[1] && a[0] + a[2] <= b[0] + b[2] && a[1] + a[3] <= b[1] + b[3];
+
+/** The rectangle a draw writes inside: the part of its viewport that its scissor box leaves. */
+function extentOf(op: GlslOp): Rect | undefined {
+  if (op.op !== 'draw' || op.scissor === undefined) return undefined;
+  const [vx, vy, vw, vh] = op.viewport;
+  const [sx, sy, sw, sh] = op.scissor;
+  const x0 = Math.max(vx, sx), y0 = Math.max(vy, sy);
+  const x1 = Math.min(vx + vw, sx + sw), y1 = Math.min(vy + vh, sy + sh);
+  return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : [0, 0, 0, 0];
 }
 
 
@@ -80,17 +107,46 @@ function colourOutputs(op: GlslOp): { target: string; level: number }[] {
 const bytesOf = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, 'base64'));
 
 /**
+ * The attribute and the literal z in the one `gl_Position = vec4(a, ..., 1.0);` of a vertex shader, when that statement
+ * is certain to run and reads the attribute the page declared: it stands at the top level of `main`, with no `return`
+ * before it, and nothing else in the shader declares the attribute's name again (a local or a parameter that shadows
+ * it, which the statement would read instead). Null otherwise.
+ */
+function positionFromAttribute(vertex: string): { attribute: string; literal: string | undefined } | null {
+  const code = withoutComments(vertex);
+  const found = code.match(/gl_Position\s*=\s*vec4\(\s*([A-Za-z_]\w*)(?:\.xyz?)?\s*(?:,\s*([-\d.]+)\s*)?,\s*1(?:\.0*)?\s*\)\s*;/);
+  if (found === null || code.split('gl_Position').length !== 2) return null;
+  const name = found[1]!;
+  // Declarations of the name: the attribute's own is the one allowed. A word before the name is a type, unless it is a
+  // keyword that precedes an expression.
+  const declarations = [...code.matchAll(new RegExp(`(?<![.\\w])([A-Za-z_]\\w*)\\s+${name}\\b`, 'g'))].filter((m) => !EXPRESSION_KEYWORDS.has(m[1]!));
+  if (declarations.length !== 1 || new RegExp(`#\\s*define\\s+${name}\\b`).test(code)) return null;
+  // The statement stands at the top level of `main`, and nothing in `main` returns before it.
+  const main = /\bvoid\s+main\s*\(\s*(?:void)?\s*\)\s*\{/.exec(code);
+  if (main === null || found.index! < main.index + main[0].length) return null;
+  const before = code.slice(main.index + main[0].length, found.index);
+  let depth = 0;
+  for (const c of before) depth += c === '{' ? 1 : c === '}' ? -1 : 0;
+  if (depth !== 0 || /\breturn\b/.test(before)) return null;
+  // And it begins a statement: an `if (..)` or `else` before it would make it conditional.
+  if (!/(?:^|[;{}])\s*$/.test(before)) return null;
+  return { attribute: name, literal: found[2] };
+}
+
+const EXPRESSION_KEYWORDS = new Set(['return', 'else', 'case', 'discard', 'break', 'continue', 'do']);
+
+/**
  * The clip-space xy of the vertices a draw reads, when they can be known: the vertex shader assigns `gl_Position` once,
  * as `vec4(a, 1.0)`, `vec4(a.xy, z, 1.0)` or the like, with `a` a float attribute that advances per vertex and a z that
  * stays inside the clip volume (a literal, or the attribute's own third component). Null otherwise (a matrix, a uniform).
  */
 function clipPositions(draw: GlslDraw, res: Resources): [number, number][] | null {
   const vertex = res.programs.get(draw.program)?.vertex;
-  const found = vertex?.match(/gl_Position\s*=\s*vec4\(\s*([A-Za-z_]\w*)(?:\.xyz?)?\s*(?:,\s*([-\d.]+)\s*)?,\s*1(?:\.0*)?\s*\)\s*;/);
-  if (vertex === undefined || found === null || found === undefined || vertex.split('gl_Position').length !== 2) return null;
-  const literal = found[2] === undefined ? undefined : Number(found[2]);
+  const found = vertex === undefined ? null : positionFromAttribute(vertex);
+  if (vertex === undefined || found === null) return null;
+  const literal = found.literal === undefined ? undefined : Number(found.literal);
   if (literal !== undefined && !(Math.abs(literal) <= 1)) return null;
-  const attribute = draw.attributes[found[1]!];
+  const attribute = draw.attributes[found.attribute];
   const data = attribute === undefined ? undefined : res.buffers.get(attribute.buffer);
   if (attribute === undefined || data === undefined || attribute.type !== 'f32' || attribute.size < 2 || (attribute.divisor ?? 0) !== 0) return null;
   const bytes = bytesOf(data);
@@ -201,19 +257,22 @@ function writesOf(op: GlslOp, res: Resources): Write[] {
   for (const { target, level } of colourOutputs(op)) {
     const size = levelSize(res.textures.get(target), level);
     let whole = false;
-    if (op.op === 'clear') whole = op.color !== undefined;
+    if (op.op === 'clear') whole = op.color !== undefined && op.colorMask === undefined && op.scissor === undefined;
     else if (op.op === 'blit') {
       const [x0, y0, x1, y1] = op.to;
       whole = op.aspect === undefined && op.scissor === undefined && size !== null && Math.min(x0, x1) <= 0 && Math.min(y0, y1) <= 0 && Math.max(x0, x1) >= size[0] && Math.max(y0, y1) >= size[1];
     } else if (op.op === 'upload') whole = size !== null && op.x <= 0 && op.y <= 0 && op.x + op.width >= size[0] && op.y + op.height >= size[1];
     else whole = size !== null && overwrites(op, size, res);
-    out.push({ id: target, key: `${target}@${level}`, whole });
+    const box = clearBoxes.get(op);
+    out.push({ id: target, key: `${target}@${level}`, whole, ...(box !== undefined && op.op === 'draw' && (op.colorMask ?? [true]).every(Boolean) ? { box } : {}), ...(extentOf(op) !== undefined ? { extent: extentOf(op)! } : {}) });
   }
   const buffer = depthStencilOf(op);
   if (buffer !== undefined) {
     const kind = res.textures.get(buffer)?.format;
-    const whole = op.op === 'clear' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
-    out.push({ id: buffer, key: `${buffer}@ds`, whole });
+    const whole = op.op === 'clear' && op.scissor === undefined && op.stencilMask === undefined && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
+    const box = clearBoxes.get(op);
+    const boxed = op.op === 'draw' && (kind === 'depth' ? op.depth !== undefined : kind === 'stencil' ? op.stencil !== undefined : op.depth !== undefined && op.stencil !== undefined);
+    out.push({ id: buffer, key: `${buffer}@ds`, whole, ...(box !== undefined && boxed ? { box } : {}), ...(extentOf(op) !== undefined ? { extent: extentOf(op)! } : {}) });
   }
   return out;
 }
@@ -261,13 +320,16 @@ export function carryOn(carried: GlslOp[], done: GlslOp[], res: Resources): { op
   const ops = [...carried, ...fresh];
   // Walking back: a part is dead from the op that overwrites all of it until an op that reads it.
   const dead = new Set<string>();
+  // The rectangles a scissored clear overwrote, which kill an older op that wrote only inside one of them (a page that clears and
+  // draws inside the same scissor box each frame holds no more than the last frame's ops).
+  const deadBoxes = new Map<string, Rect[]>();
   const counts = new Map<string, number>();
   const lost = new Set<string>();
   const keep: GlslOp[] = [];
   for (let i = ops.length - 1; i >= 0; i--) {
     const op = ops[i]!;
     const writes = writesOf(op, res);
-    if (writes.length > 0 && writes.every((w) => dead.has(w.key))) continue;
+    if (writes.length > 0 && writes.every((w) => dead.has(w.key) || (w.extent !== undefined && (deadBoxes.get(w.key) ?? []).some((box) => insideRect(w.extent!, box))))) continue;
     const owners = [...new Set(writes.map((w) => w.id))];
     if (owners.some((id) => (counts.get(id) ?? 0) >= MAX_OPS_PER_TARGET)) {
       for (const id of owners) lost.add(id);
@@ -275,8 +337,14 @@ export function carryOn(carried: GlslOp[], done: GlslOp[], res: Resources): { op
     }
     for (const id of owners) counts.set(id, (counts.get(id) ?? 0) + 1);
     keep.push(op);
-    for (const w of writes) if (w.whole) dead.add(w.key);
-    for (const read of readsOf(op, res.textures)) for (const key of [...dead]) if (takes(read, key)) dead.delete(key);
+    for (const w of writes) {
+      if (w.whole) dead.add(w.key);
+      else if (w.box !== undefined) deadBoxes.set(w.key, [...(deadBoxes.get(w.key) ?? []), w.box]);
+    }
+    for (const read of readsOf(op, res.textures)) {
+      for (const key of [...dead]) if (takes(read, key)) dead.delete(key);
+      for (const key of [...deadBoxes.keys()]) if (takes(read, key)) deadBoxes.delete(key);
+    }
   }
   const kept = new Set(keep);
   return { ops: keep.reverse(), lost: [...lost], last: new Set(fresh.filter((op) => kept.has(op))) };

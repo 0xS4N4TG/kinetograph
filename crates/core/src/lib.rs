@@ -1,5 +1,9 @@
 //! Scene graph and GPU compositor for Kinetograph.
 
+mod angle;
+pub use angle::{backend_report as webgl_backend, compressed_formats as webgl_compressed_formats};
+mod angle_select;
+mod angle_replay;
 pub mod anim;
 pub mod blur;
 pub mod bounds;
@@ -18,8 +22,6 @@ pub mod generic_fonts;
 pub mod gif;
 pub mod glsl;
 mod glsl_blocks;
-mod glsl_cpp;
-mod glsl_samplers;
 pub mod grade;
 #[cfg(test)]
 mod hash;

@@ -572,7 +572,7 @@ naming both.
 ### 6.7 WebGL and GLSL shaders
 
 A WebGL context records, as a Canvas 2D one does, and the renderer replays the recording on the GPU with the page's
-own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involved.
+own GLSL ES, drawn by ANGLE (SCENE.md, "glsl"). No browser is involved.
 
 - **`<GlslShader width height fragment uniforms textures>`** (native): a full-screen fragment shader, GLSL ES 100 or
   300 es. `vertex` is optional (the default covers the box with `a_position` in clip space). `uniforms` are the values
@@ -595,8 +595,8 @@ own GLSL ES, translated to WGSL by naga (SCENE.md, "glsl"). No browser is involv
   and stencil texel for texel; with `antialias`, as in Chrome, nothing is blitted into the canvas and it is read only
   into a rectangle of its own bounds). The stencil test is drawn: `enable(STENCIL_TEST)`, `stencilFunc`, `stencilOp`,
   `stencilMask` and their `Separate` forms, `clearStencil`, on a canvas made with `stencil: true` and on a framebuffer
-  with a stencil buffer. `getShaderParameter(COMPILE_STATUS)` is true: a shader naga cannot read fails when the scene
-  loads, naming the line. `getExtension('OES_standard_derivatives')` and, in WebGL 1, `'WEBGL_depth_texture'` answer;
+  with a stencil buffer. `getShaderParameter(COMPILE_STATUS)` is true: a shader that does not compile fails the frame,
+  naming the line. `getExtension('OES_standard_derivatives')` and, in WebGL 1, `'WEBGL_depth_texture'` answer;
   other extensions return `null`.
 - **Framebuffers** (multi-pass shaders: render to a texture, then sample it; ping-pong; blur passes):
   `createFramebuffer`, `bindFramebuffer` (`FRAMEBUFFER`, and in WebGL 2 `DRAW_FRAMEBUFFER` and `READ_FRAMEBUFFER`),

@@ -7,7 +7,6 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Added
 
-- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - `render --sequence` writes one PNG or JPEG per frame (`--image-format png|jpeg`), and honours `--range` and `--scale` (#103).
 - `still`, `strip` and `onion` take `--scale`, as `render` does (#108).
 - Video with transparency: ProRes 4444 (`.mov`) and VP9 (`.webm`) keep alpha. Codecs that cannot carry it (H.264, H.265, GIF, hardware encoders) are refused when alpha is asked for (#102).
@@ -20,7 +19,13 @@ Kinetograph is in beta, so APIs can still change between versions.
 - CSS gradient colour interpolation spaces: `srgb-linear`, `xyz` and `oklch` with hue methods.
 - CSS generic and system font names (`sans-serif`, `serif`, `ui-*`, `system-ui`) draw in bundled fonts; text with no `font-family` stays in the project's first font.
 - The `kinetograph` agent skill routes to smaller skills: `kinetograph-create`, `-markup`, `-render`, `-studio`, `-docs` and `-upgrade`.
+- WebGL draws on ANGLE (Google's OpenGL ES library, loaded from the platform package). The earlier hand-written replay and `KINETOGRAPH_WEBGL` are gone: where ANGLE cannot start, a WebGL canvas is an error saying why.
+- A WebGL texture made from a shader group's child, and `drawElements` from an index buffer, draw on ANGLE.
+- ANGLE picks its device by itself: Metal on macOS, Vulkan on Linux, Direct3D 11 on Windows, and SwiftShader (CPU) when the machine has no usable GPU device. `KINETOGRAPH_ANGLE_BACKEND=swiftshader` forces it.
+- The Linux and Windows packages ship SwiftShader and the Vulkan loader in `angle/`.
+- `doctor` reports the ANGLE device WebGL would use and why, or says that WebGL will not work.
 - WebGL: cube maps, 2D array textures, float colour targets, sRGB textures, struct uniforms, shadow samplers, constant and matrix attributes, line draws and scissored clears.
+- `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps what the page `fetch`ed (URLs built at run time) in `.kinetograph/net`; a render answers only from it, and a miss names the URL, the frame and the command to record it. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, plus `--secret-param`) never reach the store or the lock, and a credential-looking value in another one fails the pass unless `--keep-param` names it; Range requests and gzip bodies replay as recorded.
 - WebGL `blitFramebuffer` to and from float render targets.
 - WebGL cube map faces as framebuffer colour attachments (`texStorage2D` of a cube map, RGBA8 or float faces).
 - WebGL `generateMipmap` of a texture or cube map a framebuffer drew in.
@@ -32,20 +37,18 @@ Kinetograph is in beta, so APIs can still change between versions.
 - WebGL multisampled renderbuffers (`renderbufferStorageMultisample`, `MAX_SAMPLES` 4), resolved by `blitFramebuffer`.
 - WebGL `copyTexImage2D` and `copyTexSubImage2D`.
 - WebGL `TEXTURE_BASE_LEVEL`.
+- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
+- A script-made `<img>` fires `load` and `error`; `ProgressEvent` exists; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
+- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`.
 - `<video>` and `<audio>` elements play on the virtual clock: `play()`, `pause()`, `currentTime`, `loop`, `playbackRate`, `ended`, `timeupdate` and `requestVideoFrameCallback` follow the frame, never the wall clock.
 - A `<video>` given to WebGL `texImage2D` or `texSubImage2D` is a video texture: the renderer reads the frame at the frame's time.
 - A page's Web Audio (`AudioContext`, `new Audio().play()`, `<audio>` through `createMediaElementSource`) runs on the virtual clock and is replayed into the mix; `AnalyserNode` data comes from the sound. What the mix cannot replay is reported.
 - `--input` sends scripted pointer, mouse, key and wheel events to an HTML page on the virtual clock; `doctor` says when a page waits for a click.
 - `DOMParser` parses XML as XML (namespaces, CDATA, comments, `parsererror`), and `XMLHttpRequest.responseXML` and `responseType = 'document'` return XML documents.
-- `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `KeyboardEvent` globals.
-- `@remotion/three`: `<ThreeCanvas>` draws a project's own `three` and `@react-three/fiber` one frame at a time, and holds the frame while textures and models load.
-- A script-made `<img>` fires `load` and `error`; `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent` and `ProgressEvent` exist; `WebGLRenderingContext` and `WebGL2RenderingContext` are different classes.
-- WebGL: uniform buffer limits and `getInternalformatParameter(SAMPLES)`; uniform block calls report as unsupported.
-- WebGPU: depth-only passes, whole-level copies of depth textures, 2d texture arrays (layer views, `2d-array` bindings, render into one layer), passes with several colour attachments, and query sets (accepted; `resolveQuerySet` writes zeros).
+- `XMLHttpRequest`, and the `UIEvent`, `MouseEvent`, `PointerEvent`, `WheelEvent`, `KeyboardEvent` and `ProgressEvent` globals.
 
 ### Changed
 
-- `navigator.gpu` has the WebGPU default limits and the features `float32-filterable` and `timestamp-query` on every machine, not the host GPU's.
 - A WebGPU call that is invalid is reported every frame (an error under `--strict`) even when the page catches it; `popErrorScope` resolves with the error.
 - Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
 - A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.

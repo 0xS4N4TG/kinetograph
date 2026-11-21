@@ -29,6 +29,7 @@ phase0/fframes/compare/
 *.node
 # The GPL ffmpeg program built into each platform package (scripts/build-ffmpeg-gpl.sh)
 crates/node/npm/*/bin/
+crates/node/npm/*/angle/
 
 # Licensed overlay packs, rebuilt by examples/launch/tools/assets.sh: local only
 examples/launch/public/fx/

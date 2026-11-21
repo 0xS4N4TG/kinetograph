@@ -142,6 +142,20 @@ jobs:
           head -c 115200 /dev/zero | "$d"/ffmpeg* -hide_banner -loglevel error -f rawvideo -pix_fmt yuv420p -s 160x120 -framerate 30 -i pipe:0 -c:v libx264 -f mp4 "$RUNNER_TEMP/probe.mp4"
           test -s "$RUNNER_TEMP/probe.mp4"
 
+      # ANGLE (the OpenGL ES library WebGL pages run on by default) for the platform package's angle/
+      # folder, where the addon finds it and npm packs it from (ignored by the repository). The source is the one
+      # DEFAULT_SOURCE in scripts/fetch-angle.mjs names; every file is checked against a SHA-256 pinned there. Linux and
+      # Windows packages also hold SwiftShader (and the Vulkan loader) for servers with no GPU; macOS always has Metal.
+      - name: Fetch ANGLE for the platform package
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            node scripts/fetch-angle.mjs ${{ matrix.platform }}
+          else
+            node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader
+          fi
+          ls -l crates/node/npm/${{ matrix.platform }}/angle
+
       - run: npm ci
 
       - name: Build the addon (macOS, Linux)
@@ -150,12 +164,35 @@ jobs:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
 
+      # Windows only: keep line tables in the PDB next to the DLL (MSVC writes debug info to a PDB, never into the DLL),
+      # so a crash stack a user pastes (crates/node/src/crash_report.rs) can be turned into function names. Debug info
+      # does not change the generated code. The crash test below uses the same setting so it reuses this build's crates.
       - name: Build the addon (Windows)
         if: runner.os == 'Windows'
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         run: npm run build:release -w @kinetographdev/native -- --target ${{ matrix.target }} --features ffmpeg-static
+
+      - name: Upload the addon's PDB (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pdb-${{ matrix.platform }}
+          path: target/${{ matrix.target }}/release/kinetograph_node.pdb
+          retention-days: 90
+          if-no-files-found: error
+
+      # The Windows crash report (PR #155): a vectored exception handler that prints the code, the module and the stack.
+      # Its test raises an access violation and checks the report; it ran nowhere before this step.
+      - name: Test the crash report (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report -- --nocapture
 
       # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
       # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
@@ -177,6 +214,61 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
+
+      # WebGL through ANGLE (crates/dom/tests/webgl.rs) on ANGLE's SwiftShader backend, the CPU
+      # rasteriser: these runners have no GPU. SwiftShader is not in the platform package (the files are 6 to 21 MB and the
+      # package does not ship them), so they come from our ANGLE release into a folder of their own. There is no Chrome
+      # here, so a case is held to "drew without an unsupported call"; ANGLE's goldens are Metal's (tests/golden/angle)
+      # and are not compared on this backend.
+      - name: Fetch ANGLE with SwiftShader (for the tests)
+        shell: bash
+        run: node scripts/fetch-angle.mjs ${{ matrix.platform }} --swiftshader --out "$RUNNER_TEMP/angle-swiftshader"
+
+      # The compositor the WebGL cases draw through is wgpu, which needs a Vulkan device of its own: lavapipe, as in the
+      # smoke job. ANGLE's SwiftShader is separate and comes with ANGLE.
+      - name: Install a Vulkan driver for the compositor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+
+      - name: Test WebGL on ANGLE SwiftShader (macOS, Linux)
+        if: runner.os != 'Windows'
+        env:
+          KINETOGRAPH_ANGLE_BACKEND: swiftshader
+          KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}/angle-swiftshader
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
+
+      - name: Test WebGL on ANGLE SwiftShader (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 30
+        env:
+          KINETOGRAPH_ANGLE_BACKEND: swiftshader
+          KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        # The compositor the cases draw through is wgpu, which found no Vulkan device here and fell back to Skia on the
+        # CPU (about 1.5 minutes a case). The runner is elevated, so the loader ignores VK_DRIVER_FILES; the SwiftShader
+        # ANGLE ships is registered as a driver the way an installer does, and the loader on the system path finds it.
+        run: |
+          $icd = "$env:RUNNER_TEMP\angle-swiftshader\vk_swiftshader_icd.json"
+          New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
+          New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+          # SwiftShader draws slowly here, so this runner takes a subset (Linux and macOS run every case): textures, framebuffers,
+          # blending, integer and compressed formats, instancing, uniform buffers, multisampling, and a frame not depending on the last.
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture --exact webgl_texture webgl_framebuffer webgl2_mrt webgl2_float_blend webgl2_int_texture webgl2_compressed webgl2_divisor2 webgl2_ubo_shared webgl2_msaa_resolve webgl2_texture_layers a_frame_does_not_depend_on_what_the_thread_drew_before
+
+      # ANGLE on the Mac's own GPU through Metal, from the very files the package ships. Its goldens were recorded on an
+      # M4; this runner's (virtual) GPU may round differently, so a failure here does not fail the build until a run has
+      # shown it holds.
+      - name: Test WebGL on ANGLE Metal (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        env:
+          KINETOGRAPH_ANGLE_DIR: ${{ github.workspace }}/crates/node/npm/${{ matrix.platform }}/angle
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
       # ONNX Runtime for the BEN2 step: Microsoft's CPU release, the version and SHA-256 that
       # packages/video-matting/src/registry.ts pins (users get it from the same release on the first use of matting). Its
@@ -251,6 +343,7 @@ jobs:
           path: |
             crates/node/kinetograph.${{ matrix.platform }}.node
             crates/node/npm/${{ matrix.platform }}/bin
+            crates/node/npm/${{ matrix.platform }}/angle
           if-no-files-found: error
 
   smoke:

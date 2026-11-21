@@ -220,6 +220,7 @@ function fireTimersUpTo(target: number): void {
  * time: the clock does not move. A frame held on something that waits for a timeout (React's 300 ms throttle of a Suspense
  * reveal) would otherwise wait for ever, since the clock only moves between frames. Returns false when there is none.
  */
+let firingHold = false;
 export function fireHoldTimer(): boolean {
   let best: Timer | null = null;
   for (const timer of timers.values()) {

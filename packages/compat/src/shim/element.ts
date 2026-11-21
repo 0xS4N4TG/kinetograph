@@ -597,7 +597,7 @@ export class DomElement extends DomNodeBase {
     this.readback.touch(this.host);
     recordAttribute(this.host, name, old);
     if (name === 'src' && this.host.type === 'img') this.loadImage(String(value));
-    if (name === 'src' && this.isMedia) this.player!.load();
+    else if (name === 'src' && this.isMedia) this.player!.load();
   }
   removeAttribute(name: string): void {
     const old = oldAttribute(this.host, name);

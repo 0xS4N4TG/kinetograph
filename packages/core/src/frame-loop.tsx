@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, pendingReadbacks, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures } from '@kinetographdev/compat/shim';
+import { createDawnScope, dawnDependsOnHistory, dawnInUse, enterDawnScope, flushDawnCanvases, noteDawnRewind, releaseDawn, takeDawnReports, glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, pendingReadbacks, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures, takeMediaIssues } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -43,7 +43,6 @@ import { takePageErrors } from './page-errors.js';
 import { frameReplay, type FrameReplay } from './frame-replay.js';
 import { drawSettled } from './canvas-draws.js';
 import { clearReportedUnsupported, reportedUnsupported, reportUnsupported, setReportIsRead } from './unsupported.js';
-import { takeMediaIssues } from '@kinetographdev/compat/shim';
 
 export interface FrameResult {
   scene: SceneJson;
@@ -98,16 +97,8 @@ async function runAfterLoads(): Promise<void> {
  * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
  * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
  */
-/** Real milliseconds a page-load hold may sit still before the page's callbacks run in it. */
-const PAGE_LOAD_STUCK_MS = 2000;
-
-/** Real time (the project's clocks are the frame's). */
-const realMs = (): number => Number(process.hrtime.bigint() / 1_000_000n);
-
 async function whenReleased(animationFrames = false): Promise<void> {
   let quiet = 0;
-  let quietSince = 0;
-  const stuck = (): boolean => quiet >= 2 && realMs() - quietSince >= PAGE_LOAD_STUCK_MS;
   while (openRenderHandles() > 0) {
     // A waiter for the release; a new one once that has been released and a handle was opened again.
     const idle = whenRenderIdle();
@@ -119,8 +110,8 @@ async function whenReleased(animationFrames = false): Promise<void> {
       // While only the page's scripts are loading, the callbacks wait: how many turns of the event loop a read of a file
       // takes is not the page's clock, and a callback that ran in each of them would move a page that counts them (an
       // animation that adds to a rotation) by that many frames. A script that waits for a frame itself gets one once
-      // nothing has moved for a while (`PAGE_LOAD_STUCK_MS`), or it would never finish.
-      if (animationFrames && animationFramesQueued() && (!onlyPageLoadOpen() || stuck())) {
+      // nothing is loading any more (no fetch, image or font, for two turns: the state, not a time), or it would never finish.
+      if (animationFrames && animationFramesQueued() && (!onlyPageLoadOpen() || quiet >= 2)) {
         runAnimationFrames();
         await tick();
         quiet = 0;
@@ -129,7 +120,6 @@ async function whenReleased(animationFrames = false): Promise<void> {
       await Promise.race([idle, tick()]);
       if (released) break;
       quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
-      if (quiet === 1) quietSince = realMs();
       if (quiet >= 2 && fireHoldTimer()) quiet = 0;
     }
     await idle;
@@ -220,7 +210,7 @@ class Renderer implements FrameRenderer {
     if (this.scene === null || frame !== this.lastFrame + 1) breakSamplePasses();
     // Once a transition has been seen, a frame that does not follow the one before is drawn by the replay below,
     // which brings a new scene up to it; drawing it here first would be thrown away.
-    const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0;
+    const replays = !sequential && frame > 0 && transitionWindowSeconds() > 0 && !animationFramesQueued();
     // React state and virtual timers only move forward. Going back means starting the composition over.
     if (frame < this.lastFrame) noteDawnRewind();
     if (!replays && (frame < this.lastFrame || this.scene === null)) this.startScene(config);
@@ -243,6 +233,10 @@ class Renderer implements FrameRenderer {
         // Whatever the composition sets up when it mounts (an interval, a fetch) starts at frame 0, so a
         // frame looks the same whether the render began there or somewhere later.
         await this.replayFrame(scene, config, component, 0, true);
+        // A page that animates and holds render targets may make them from what they held (a trail), which only the frames
+        // rendered one after the other give. The page's own state (a rotation its callback adds to) cannot be put back,
+        // so a render that found this out after stepping the callbacks, and started over, would run them twice.
+        if (animationFramesQueued() && glHoldsTargets()) this.historyDependent = true;
       }
       if (gsapIsLoaded() || this.historyDependent) {
         // GSAP's tweens are made by effects, which a frame's render runs: an effect that starts a tween at frame 30 has
@@ -315,7 +309,9 @@ class Renderer implements FrameRenderer {
       if (!sequential) this.trailFrom = frame;
       this.trailTo = frame;
       const start = Math.max(0, frame - window);
-      if (frame > 0 && this.trailFrom > start) {
+      // A page whose animation-frame callbacks keep state (a rotation they add to) cannot be taken back to the start of the
+      // window: the replay would run them again on top of what they already did, moving the page by the window's frames.
+      if (frame > 0 && this.trailFrom > start && !animationFramesQueued()) {
         this.startScene(config);
         clearHistory();
         const again = this.scene!;
@@ -343,8 +339,12 @@ class Renderer implements FrameRenderer {
     }
     setHistoryMode({ record: false });
     // What components that draw through a canvas left out, as the frame's own render reported it.
-    for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
     for (const what of takeDawnReports()) reportUnsupported('canvas', 'webgpu', 'device', what);
+    // A video or audio element the engine cannot play as asked (an unreadable file, a rate below 0) or a capture it refuses.
+    for (const what of takeMediaIssues()) reportUnsupported('page', 'media', what, 'the page asked for something media elements cannot do here; it is drawn without');
+    // What the page's audio used that the mix cannot do (page-audio.ts), said on every frame.
+    for (const item of pageAudioNotes()) reportUnsupported('audio', item.property, item.value, item.reason);
+    for (const what of takeGlReports()) reportUnsupported('canvas', 'webgl', 'render target', what);
     for (const what of takeLoadFailures()) reportUnsupported('page', 'load', what, `a load the page started failed; what needed it is drawn without`);
     let reported = reportedUnsupported();
     // The motion-blur sub-frames render the composition again; fonts or data they ask for are awaited too.
@@ -541,8 +541,6 @@ class Renderer implements FrameRenderer {
       await waitForFonts();
       try {
         await whenReleased(animationFrames);
-
-        await whenReleased();
       } catch (error) {
         throw this.withLeftOut(error, scene);
       }
