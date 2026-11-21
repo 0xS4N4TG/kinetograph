@@ -10,7 +10,6 @@ use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
-use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::bsp;
@@ -2229,7 +2228,7 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius > 0.0) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
@@ -2472,8 +2471,8 @@ mod tests {
             [
                 ("plain", false),
                 ("frost", true),
-                // Below the blur's minimum radius it does nothing.
-                ("faint", false),
+                // However small, a radius above 0 blurs.
+                ("faint", true),
                 ("outer", true),
                 ("uses", true),
                 ("alone", false)
@@ -2668,20 +2667,15 @@ mod tests {
         assert!(uses_backdrop(&layers, &layers[0]));
     }
     #[test]
-    fn a_backdrop_blur_under_the_minimum_needs_no_backdrop_at_any_scale() {
-        // A radius under the minimum is no blur (resolved to 0), so there is nothing to draw at twice the size either,
-        // where it would be 1.2.
+    fn a_faint_backdrop_blur_needs_the_backdrop() {
+        // Any radius above 0 blurs, at every scale; only 0 does not.
         let layers = resolve_layers(
             r##"[{"id": "faint", "type": "group", "children": [],
-                  "effects": [{"type": "backdropBlur", "radius": 0.6}]}]"##,
+                  "effects": [{"type": "backdropBlur", "radius": 0.6}]},
+                 {"id": "none", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0}]}]"##,
         );
-        assert!(!uses_backdrop(&layers, &layers[0]));
-        assert!(
-            matches!(layers[0].effects[..], [ResolvedEffect::BackdropBlur { radius, .. }] if radius == 0.0)
-        );
-        let ResolvedEffect::BackdropBlur { radius, .. } = layers[0].effects[0].scaled(2.0) else {
-            unreachable!()
-        };
-        assert_eq!(radius, 0.0);
+        assert!(uses_backdrop(&layers, &layers[0]));
+        assert!(!uses_backdrop(&layers, &layers[1]));
     }
 }

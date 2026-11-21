@@ -32,11 +32,6 @@ use crate::pass_timer::{self, PassTimer};
 use crate::pool::Pool;
 use crate::uniforms::Uniforms;
 
-/// Blurs authored below this many pixels are skipped (resolved to radius 0):
-/// the smallest chain already spreads by about one pixel. A render at a
-/// smaller scale draws the others with their radius scaled, below it or not.
-pub const MIN_RADIUS: f32 = 1.0;
-
 /// How many bytes of the pyramid textures of finished blurs are kept for the
 /// next. Their sizes follow the radius, so a blur whose radius changes every
 /// frame lets the oldest go.

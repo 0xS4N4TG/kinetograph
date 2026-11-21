@@ -85,8 +85,8 @@ impl BoxShadow {
     /// - drawn under a rotation and a uniform scale, which turn a Gaussian
     ///   into one of the same shape and keep the shape a rectangle or an
     ///   ellipse in the layer's own units. A shear or a stretch does not;
-    /// - with a blur (one under `blur::MIN_RADIUS` resolves to none); without
-    ///   one the blurred path does not blur at all, so there is none to replace;
+    /// - with a blur above 0; without one the blurred path does not blur at
+    ///   all, so there is none to replace;
     /// - with no spread, or a spread on a rectangle or rounded rectangle
     ///   whose sides run along the canvas axes, that does not shrink the
     ///   shape to nothing or below its corner radius (see the module).
@@ -666,8 +666,10 @@ mod tests {
         assert!(plan(&shape(RECT, second)).is_none());
         assert!(plan(&shape(RECT, "")).is_none());
         // A blur below the minimum is not blurred by the blurred path either.
-        let hard = r#", "effects": [{"type": "dropShadow", "y": 8, "blur": 0.5}]"#;
+        let hard = r#", "effects": [{"type": "dropShadow", "y": 8, "blur": 0}]"#;
         assert!(plan(&shape(RECT, hard)).is_none());
+        let faint = r#", "effects": [{"type": "dropShadow", "y": 8, "blur": 0.5}]"#;
+        assert!(plan(&shape(RECT, faint)).is_some());
         let just_blurred = r#", "effects": [{"type": "dropShadow", "y": 8, "blur": 1}]"#;
         assert!(plan(&shape(RECT, just_blurred)).is_some());
         // An ellipse more than four to one.

@@ -28,8 +28,13 @@ const PAGE: &str = r##"<html><body style="margin:0;background:#fff">
 </svg></body></html>"##;
 
 fn layers() -> Vec<Value> {
+    page_layers(PAGE)
+}
+
+/// The layers the DOM painter makes of `page`.
+fn page_layers(page: &str) -> Vec<Value> {
     let mut doc: BaseDocument = HtmlDocument::from_html(
-        PAGE,
+        page,
         DocumentConfig {
             viewport: Some(Viewport::new(WIDTH, HEIGHT, 1.0, ColorScheme::Light)),
             ..Default::default()
@@ -228,17 +233,16 @@ fn green_row(f: &Frame, x0: u32, n: u32) -> Vec<u8> {
 
 #[test]
 fn a_small_backdrop_blur_blurs_as_the_full_render_does() {
-    // Whether there is a blur is the authored radius's: 0.6, under the blur's minimum, is no blur at full size, nor at
-    // twice the size, where it would be 1.2. The red edge at x 200 (400 at twice the size) stays hard.
+    // A radius of 0.6 blurs at full size and at twice the size, where it is drawn as 1.2: the red edge at x 200 (400 at
+    // twice the size) is soft in both.
     let double = render(backdrop_layers(0.6), 2.0);
-    eprintln!(
-        "scale 2, radius 0.6: green across the edge {:?}",
-        green_row(&double, 396, 8)
-    );
+    let edge = green_row(&double, 396, 8);
+    eprintln!("scale 2, radius 0.6: green across the edge {edge:?}");
+    assert!(edge.iter().any(|&g| g > 20 && g < 235), "{edge:?}: hard");
     let (worst, mean) = difference(&double, &render(backdrop_layers(0.6), 1.0));
     eprintln!("scale 2 shrunk against the full render: worst {worst}, mean {mean:.3}");
     assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
-    // At half the size a radius of 4 is drawn as 2, and 1.6 as 0.8: under the minimum, still drawn.
+    // At half the size a radius of 4 is drawn as 2, and 1.6 as 0.8.
     for radius in [4.0, 1.6] {
         let (worst, mean) = difference(
             &render(backdrop_layers(radius), 1.0),
@@ -276,7 +280,7 @@ fn shadow_layers(blur: f64) -> Vec<Value> {
 
 #[test]
 fn a_small_shadow_blur_is_drawn_scaled() {
-    // At half the size a shadow blur of 1.6 is drawn as 0.8, under the blur's minimum: still blurred.
+    // At half the size a shadow blur of 1.6 is drawn as 0.8, still blurred.
     let (worst, mean) = difference(
         &render(shadow_layers(1.6), 1.0),
         &render(shadow_layers(1.6), 0.5),
@@ -285,4 +289,22 @@ fn a_small_shadow_blur_is_drawn_scaled() {
         "scale 0.5, shadow blur 1.6, against the full render shrunk: worst {worst}, mean {mean:.3}"
     );
     assert!(worst <= 40 && mean < 0.5, "worst {worst}, mean {mean:.3}");
+}
+
+#[test]
+fn a_css_shadow_with_a_small_blur_is_soft() {
+    // `box-shadow: 0 1px 1px` is a Gaussian of sigma 0.5 (half the CSS blur), drawn soft as Chrome draws it: the rows
+    // across the shadow's lower edge at y 101 hold values between black and white.
+    let page = r##"<html><body style="margin:0;background:#fff">
+<div style="position:absolute;left:20px;top:40px;width:60px;height:60px;background:#fff;box-shadow:0 1px 1px #000"></div>
+</body></html>"##;
+    let frame = render(page_layers(page), 1.0);
+    let column: Vec<u8> = (97..106)
+        .map(|y| frame.rgba[((y * frame.width + 50) * 4) as usize + 1])
+        .collect();
+    eprintln!("green down x 50, y 97..106: {column:?}");
+    assert!(
+        column.iter().any(|&g| g > 20 && g < 235),
+        "{column:?}: hard"
+    );
 }
