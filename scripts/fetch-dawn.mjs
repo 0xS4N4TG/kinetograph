@@ -116,6 +116,11 @@ export async function fetchDawn(platform, { cacheDir, outDir } = {}) {
     return outDir;
   }
 
+  // The folder is cleaned of what is not Dawn's (below): not a folder that something else owns (a typo in `--out`), which holds no SOURCE.txt.
+  if (fs.existsSync(outDir) && fs.readdirSync(outDir).length > 0 && !fs.existsSync(path.join(outDir, 'SOURCE.txt'))) {
+    throw new Error(`${outDir} is not empty and has no SOURCE.txt, so it is not a folder this script made; not touching it`);
+  }
+
   const entries = tarFiles(await tarballFor(cacheDir));
   const take = (name, hash) => {
     const data = entries.get(name);
