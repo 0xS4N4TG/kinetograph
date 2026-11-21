@@ -231,7 +231,8 @@ export const doctor: Command = {
       if (notes.length > 0) report.notes = notes;
       // The project's own @remotion/effects: its version against the one the parity run used, and the effects it uses that are not fully supported.
       const effects = source.worker === undefined ? null : effectsReport(dirname(source.entry), readFileSync(source.worker.bundleFile, 'utf8'));
-      const dawn = await dawnReport();
+      // Which adapter Dawn would give a page: not for a scene file, which runs no page (as the effects report, and as `webgl`, which only the install report has).
+      const dawn = source.kind === 'scene' ? null : await dawnReport();
       const shown = withImports(dawn === null ? report : { ...report, dawn: dawn.data }, `${formatReport(report)}${dawn === null ? '' : `\n\n${dawn.lines.join('\n')}`}`);
       const out = effects === null ? shown : { data: { ...shown.data, effects }, text: `${shown.text}\n\n${effects.lines.join('\n')}` };
       return { ...out, ...(report.renderErrors ? { exitCode: 1 } : {}) };
