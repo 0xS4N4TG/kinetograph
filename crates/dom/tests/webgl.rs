@@ -560,22 +560,13 @@ fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
             names
                 .into_iter()
                 .map(|n| {
-                    eprintln!("[kgdbg] render {n}");
                     let (body, w, h) = body_of(n);
-                    let r = (n, paintkit::render_body(&body, w, h).1.rgba);
-                    eprintln!("[kgdbg] rendered {n}");
-                    r
+                    (n, paintkit::render_body(&body, w, h).1.rgba)
                 })
                 .collect::<Vec<_>>()
         })
         .join()
         .unwrap()
-    };
-    let render = |names: Vec<&'static str>| {
-        eprintln!("[kgdbg] thread for {names:?}");
-        let r = render(names);
-        eprintln!("[kgdbg] thread joined");
-        r
     };
     for (a, b) in [
         ("webgl2_float_linear", "webgl_texture"),

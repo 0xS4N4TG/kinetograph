@@ -1067,9 +1067,7 @@ static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::ne
 /// same lock as every other use of ANGLE. The libraries are never unloaded, so the entry points stay valid.
 impl Drop for Context {
     fn drop(&mut self) {
-        eprintln!("[kgdbg] drop {:p}: waiting for BUSY", self.context);
         let _one_at_a_time = BUSY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        eprintln!("[kgdbg] drop {:p}: have BUSY, eglMakeCurrent(null)", self.context);
         // SAFETY: the handles are the ones `create` made, destroyed once, here, on the thread that made them current; the
         // context is made not current first (EGL keeps a current context alive until then), and `EGL_NO_*` is null.
         unsafe {
@@ -1079,12 +1077,9 @@ impl Drop for Context {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             );
-            eprintln!("[kgdbg] drop {:p}: eglDestroyContext", self.context);
             (self.destroy_context)(self.display, self.context);
-            eprintln!("[kgdbg] drop {:p}: eglDestroySurface", self.context);
             (self.destroy_surface)(self.display, self.surface);
         }
-        eprintln!("[kgdbg] drop {:p}: done", self.context);
         LIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
@@ -1140,9 +1135,7 @@ pub fn with<T>(ext: Extensions, f: impl FnOnce(&Gl) -> T) -> Result<T, String> {
         let at = match contexts.iter().position(|(k, _)| *k == ext) {
             Some(at) => at,
             None => {
-                eprintln!("[kgdbg] create context {ext:?}");
                 contexts.push((ext, create(ext)?));
-                eprintln!("[kgdbg] created context {:p}", contexts.last().unwrap().1.context);
                 contexts.len() - 1
             }
         };
