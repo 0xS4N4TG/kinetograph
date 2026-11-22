@@ -804,12 +804,23 @@ enum StartJob {
     Forget,
 }
 
+/// Releases this thread's ANGLE contexts when dropped: when a worker thread's loop ends, or as a panic in a job unwinds
+/// it. Not left to the thread's thread-local destructors (`webgl_release_thread`).
+struct ReleaseWebgl;
+
+impl Drop for ReleaseWebgl {
+    fn drop(&mut self) {
+        kinetograph_core::webgl_release_thread();
+    }
+}
+
 /// The starter thread of a renderer: it ends when the renderer's sender is dropped.
 fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
     let (jobs, queue) = std::sync::mpsc::channel::<StartJob>();
     std::thread::Builder::new()
         .name("kinetograph-start".to_string())
         .spawn(move || {
+            let _release = ReleaseWebgl;
             for job in queue {
                 match job {
                     StartJob::Start {
@@ -835,8 +846,6 @@ fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
                     StartJob::Forget => shared.lock().forget_frame(),
                 }
             }
-            // Before the thread ends, not in its thread-local destructors (`webgl_release_thread`).
-            kinetograph_core::webgl_release_thread();
         })
         .expect("cannot start the frame starter thread");
     jobs
@@ -1155,6 +1164,7 @@ fn spawn_pusher(
     std::thread::Builder::new()
         .name("kinetograph-write".to_string())
         .spawn(move || {
+            let _release = ReleaseWebgl;
             for job in queue {
                 match job {
                     PushJob::Push {
@@ -1192,7 +1202,6 @@ fn spawn_pusher(
                     }
                 }
             }
-            kinetograph_core::webgl_release_thread();
         })
         .expect("cannot start the video writer thread");
     jobs
