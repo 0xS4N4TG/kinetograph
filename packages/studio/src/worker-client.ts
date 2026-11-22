@@ -11,8 +11,21 @@ type Distribute<T> = T extends { id: number } ? Omit<T, 'id'> : never;
 export type Call = Distribute<WorkerRequest>;
 
 interface Pending {
+  op: WorkerRequest['op'];
   resolve(value: unknown): void;
   reject(error: unknown): void;
+}
+
+/** How long `close` lets the calls in flight, and then the engine's dispose, take before it stops the thread anyway. */
+export const CLOSE_WAIT_MS = 5_000;
+/** The wait for the calls in flight when one of them is a render, which can run for minutes. */
+export const CLOSE_RENDER_WAIT_MS = 120_000;
+
+/** True when `promise` settles within `ms`, false when the time runs out first. */
+function within(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), ms)));
+  return Promise.race([promise.then(() => true), late]).finally(() => clearTimeout(timer));
 }
 
 /** The server's side of one worker thread: calls out, replies and progress back. */
@@ -39,7 +52,7 @@ export class WorkerClient {
     if (this.failure) return Promise.reject(new StudioFailure(this.failure.code, this.failure.message));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.pending.set(id, { op: call.op, resolve: resolve as (value: unknown) => void, reject });
       this.worker.postMessage({ ...call, id } as WorkerRequest);
     });
   }
@@ -48,17 +61,22 @@ export class WorkerClient {
     return this.pending.size > 0;
   }
 
-  /** Lets the calls in flight finish, has the engine dispose of what it holds on its own thread, then stops the thread. */
-  close(): Promise<void> {
+  /**
+   * Lets the calls in flight finish, has the engine dispose of what it holds on its own thread, then stops the thread.
+   * A call that does not finish within `waitMs` (`CLOSE_RENDER_WAIT_MS` for a render), or a dispose that does not, is
+   * failed and the thread stopped anyway.
+   */
+  close(waitMs = CLOSE_WAIT_MS): Promise<void> {
     if (this.closing) return this.exited;
     this.closing = true;
-    const stop = (): void => void this.call({ op: 'dispose' }).catch(() => undefined).then(() => this.terminate());
-    if (this.pending.size === 0) stop();
-    else
-      this.drained = () => {
-        this.drained = null;
-        stop();
-      };
+    const rendering = [...this.pending.values()].some((p) => p.op === 'render');
+    const drained = this.pending.size === 0 ? Promise.resolve() : new Promise<void>((resolve) => (this.drained = resolve));
+    void (async () => {
+      if (await within(drained, rendering ? CLOSE_RENDER_WAIT_MS : waitMs)) {
+        await within(this.call({ op: 'dispose' }).catch(() => undefined), waitMs);
+      }
+      await this.terminate();
+    })();
     return this.exited;
   }
 
