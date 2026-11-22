@@ -49,7 +49,7 @@ reason, frames); with `--json` the same list is in the result under `compat.left
 - **SVG files as pictures.** `<Img src={staticFile('images/a.svg')}>`, `<img>`, `background-image`, `data:` URLs; text
   inside an SVG picture is not drawn (warned). ENGINE.md "SVG files as pictures".
 - **Scene colours** take any CSS colour (`white`, `rgb()`, `hsl()`, `oklch()`, ...), not only hex. SCENE.md, top.
-- **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math and Emoji
+- **Missing glyphs.** A character the font lacks falls back per character to bundled Noto Symbols 2, Math, Symbols and Emoji
   (monochrome). CJK is not bundled: load a font. A character no font has is reported by `doctor`, `--strict` and
   `inspect` (`missingChars`). `monospace` is the bundled JetBrains Mono (Regular) unless you load a mono font. ENGINE.md
   "Fallback fonts".

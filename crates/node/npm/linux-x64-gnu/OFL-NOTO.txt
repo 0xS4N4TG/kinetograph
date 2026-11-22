@@ -1,7 +1,8 @@
-The bundled fonts are Noto Sans Symbols 2, Noto Sans Math and Noto Emoji (the fallback fonts) and JetBrains Mono (the
-`monospace` font), converted from TrueType to WOFF2 without other changes. Their copyright notices:
+The bundled fonts are Noto Sans Symbols 2, Noto Sans Math, Noto Sans Symbols and Noto Emoji (the fallback fonts) and JetBrains Mono (the
+`monospace` font), converted from TrueType to WOFF2 (Noto Sans Symbols also subset, see the notices). Their copyright notices:
 
 - Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
+- Noto Sans Symbols: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
 - Noto Sans Math: Copyright 2022 Google LLC. All Rights Reserved.
 - Noto Emoji: Copyright 2013-2026 Google LLC
 - JetBrains Mono: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
