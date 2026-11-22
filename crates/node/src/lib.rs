@@ -470,6 +470,13 @@ pub fn webgl_backend() -> WebglBackend {
     }
 }
 
+/// Destroys the ANGLE contexts this thread drew WebGL with. A worker thread that rendered calls it before it ends: left to
+/// the thread's end, they are destroyed under Windows' loader lock, where a call into ANGLE can wait forever.
+#[napi]
+pub fn webgl_release_thread() {
+    kinetograph_core::webgl_release_thread();
+}
+
 #[napi(object)]
 pub struct RendererOptions {
     /// Default true.
@@ -832,12 +839,23 @@ enum StartJob {
     Forget,
 }
 
+/// Releases this thread's ANGLE contexts when dropped: when a worker thread's loop ends, or as a panic in a job unwinds
+/// it. Not left to the thread's thread-local destructors (`webgl_release_thread`).
+struct ReleaseWebgl;
+
+impl Drop for ReleaseWebgl {
+    fn drop(&mut self) {
+        kinetograph_core::webgl_release_thread();
+    }
+}
+
 /// The starter thread of a renderer: it ends when the renderer's sender is dropped.
 fn spawn_starter(shared: Arc<Shared>) -> std::sync::mpsc::Sender<StartJob> {
     let (jobs, queue) = std::sync::mpsc::channel::<StartJob>();
     std::thread::Builder::new()
         .name("kinetograph-start".to_string())
         .spawn(move || {
+            let _release = ReleaseWebgl;
             for job in queue {
                 match job {
                     StartJob::Start {
@@ -1181,6 +1199,7 @@ fn spawn_pusher(
     std::thread::Builder::new()
         .name("kinetograph-write".to_string())
         .spawn(move || {
+            let _release = ReleaseWebgl;
             for job in queue {
                 match job {
                     PushJob::Push {

@@ -57,7 +57,7 @@ npx kinetograph render html/index.html --strict
 - Fonts load from files, `new FontFace(...)` with `document.fonts.add(face)`, or `@font-face`. One file is kept per family, weight and style; a `unicodeRange` split keeps the basic Latin part.
 - `-webkit-text-stroke`, `paint-order: stroke fill`, `text-shadow`, transforms, opacity and `background-clip: text` work.
 - Kinetograph reads no system fonts, so a render looks the same everywhere. With no font loaded, text uses the bundled DM Sans. Variable fonts follow the requested weight.
-- A missing character comes from Noto Sans Symbols 2, Noto Sans Math or Noto Emoji. Emoji are monochrome.
+- A missing character comes from Noto Sans Symbols 2, Noto Sans Math, Noto Sans Symbols or Noto Emoji. Emoji are monochrome.
 - CJK, Arabic, Devanagari and similar scripts have no bundled font. They are drawn as boxes and reported. Load a font that has them.
 - Generic and system family names are bundled fonts: `sans-serif`, `system-ui`, `Arial`, `Segoe UI` and the like are Inter; `serif`, `Georgia` and `Times New Roman` are EB Garamond; `monospace`, `Menlo` and `Consolas` are JetBrains Mono. A web font such as `Poppins` is not a system name: load it.
 - `ex` uses the first font's x-height. With only a generic family such as `serif`, a MathJax formula comes out about 10% larger. `ex` in SVG shape attributes is half an em.

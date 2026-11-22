@@ -741,3 +741,9 @@ export interface WebglBackend {
  * failed when ANGLE cannot start (a page's WebGL is then an error). Loads and starts ANGLE (once per process).
  */
 export declare function webglBackend(): WebglBackend
+
+/**
+ * Destroys the ANGLE contexts this thread drew WebGL with. A worker thread that rendered calls it before it ends: left to
+ * the thread's end, they are destroyed under Windows' loader lock, where a call into ANGLE can wait forever.
+ */
+export declare function webglReleaseThread(): void

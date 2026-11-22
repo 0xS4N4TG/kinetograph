@@ -3,5 +3,6 @@
 //! themselves are in `main.rs`.
 
 pub mod encode;
+pub mod drain;
 pub mod external;
 pub mod render;
