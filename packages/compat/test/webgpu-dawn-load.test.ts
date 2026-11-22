@@ -2,6 +2,9 @@
 // package's dawn.node is absent, has no binary for the platform, or does not load; the override and the host's loader are used before
 // plain resolution; and the default (hand-built) provider never looks for it.
 
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dawnDirectory } from '../src/shim/dawn-binary.js';
 
@@ -44,7 +47,7 @@ describe('finding the Dawn library', () => {
 
   it('names the platform packages and the fetch script when none holds a dawn.node', async () => {
     const { dawnDirectory } = await import('../src/shim/dawn-binary.js');
-    const from = new URL('file:///no/such/place/x.js').href;
+    const from = pathToFileURL(join(tmpdir(), 'no-such-place', 'x.js')).href;
     expect(() => dawnDirectory(from, {})).toThrow(/scripts\/fetch-dawn\.mjs|is not installed|no Dawn binary for this platform/);
   });
 
