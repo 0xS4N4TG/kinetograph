@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -448,7 +448,7 @@ fn run_probe(
     let mut err = child.stderr.take().ok_or("no stderr on the ffmpeg child")?;
     let reader = thread::spawn(move || {
         let mut raw = Vec::new();
-        let _ = err.read_to_end(&mut raw);
+        crate::drain::drain(&mut err, &mut raw);
         String::from_utf8_lossy(&raw).into_owned()
     });
     let data = picture.to_vec();
@@ -754,7 +754,7 @@ impl ExternalEncoder {
         let stderr = thread::spawn(move || {
             let mut text = String::new();
             let mut raw = Vec::new();
-            let _ = err.read_to_end(&mut raw);
+            crate::drain::drain(&mut err, &mut raw);
             text.push_str(&String::from_utf8_lossy(&raw));
             text
         });

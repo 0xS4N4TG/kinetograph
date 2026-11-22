@@ -192,7 +192,7 @@ jobs:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
-        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report -- --nocapture
+        run: cargo test --release --target ${{ matrix.target }} -p kinetograph-node --features ffmpeg-static --test crash_report --test drain_stderr -- --nocapture
 
       # The matting crate (crates/matte) does not link ONNX Runtime: it opens the library at run time (`ort`'s load-dynamic),
       # so a build here needs none, and the addon loads on this runner's glibc whatever ONNX Runtime needs. Its tests cover
@@ -213,6 +213,7 @@ jobs:
         env:
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         run: cargo test --release --target ${{ matrix.target }} -p libmv-sys -p kinetograph-track -p kinetograph-matte --features kinetograph-track/ffmpeg-static,kinetograph-matte/ffmpeg-static -- --nocapture
 
       # WebGL through ANGLE (crates/dom/tests/webgl.rs) on ANGLE's SwiftShader backend, the CPU
@@ -240,6 +241,19 @@ jobs:
           PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg/lib/pkgconfig
         run: cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture
 
+      # Compiled in a step of its own, so the time limit below is the tests' only. The profile setting is the addon
+      # build's, so the crates it built are reused.
+      - name: Build the WebGL tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: |
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl --no-run
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg-static --lib --no-run
+
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 30
@@ -248,6 +262,7 @@ jobs:
           KINETOGRAPH_ANGLE_DIR: ${{ runner.temp }}\angle-swiftshader
           FFMPEG_DIR: ${{ runner.temp }}\ffmpeg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         # The compositor the cases draw through is wgpu, which found no Vulkan device here and fell back to Skia on the
         # CPU (about 1.5 minutes a case). The runner is elevated, so the loader ignores VK_DRIVER_FILES; the SwiftShader
         # ANGLE ships is registered as a driver the way an installer does, and the loader on the system path finds it.
@@ -255,6 +270,9 @@ jobs:
           $icd = "$env:RUNNER_TEMP\angle-swiftshader\vk_swiftshader_icd.json"
           New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
           New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
+          # Threads ending while others draw: the contexts a thread leaves are destroyed under the loader lock here.
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg-static --lib -- --nocapture a_threads_context_is_destroyed threads_ending_while_others_draw
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # SwiftShader draws slowly here, so this runner takes a subset (Linux and macOS run every case): textures, framebuffers,
           # blending, integer and compressed formats, instancing, uniform buffers, multisampling, and a frame not depending on the last.
           cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl -- --nocapture --exact webgl_texture webgl_framebuffer webgl2_mrt webgl2_float_blend webgl2_int_texture webgl2_compressed webgl2_divisor2 webgl2_ubo_shared webgl2_msaa_resolve webgl2_texture_layers a_frame_does_not_depend_on_what_the_thread_drew_before

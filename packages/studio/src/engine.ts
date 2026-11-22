@@ -114,7 +114,9 @@ export type WorkerRequest =
   | { id: number; op: 'timeline'; comp: string; props: Record<string, unknown> }
   /** After a `timeline` call: mixes the sound that sweep collected (no second pass over the frames). */
   | { id: number; op: 'audio' }
-  | { id: number; op: 'render'; spec: RenderSpec };
+  | { id: number; op: 'render'; spec: RenderSpec }
+  /** The last call before the worker is stopped: the engine lets go of what it holds (`Engine.dispose`). */
+  | { id: number; op: 'dispose' };
 
 export type WorkerReply =
   | { id: number; ok: true; result: unknown }

@@ -557,13 +557,15 @@ fn the_committed_recordings_parse_as_the_scene_format_does() {
 fn a_frame_does_not_depend_on_what_the_thread_drew_before() {
     let render = |names: Vec<&'static str>| {
         std::thread::spawn(move || {
-            names
+            let frames = names
                 .into_iter()
                 .map(|n| {
                     let (body, w, h) = body_of(n);
                     (n, paintkit::render_body(&body, w, h).1.rgba)
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            kinetograph_core::webgl_release_thread();
+            frames
         })
         .join()
         .unwrap()
