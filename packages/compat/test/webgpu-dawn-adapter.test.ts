@@ -93,8 +93,12 @@ describe.skipIf(missing !== null)('the instance `describeDawn` asks', () => {
     setDawnLoader(() => ({ ...real, create: (flags: string[]) => { made++; return real.create(flags); } }));
     vi.stubEnv('KINETOGRAPH_DAWN_MODULE', '');
     const first = await describeDawn();
+    // The first answer may take two instances (the probe, then SwiftShader's on a host with no hardware adapter);
+    // a second project must take none.
+    const afterFirst = made;
     const second = await describeDawn();
     expect(first.ok && second.ok).toBe(true);
-    expect(made).toBe(1);
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(made).toBe(afterFirst);
   });
 });
