@@ -144,6 +144,8 @@ export function fakeNative(overrides: Partial<Record<string, unknown>> = {}): { 
       codec: 'h264', encoder: 'libx264', container: 'mp4', pixelFormat: 'yuv420p', convertFormat: 'yuv420p', audioCodec: 'aac',
     }),
     rgbaToYuv: (rgba: Buffer) => Buffer.from(rgba),
+    // A render worker calls it before it posts `done` (src/render-worker.ts); the fake holds no ANGLE contexts.
+    webglReleaseThread: () => {},
     Renderer,
     ...overrides,
   } as unknown as Native;
