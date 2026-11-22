@@ -442,6 +442,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Software Vulkan (lavapipe), as in the smoke job: the CLI tests that render a page need a device, and the runner
+      # has no GPU.
+      - name: Install a Vulkan driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
       - uses: actions/download-artifact@v8
         with:
           name: bindings-linux-x64-gnu
@@ -457,7 +463,7 @@ jobs:
             npm run build -w "packages/$p" || failed="$failed $p"
           done
           if [ -n "$failed" ]; then echo "::error::typecheck failed in:$failed"; exit 1; fi
-      # The tests open no GPU unless KINETOGRAPH_GPU_TESTS is set.
+      # The CLI tests that render a page draw on lavapipe.
       - name: Test
         if: ${{ !cancelled() }}
         run: |
