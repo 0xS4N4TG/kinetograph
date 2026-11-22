@@ -25,6 +25,9 @@ out/
 phase0/fframes/reference/media/p*.jpg
 phase0/fframes/compare/
 
+# The studio tests' projects (packages/studio/test/helpers.ts)
+packages/studio/.test-tmp/
+
 # Node addon build output
 *.node
 # The GPL ffmpeg program built into each platform package (scripts/build-ffmpeg-gpl.sh)
