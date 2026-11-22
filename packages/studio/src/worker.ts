@@ -26,6 +26,10 @@ function loadEngine(): Promise<Engine> {
 }
 
 async function handle(request: WorkerRequest): Promise<unknown> {
+  if (request.op === 'dispose') {
+    if (engine) (await engine).dispose();
+    return null;
+  }
   const e = await loadEngine();
   switch (request.op) {
     case 'compositions':
