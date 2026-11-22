@@ -83,14 +83,16 @@ describe('audio routes (stub engine)', () => {
 
   it('a newer timeline request stops the sweep an older one is still making', async () => {
     const slow = (n: number) => `&props=${encodeURIComponent(JSON.stringify({ _frameMs: 20, n }))}`;
-    const old = api(studio, `/api/timeline?comp=Main${slow(1)}`);
+    const answered: string[] = [];
+    const old = api(studio, `/api/timeline?comp=Main${slow(1)}`).finally(() => answered.push('old'));
     await new Promise((resolve) => setTimeout(resolve, 150));
-    const started = Date.now();
-    const fresh = await api(studio, `/api/timeline?comp=Main${slow(2)}`);
+    const fresh = await api(studio, `/api/timeline?comp=Main${slow(2)}`).finally(() => answered.push('fresh'));
     expect(fresh.status).toBe(200);
     expect((await old).status).toBe(409);
     expect((await old).json.error.code).toBe('SUPERSEDED');
-    expect(Date.now() - started).toBeLessThan(4000);
+    // Stopped when the newer request came, not at the end of its own sweep: a wall-clock bound here would measure the
+    // machine's load (each sweep is a worker of its own), the order does not.
+    expect(answered).toEqual(['old', 'fresh']);
   });
 });
 
