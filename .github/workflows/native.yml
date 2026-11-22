@@ -252,7 +252,7 @@ jobs:
         run: |
           cargo test --release --target ${{ matrix.target }} -p kinetograph-dom --features ffmpeg-static --test webgl --no-run
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg/static --lib --no-run
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg-static --lib --no-run
 
       - name: Test WebGL on ANGLE SwiftShader (Windows)
         if: runner.os == 'Windows'
@@ -271,7 +271,7 @@ jobs:
           New-Item -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Force | Out-Null
           New-ItemProperty -Path HKLM:\SOFTWARE\Khronos\Vulkan\Drivers -Name $icd -Value 0 -PropertyType DWord -Force | Out-Null
           # Threads ending while others draw: the contexts a thread leaves are destroyed under the loader lock here.
-          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg/static --lib -- --nocapture a_threads_context_is_destroyed threads_ending_while_others_draw
+          cargo test --release --target ${{ matrix.target }} -p kinetograph-core --features ffmpeg-static --lib -- --nocapture a_threads_context_is_destroyed threads_ending_while_others_draw
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # SwiftShader draws slowly here, so this runner takes a subset (Linux and macOS run every case): textures, framebuffers,
           # blending, integer and compressed formats, instancing, uniform buffers, multisampling, and a frame not depending on the last.
