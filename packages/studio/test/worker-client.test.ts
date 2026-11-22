@@ -1,8 +1,9 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { WorkerClient } from '../src/worker-client.js';
-import { cleanup, tempDir } from './helpers.js';
+import { api, cleanup, start, STUB_ENGINE, tempDir, until, writeProject } from './helpers.js';
 
 afterAll(cleanup);
 
@@ -38,5 +39,26 @@ describe('WorkerClient.close', () => {
     await client.call({ op: 'plan', comp: 'none', props: {} }).catch(() => undefined);
     await client.close(5_000);
     expect(existsSync(join(dir, 'disposed'))).toBe(true);
+  });
+});
+
+describe('the studio shutting down', () => {
+  it("disposes the project worker's engine before stopping it", async () => {
+    const dir = tempDir();
+    const marker = join(dir, 'disposed');
+    const engine = join(dir, 'engine.mjs');
+    writeFileSync(
+      engine,
+      `import { writeFileSync } from 'node:fs';\n` +
+        `import { createEngine as stub } from ${JSON.stringify(pathToFileURL(STUB_ENGINE).href)};\n` +
+        `export function createEngine(options) {\n` +
+        `  return { ...stub(options), dispose: () => writeFileSync(${JSON.stringify(marker)}, '') };\n` +
+        `}\n`,
+    );
+    const { entry } = writeProject('Shut');
+    const server = await start(entry, { engine });
+    await until(() => api(server, '/api/compositions').then((r) => r.status), (status) => status === 200);
+    await server.close();
+    expect(existsSync(marker)).toBe(true);
   });
 });
