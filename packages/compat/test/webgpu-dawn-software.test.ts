@@ -171,7 +171,7 @@ describe('the loader\'s environment for a Dawn that reads it late', () => {
       vi.stubEnv('FAKE_DAWN_READS', reads);
       for (const name of ['XDG_CONFIG_HOME', 'XDG_CONFIG_DIRS', 'XDG_DATA_HOME', 'XDG_DATA_DIRS']) vi.stubEnv(name, empty);
       const shared = (globalThis as any)[Symbol.for('kinetograph.dawn.shared')];
-      if (shared) Object.assign(shared, { adapter: null, probe: null, softwareInstances: [] });
+      if (shared) Object.assign(shared, { adapter: null, probe: null, softwareInstances: new Map() });
       vi.resetModules();
       const { describeDawn } = await import('../src/shim/webgpu-dawn.js');
       expect(await describeDawn(), `${reads}${forced ? ', forced' : ''}`).toMatchObject({ ok: true, adapter: { via: 'swiftshader' } });

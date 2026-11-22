@@ -86,7 +86,7 @@ describe.skipIf(missing !== null)('the adapter Dawn gives', () => {
 describe.skipIf(missing !== null)('the instance `describeDawn` asks', () => {
   it('is made once, not for every project a process opens (Studio opens one for each preview and render)', async () => {
     vi.resetModules();
-    Object.assign((globalThis as any)[Symbol.for('kinetograph.dawn.shared')], { probe: null, adapter: null });
+    Object.assign((globalThis as any)[Symbol.for('kinetograph.dawn.shared')], { probe: null, adapter: null, softwareInstances: new Map() });
     const real = loadDawnBinary();
     let made = 0;
     const { setDawnLoader, describeDawn } = await import('../src/shim/webgpu-dawn.js');

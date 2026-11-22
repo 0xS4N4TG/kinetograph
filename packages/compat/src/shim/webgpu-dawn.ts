@@ -128,15 +128,15 @@ interface Shared {
   entered: number;
   /** The adapter Dawn gave the first request of this process (`DawnAdapter`), which `doctor` says. */
   adapter: DawnAdapter | null;
-  /** The Dawn instances made on SwiftShader (`softwareInstance`), kept as long as the process runs: their adapters belong to them. */
-  softwareInstances: Any[];
+  /** The Dawn instances made on SwiftShader (`softwareInstance`), one for each set of flags, kept as long as the process runs: their adapters belong to them. */
+  softwareInstances: Map<string, Any>;
   /** The instance `describeDawn` asks, made once for each set of flags. */
   probe: { flags: string; gpu: Any } | null;
 }
 
 const SHARED = Symbol.for('kinetograph.dawn.shared');
 const defaultScope = new DawnScope();
-const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null, softwareInstances: [], probe: null });
+const shared: Shared = ((globalThis as Any)[SHARED] ??= { scope: defaultScope, canvases: 0, entered: 0, adapter: null, softwareInstances: new Map(), probe: null });
 useCarry(defaultScope.carry);
 
 export function createDawnScope(): DawnScope {
@@ -352,10 +352,13 @@ function softwareInstance(d: NonNullable<typeof dawn>): { gpu: () => Any; icd: s
   if (process.platform !== 'linux') return null;
   const icd = swiftshaderIcd(d.directory ?? null);
   if (icd === null) return null;
-  // One for the process: each `requestAdapter` (a page's, a probe's) asks the same instance, not a new one.
+  // One for each set of flags: each `requestAdapter` (a page's, a probe's) with the same flags asks the same instance, not a new one,
+  // and flags that change (KINETOGRAPH_DAWN_BACKEND, KINETOGRAPH_DAWN_ADAPTER) get an instance made with them.
   const gpu = (): Any => {
-    if (shared.softwareInstances[0] === undefined) shared.softwareInstances.push(createGpu(d));
-    return shared.softwareInstances[0];
+    const flags = dawnFlags().join(' ');
+    let instance = shared.softwareInstances.get(flags);
+    if (instance === undefined) shared.softwareInstances.set(flags, (instance = createGpu(d)));
+    return instance;
   };
   return { gpu, icd };
 }

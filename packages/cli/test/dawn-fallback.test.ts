@@ -60,7 +60,7 @@ describe('the Vulkan loader\'s environment Dawn leaves the process (Linux)', () 
     vi.stubEnv('XDG_DATA_DIRS', host === '' ? empty : withDriver);
     // What the process remembers of Dawn (the probe's instance, SwiftShader's): each case is a new process.
     const shared = (globalThis as any)[Symbol.for('kinetograph.dawn.shared')];
-    if (shared) Object.assign(shared, { adapter: null, probe: null, softwareInstances: [] });
+    if (shared) Object.assign(shared, { adapter: null, probe: null, softwareInstances: new Map() });
     const said: string[] = [];
     await prepareCliDawn((message) => said.push(message));
     const env: Record<string, string> = {};
