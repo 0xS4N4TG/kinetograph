@@ -228,12 +228,21 @@ describe('interpolatePath', () => {
   });
 });
 
+/**
+ * A periodic bend made of +, -, * and floor only. Not Math.sin: V8's sin and cos differ in the last bit between x64
+ * and arm64, so a recording made on one does not hash the same on the other, for the published package as for ours.
+ */
+const bump = (t: number): number => {
+  const u = t - Math.floor(t);
+  return 4 * u * (1 - u) - 0.5;
+};
+
 /** The transformers `record-paths` used, by name. */
 const transformers: Record<string, P.WarpPathFn> = {
   identity: (p) => p,
   scale: (p) => ({ x: p.x * 2, y: p.y * 0.5 }),
-  wave: (p) => ({ x: p.x, y: p.y + Math.sin(p.x / 10) * 6 }),
-  swirl: (p) => ({ x: p.x + Math.cos(p.y / 7) * 4, y: p.y + Math.sin(p.x / 7) * 4 }),
+  wave: (p) => ({ x: p.x, y: p.y + bump(p.x / 10) * 6 }),
+  swirl: (p) => ({ x: p.x + bump(p.y / 7) * 4, y: p.y + bump(p.x / 7) * 4 }),
 };
 
 describe('interpolatePaths', () => {
