@@ -1053,6 +1053,9 @@ struct Context {
     make_current: unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> u32,
     destroy_context: Destroy,
     destroy_surface: Destroy,
+    /// The thread that made it, for the tests' `OPEN`.
+    #[cfg(test)]
+    thread: std::thread::ThreadId,
 }
 
 /// One thread at a time in ANGLE. Without this, a run of the cases on four threads failed in different cases each time
@@ -1060,8 +1063,10 @@ struct Context {
 /// Making, using and destroying a context all hold it.
 static BUSY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The contexts alive in the process: made by `create`, gone when their thread releases them or ends.
-static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// For the tests: the thread of each context alive in the process, so a test counts its own thread's alone (other tests
+/// make contexts in parallel).
+#[cfg(test)]
+static OPEN: std::sync::Mutex<Vec<std::thread::ThreadId>> = std::sync::Mutex::new(Vec::new());
 
 /// A thread's contexts and their pbuffers are destroyed by `release_thread`, or else when the thread ends (its
 /// `thread_local` is dropped), under the same lock as every other use of ANGLE. The libraries are never unloaded, so the
@@ -1081,7 +1086,13 @@ impl Drop for Context {
             (self.destroy_context)(self.display, self.context);
             (self.destroy_surface)(self.display, self.surface);
         }
-        LIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        #[cfg(test)]
+        {
+            let mut open = OPEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(at) = open.iter().position(|t| *t == self.thread) {
+                open.swap_remove(at);
+            }
+        }
     }
 }
 
@@ -1310,7 +1321,7 @@ fn open(dir: &std::path::Path, name: &str) -> Result<Library, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extensions, LIVE, PLATFORM, Texels, check_upload, checked_dir, find_angle, gl,
+        Extensions, OPEN, PLATFORM, Texels, check_upload, checked_dir, find_angle, gl,
         library_file_name, upload_len, with,
     };
     use std::path::PathBuf;
@@ -1388,15 +1399,15 @@ mod tests {
         assert!(check_upload(&ok, (4, 4, 1)).is_ok());
     }
 
-    /// The tests that make and end contexts on threads, one at a time: one counts `LIVE`.
-    static THREADS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// How many contexts `thread` has alive.
+    fn open(thread: std::thread::ThreadId) -> usize {
+        OPEN.lock().unwrap().iter().filter(|t| **t == thread).count()
+    }
 
     /// A thread's context and pbuffer are destroyed by `release_thread`, or else when the thread ends (needs ANGLE:
     /// skipped without it).
     #[test]
     fn a_threads_context_is_destroyed_when_the_thread_ends() {
-        use std::sync::atomic::Ordering::SeqCst;
-        let _one_at_a_time = THREADS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let ext = Extensions {
             float_linear: false,
             float_blend: false,
@@ -1408,19 +1419,18 @@ mod tests {
         {
             return;
         }
-        let before = LIVE.load(SeqCst);
-        std::thread::spawn(move || {
+        let thread = std::thread::spawn(move || {
             with(ext, |_| ()).unwrap();
-            assert!(LIVE.load(SeqCst) > before);
-        })
-        .join()
-        .unwrap();
-        assert_eq!(LIVE.load(SeqCst), before);
+            assert_eq!(open(std::thread::current().id()), 1);
+        });
+        let id = thread.thread().id();
+        thread.join().unwrap();
+        assert_eq!(open(id), 0);
         // `release_thread` destroys them before the thread ends.
         std::thread::spawn(move || {
             with(ext, |_| ()).unwrap();
             super::release_thread();
-            assert_eq!(LIVE.load(SeqCst), before);
+            assert_eq!(open(std::thread::current().id()), 0);
         })
         .join()
         .unwrap();
@@ -1431,7 +1441,6 @@ mod tests {
     /// hang fails the test instead of running into the CI step's limit (needs ANGLE: skipped without it).
     #[test]
     fn threads_ending_while_others_draw_do_not_hang() {
-        let _one_at_a_time = THREADS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let ext = Extensions {
             float_linear: false,
             float_blend: false,
@@ -1700,7 +1709,10 @@ fn create(ext: Extensions) -> Result<Context, String> {
             break;
         }
     }
-    LIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    #[cfg(test)]
+    OPEN.lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(std::thread::current().id());
     Ok(Context {
         gl,
         display,
@@ -1709,6 +1721,8 @@ fn create(ext: Extensions) -> Result<Context, String> {
         make_current,
         destroy_context: shared.destroy_context,
         destroy_surface: shared.destroy_surface,
+        #[cfg(test)]
+        thread: std::thread::current().id(),
     })
 }
 
