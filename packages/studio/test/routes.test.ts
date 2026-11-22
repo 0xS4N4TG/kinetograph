@@ -63,11 +63,9 @@ describe('GET /api/thumbnail', () => {
   });
 
   it('waits while preview frames are asked for, so playback never waits for it', async () => {
-    const start = Date.now();
-    const previews = (async () => {
-      while (Date.now() - start < 600) await api(studio, '/api/frame?comp=Main&frame=1');
-      return Date.now();
-    })();
+    // One preview that takes 600 ms, not a loop of short ones: between two requests of a loop no preview is asked
+    // for, and on a loaded machine that gap can pass the idle wait, so the thumbnail was drawn in it.
+    const previews = api(studio, `/api/frame?comp=Main&frame=1&props=${encodeURIComponent(JSON.stringify({ _previewMs: 600 }))}`).then(() => Date.now());
     await new Promise((r) => setTimeout(r, 50));
     const thumb = api(studio, '/api/thumbnail?comp=Main&frame=40&height=18&build=1').then(() => Date.now());
     const previewsEnded = await previews;
