@@ -110,6 +110,8 @@ try {
   const handle = async (message: Exclude<ToWorker, { type: 'split' } | { type: 'start' }>): Promise<void> => {
     if (message.type === 'finish') {
       log?.flush();
+      // This thread's ANGLE contexts go now: at the thread's end they would go under Windows' loader lock.
+      native().webglReleaseThread();
       post({ type: 'done', artifacts: source.artifacts?.() ?? [] });
       source.dispose();
       return;

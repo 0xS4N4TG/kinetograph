@@ -167,6 +167,8 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
     dispose() {
       for (const source of sources.values()) void source.then((s) => s.dispose(), () => undefined);
       sources.clear();
+      // The ANGLE contexts this thread drew WebGL with go now: at the thread's end they would go under Windows' loader lock.
+      if (renderer) native().webglReleaseThread();
       renderer = undefined;
     },
   };

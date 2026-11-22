@@ -48,12 +48,17 @@ export class WorkerClient {
     return this.pending.size > 0;
   }
 
-  /** Lets the calls in flight finish, then stops the thread. */
+  /** Lets the calls in flight finish, has the engine dispose of what it holds on its own thread, then stops the thread. */
   close(): Promise<void> {
     if (this.closing) return this.exited;
     this.closing = true;
-    if (this.pending.size === 0) return this.terminate();
-    this.drained = () => void this.terminate();
+    const stop = (): void => void this.call({ op: 'dispose' }).catch(() => undefined).then(() => this.terminate());
+    if (this.pending.size === 0) stop();
+    else
+      this.drained = () => {
+        this.drained = null;
+        stop();
+      };
     return this.exited;
   }
 
