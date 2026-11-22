@@ -71,6 +71,9 @@ impl Stats {
 /// Graphite needs raster images turned into its own textures by the recorder.
 pub type Upload = std::rc::Rc<dyn Fn(&Image) -> Option<Image>>;
 
+/// The `d` text `Translator::svg_paths` keeps before it starts over.
+const SVG_PATH_CACHE_BYTES: usize = 8 << 20;
+
 pub struct Translator {
     pub upload: Option<Upload>,
     pub text: TextEngine,
@@ -87,7 +90,10 @@ pub struct Translator {
     typefaces: HashMap<(u64, u32, Vec<i16>), Option<Typeface>>,
     glyph_paths: HashMap<(skia_safe::typeface::TypefaceId, u32, u32, bool, u16), Option<Path>>,
     text_atlas: bool,
+    /// Parsed `d` strings by text, bounded to `SVG_PATH_CACHE_BYTES` of that text: a path that changes every frame (a
+    /// map projected anew, a morph) never repeats, so an unbounded map grows by every frame drawn.
     svg_paths: HashMap<String, Path>,
+    svg_path_bytes: usize,
     srgb: bool,
     /// `Scene::render_scale`.
     render_scale: f64,
@@ -213,6 +219,7 @@ impl Translator {
             glyph_paths: HashMap::new(),
             text_atlas: std::env::var("KINETOGRAPH_SKIA_TEXT").is_ok_and(|v| v == "atlas"),
             svg_paths: HashMap::new(),
+            svg_path_bytes: 0,
             srgb: false,
             render_scale: 1.0,
             fx: HashMap::new(),
@@ -722,6 +729,11 @@ impl Translator {
         }
         let bez = BezPath::from_svg(d).ok()?;
         let p = bez_to_path(&bez, even_odd);
+        if self.svg_path_bytes + key.len() > SVG_PATH_CACHE_BYTES {
+            self.svg_paths.clear();
+            self.svg_path_bytes = 0;
+        }
+        self.svg_path_bytes += key.len();
         self.svg_paths.insert(key, p.clone());
         Some(p)
     }
@@ -2390,6 +2402,26 @@ mod tests {
         let info = ImageInfo::new((1, 1), ColorType::RGBA8888, AlphaType::Premul, None);
         assert!(s.read_pixels(&info, &mut px, 4, (x, y)));
         px[3]
+    }
+
+    /// Paths that differ on every frame (a projected globe) leave the cache bounded, not one entry per frame drawn.
+    #[test]
+    fn the_svg_path_cache_stays_within_its_budget() {
+        let scene = scene_with("null");
+        let mut tr = Translator::new(&scene);
+        let mut drawn = 0;
+        for frame in 0..400 {
+            let d: String = (0..6000).map(|i| format!("{}{}.{frame} {i}.5", if i == 0 { "M" } else { "L" }, i)).collect();
+            drawn += d.len();
+            assert!(tr.svg_path(&d, false).is_some());
+            let kept: usize = tr.svg_paths.keys().map(String::len).sum();
+            assert!(kept <= SVG_PATH_CACHE_BYTES && kept == tr.svg_path_bytes, "{kept} bytes kept after frame {frame}");
+        }
+        assert!(drawn > 3 * SVG_PATH_CACHE_BYTES, "the loop must draw well past the budget ({drawn})");
+        // The paths of the frame in hand are still found.
+        let again = "M0 0L9 9";
+        tr.svg_path(again, false);
+        assert!(tr.svg_paths.contains_key(&format!("n{again}")));
     }
 
     fn white() -> Paint {

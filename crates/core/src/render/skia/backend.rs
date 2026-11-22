@@ -140,6 +140,14 @@ fn start_gpu(device: &wgpu::Device, queue: &wgpu::Queue) -> std::result::Result<
     Ok((Gpu { native, ctx, rec: Rc::new(RefCell::new(raster)) }, rec))
 }
 
+/// Graphite's refusal of a recording, with the reason it gives and the frame. `AddCommandsFailed` is what a GPU out of
+/// memory (or a lost device) comes to, which a long run at high concurrency can reach: every worker holds a Graphite
+/// context and GPU memory of its own.
+fn refused(status: graphite::InsertStatus, frame: impl std::fmt::Display) -> Error {
+    let hint = if status == graphite::InsertStatus::AddCommandsFailed { ": the GPU may be out of memory or lost; render with a lower --concurrency or --scale" } else { "" };
+    Error::Render(format!("Skia refused its recording ({status:?}) on its renderer's draw number {frame}{hint}"))
+}
+
 /// A Skia backend on `device`'s GPU device and `queue`'s command queue; if Skia's GPU backend cannot start on this
 /// device (no Metal or Vulkan device, or a Vulkan driver without what Graphite needs), or `KINETOGRAPH_SKIA_CPU=1`,
 /// one that draws with Skia's CPU backend instead, and says so once.
@@ -380,8 +388,9 @@ impl Renderer {
                 native.before_skia(&self.device, &self.queue, &targets[current].view, &held.iter().collect::<Vec<_>>());
                 let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
                 let info = graphite::InsertRecordingInfo::new(&mut recording);
-                if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
-                    return Err(Error::Render("Skia refused its recording".into()));
+                let status = ctx.insert_recording(&info);
+                if status != graphite::InsertStatus::Success {
+                    return Err(refused(status, frame));
                 }
                 ctx.submit(None);
                 ctx.check_async_work_completion();
@@ -494,14 +503,16 @@ impl Renderer {
     ) -> Result<Tex> {
         let inner = self.skia_inner.as_mut().expect("the Skia context");
         let (texture, view, linear) = inner.target.clone().expect("the frame's target");
+        let inner_frame = inner.frame;
         match (inner.gpu.as_mut(), rec) {
             (Some(Gpu { native, ctx, .. }), Some(rec)) => {
                 self.compositor.submit();
                 native.before_skia(&self.device, &self.queue, &view, &held.iter().collect::<Vec<_>>());
                 let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
                 let info = graphite::InsertRecordingInfo::new(&mut recording);
-                if ctx.insert_recording(&info) != graphite::InsertStatus::Success {
-                    return Err(Error::Render("Skia refused its recording".into()));
+                let status = ctx.insert_recording(&info);
+                if status != graphite::InsertStatus::Success {
+                    return Err(refused(status, inner_frame));
                 }
                 ctx.submit(None);
             }
@@ -728,8 +739,9 @@ impl Renderer {
                 let mut recording = rec.borrow_mut().snap().ok_or_else(|| Error::Render("Skia recorded nothing".into()))?;
                 drop(surface);
                 let info = graphite::InsertRecordingInfo::new(&mut recording);
-                if gpu.ctx.insert_recording(&info) != graphite::InsertStatus::Success {
-                    return Err(Error::Render("Skia refused its recording".into()));
+                let status = gpu.ctx.insert_recording(&info);
+                if status != graphite::InsertStatus::Success {
+                    return Err(refused(status, inner.frame));
                 }
                 gpu.ctx.submit(None);
                 gpu.ctx.check_async_work_completion();
@@ -750,6 +762,15 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::cpu_notice;
+    use skia_safe::gpu::graphite;
+
+    #[test]
+    fn a_refused_recording_says_why_and_where() {
+        let text = super::refused(graphite::InsertStatus::AddCommandsFailed, 612).to_string();
+        assert!(text.contains("draw number 612") && text.contains("AddCommandsFailed") && text.contains("--concurrency"), "{text}");
+        let text = super::refused(graphite::InsertStatus::InvalidRecording, 3).to_string();
+        assert!(text.contains("draw number 3") && text.contains("InvalidRecording") && !text.contains("--concurrency"), "{text}");
+    }
 
     #[test]
     fn the_cpu_notice_gives_the_reason_the_gpu_was_not_used() {
