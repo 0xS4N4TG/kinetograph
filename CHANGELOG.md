@@ -78,6 +78,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- `new FontFace(family, 'url(file:///…)')` reads the file the URL names, as `loadFont` does; it was opened as a relative path, so the face was never registered.
 - A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
 - A `<video>` the page plays itself is not re-seeked by the clip loop.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.

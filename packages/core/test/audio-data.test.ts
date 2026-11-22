@@ -231,6 +231,13 @@ describe('FontFace in Node', () => {
     expect(getFonts()['Inter:800']).toBe('/fonts/inter-latin.woff2');
   });
 
+  it('reads a file:// source as the path it names, as loadFont does', async () => {
+    installFontFace();
+    const doc = (globalThis as unknown as { document: { fonts: Set<unknown> & { add(face: unknown): void } } }).document;
+    doc.fonts.add(await new NodeFontFace('Brand', "url('file:///fonts/brand.woff2')", { weight: '700' }).load());
+    expect(getFonts()['Brand:700']).toBe('/fonts/brand.woff2');
+  });
+
   it('refuses sources it cannot read', () => {
     expect(() => new NodeFontFace('Inter', new ArrayBuffer(4))).toThrow(/url/);
     // A remote source is read, not refused: it is downloaded into the font cache (remote-fonts.test.ts).
