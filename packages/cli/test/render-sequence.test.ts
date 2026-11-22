@@ -59,6 +59,7 @@ vi.mock('node:worker_threads', async () => {
   }
   return {
     Worker: FakeWorker,
+    threadId: 0,
     get parentPort() {
       return port.parentPort;
     },
@@ -377,5 +378,22 @@ describe('render --sequence --concurrency', () => {
     for (const name of names) expect(readFileSync(join(parallel.dir, name)).equals(readFileSync(join(serial.dir, name)))).toBe(true);
     expect(existsSync(join(parallel.dir, `Main-045.${format === 'png' ? 'png' : 'jpeg'}`))).toBe(true);
     expect(parallel.json).toMatchObject({ frames: 36, first: 10, last: 45 });
+  });
+
+  it('says which frame and worker a failed draw was', async () => {
+    const { native } = fakeNative();
+    const Base = (native as unknown as { Renderer: new () => { still(scene: string, frame: number): Buffer } }).Renderer;
+    seam.fake = {
+      ...native,
+      Renderer: class extends Base {
+        still(scene: string, frame: number): Buffer {
+          if (frame === 25) throw new Error('GPU out of memory');
+          return super.still(scene, frame);
+        }
+      },
+    };
+    const r = await cli('render', 'index.tsx', '--sequence', '--range', '10..=45', '--concurrency', '3', '-o', join(scratch(), 'frames'), '--json');
+    expect(r.code).toBe(1);
+    expect(r.json.error.message).toMatch(/frame 25 \(render worker 0\): GPU out of memory/);
   });
 });
