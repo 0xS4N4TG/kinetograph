@@ -13,6 +13,9 @@ import { installDeterminism, realTimers, resetVirtualClock, uninstallDeterminism
 import { createFrameRenderer } from '../src/frame-loop.js';
 import '../src/web-install.js';
 
+// The page's requestAnimationFrame, which installDeterminism puts on the global; the package compiles without the DOM lib.
+const raf = (cb: (t: number) => void): number => (globalThis as any).requestAnimationFrame(cb);
+
 beforeEach(() => {
   resetCompositions();
   resetRenderState();
@@ -95,9 +98,9 @@ describe('loads the page starts', () => {
         const handle = delayRender(PAGE_LOAD_LABEL);
         const loop = () => {
           runs++;
-          requestAnimationFrame(loop);
+          raf(loop);
         };
-        requestAnimationFrame(loop);
+        raf(loop);
         // A read of a file that takes some turns of the event loop: the number of turns is not the page's clock.
         void trackPending(new Promise<void>((resolve) => realTimers.setTimeout(resolve, 60))).then(() => continueRender(handle));
       }, []);
@@ -114,7 +117,7 @@ describe('loads the page starts', () => {
       useEffect(() => {
         const handle = delayRender(PAGE_LOAD_LABEL);
         // A script that awaits a frame before it finishes loading: only a callback can release the hold.
-        requestAnimationFrame(() => {
+        raf(() => {
           finished = true;
           continueRender(handle);
         });
@@ -131,7 +134,7 @@ describe('loads the page starts', () => {
     const Page = () => {
       useEffect(() => {
         // A trail: each frame draws a target from the one the frame before drew (the two swap).
-        const gl = document.createElement('canvas').getContext('webgl2')!;
+        const gl = (globalThis as any).document.createElement('canvas').getContext('webgl2')!;
         const shader = (type: number, source: string) => {
           const made = gl.createShader(type)!;
           gl.shaderSource(made, source);
@@ -167,9 +170,9 @@ describe('loads the page starts', () => {
           gl.bindFramebuffer(gl.FRAMEBUFFER, pair[current]!.framebuffer);
           gl.bindTexture(gl.TEXTURE_2D, from.texture);
           gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-          requestAnimationFrame(loop);
+          raf(loop);
         };
-        requestAnimationFrame(loop);
+        raf(loop);
       }, []);
       return <Rect id="r" width={4} height={4} fill="#fff" />;
     };
@@ -185,9 +188,9 @@ describe('loads the page starts', () => {
       useEffect(() => {
         const loop = () => {
           runs++;
-          requestAnimationFrame(loop);
+          raf(loop);
         };
-        requestAnimationFrame(loop);
+        raf(loop);
       }, []);
       // The transition makes the frame look back over a window of frames, which a replay of it would run the callbacks for again.
       return <div id="r" style={{ position: 'absolute', left: 0, top: 0, width: 4, height: 4, background: '#f00', transition: 'opacity 1s linear' }} />;

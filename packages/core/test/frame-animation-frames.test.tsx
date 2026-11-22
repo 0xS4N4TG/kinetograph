@@ -2,13 +2,16 @@
 // a repaint brings) is not stuck behind its own delayRender: callbacks run while a handle is open, and a frame whose
 // callbacks started more work (tiles from a worker) waits for it and runs the callbacks its end asked for.
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { continueRender, delayRender, resetRenderState } from '../src/assets.js';
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { resetVirtualClock, uninstallDeterminism, installDeterminism } from '../src/determinism.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 import { AbsoluteFill } from '../src/fill.js';
+
+// The page's requestAnimationFrame, which installDeterminism puts on the global; the package compiles without the DOM lib.
+const raf = (cb: (t: number) => void): number => (globalThis as any).requestAnimationFrame(cb);
 
 beforeEach(() => {
   installDeterminism();
@@ -30,7 +33,7 @@ describe('animation frames and delayRender', () => {
     function Page() {
       useState(() => {
         const handle = delayRender('idle', { timeoutInMilliseconds: 2000 });
-        requestAnimationFrame(() => {
+        raf(() => {
           log.push('painted');
           continueRender(handle);
         });
@@ -53,11 +56,11 @@ describe('animation frames and delayRender', () => {
           const handle = delayRender('tiles', { timeoutInMilliseconds: 2000 });
           setImmediate(() => {
             loaded = true;
-            requestAnimationFrame(paint);
+            raf(paint);
             continueRender(handle);
           });
         };
-        requestAnimationFrame(paint);
+        raf(paint);
       });
       return <AbsoluteFill />;
     }
@@ -72,9 +75,9 @@ describe('animation frames and delayRender', () => {
       useState(() => {
         const again = () => {
           runs++;
-          requestAnimationFrame(again);
+          raf(again);
         };
-        requestAnimationFrame(again);
+        raf(again);
       });
       return <AbsoluteFill />;
     }

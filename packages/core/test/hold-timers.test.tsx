@@ -9,6 +9,9 @@ import { Composition, registerRoot, resetCompositions } from '../src/composition
 import { installDeterminism, resetVirtualClock, uninstallDeterminism, virtualNow } from '../src/determinism.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
 
+// The page's requestAnimationFrame, which installDeterminism puts on the global; the package compiles without the DOM lib.
+const raf = (cb: (t: number) => void): number => (globalThis as any).requestAnimationFrame(cb);
+
 beforeEach(() => {
   resetCompositions();
   resetRenderState();
@@ -91,7 +94,7 @@ describe('a timeout set while the frame is held open', () => {
     function Both() {
       useState(() => {
         const handle = delayRender('waiting on a frame callback and a timeout');
-        requestAnimationFrame(() => {
+        raf(() => {
           log.push('raf');
           setTimeout(() => {
             log.push('hold:300');
