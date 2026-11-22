@@ -167,8 +167,9 @@ export function createEngine({ entry, bundleFile }: EngineOptions): Engine {
     dispose() {
       for (const source of sources.values()) void source.then((s) => s.dispose(), () => undefined);
       sources.clear();
-      // The ANGLE contexts this thread drew WebGL with go now: at the thread's end they would go under Windows' loader lock.
-      if (renderer) native().webglReleaseThread();
+      // The ANGLE contexts this thread drew WebGL with go now (a preview's renderer or a render's own): at the thread's end
+      // they would go under Windows' loader lock. Nothing happens on a thread that drew none.
+      native().webglReleaseThread();
       renderer = undefined;
     },
   };
