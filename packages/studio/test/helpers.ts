@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
@@ -8,15 +9,9 @@ export const STUB_ENGINE = fileURLToPath(new URL('./fixtures/stub-engine.mjs', i
 
 const scratch: string[] = [];
 
-// The test projects live under the package, not straight in the OS temp dir. esbuild reads the whole listing of every
-// directory above the project it builds, and a shared temp dir can hold tens of thousands of entries (other suites'
-// leftovers): builds in parallel test files then wait on each other's reads of it and a studio takes minutes to start.
-const ROOT = fileURLToPath(new URL('../.test-tmp/', import.meta.url));
-
 /** A directory that is removed by `cleanup`. */
 export function tempDir(): string {
-  mkdirSync(ROOT, { recursive: true });
-  const dir = realpathSync(mkdtempSync(join(ROOT, 'kinetograph-studio-test-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kinetograph-studio-test-')));
   scratch.push(dir);
   return dir;
 }

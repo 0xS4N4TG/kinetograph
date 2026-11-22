@@ -6,5 +6,7 @@ export default defineConfig({
   test: { include: ['test/**/*.test.ts'], testTimeout: 60_000, hookTimeout: 60_000,
     // No test asks the npm registry; the update-notice tests turn the notices back on with their own cache and fetch.
     env: { KINETOGRAPH_NO_UPDATE_CHECK: '1' },
+    // Every test's temp dirs go in a directory of the run's own, under /tmp (scripts/vitest-temp-dir.mjs).
+    globalSetup: ['../../scripts/vitest-temp-dir.mjs'],
   },
 });
