@@ -732,6 +732,12 @@ export interface WebglBackend {
 export declare function webglBackend(): WebglBackend
 
 /**
+ * Destroys the ANGLE contexts this thread drew WebGL with. A worker thread that rendered calls it before it ends: left to
+ * the thread's end, they are destroyed under Windows' loader lock, where a call into ANGLE can wait forever.
+ */
+export declare function webglReleaseThread(): void
+
+/**
  * The limits and WebGPU features of the engine's GPU device, as `navigator.gpu` of a page reports them
  * (`{ features, limits }` as JSON); `null` when there is no GPU. Opens the GPU once, on the first call.
  */

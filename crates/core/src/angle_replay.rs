@@ -61,6 +61,13 @@ thread_local! {
     static PROGRAMS: std::cell::RefCell<HashMap<ProgramKey, R<std::rc::Rc<Program>>>> = std::cell::RefCell::new(HashMap::new());
 }
 
+/// Forgets this thread's kept programs, buffers and textures: their contexts are about to be destroyed
+/// (`angle::release_thread`), and a context made after would not have them.
+pub(crate) fn forget_thread() {
+    CACHES.with(|c| c.borrow_mut().clear());
+    PROGRAMS.with(|p| p.borrow_mut().clear());
+}
+
 /// What a context keeps from frame to frame: the buffers and the uploaded textures by what they are made from (the same key
 /// the recording's id, the upload flags, and the stamp of the picture files), with an
 /// estimate of the bytes of each, and the textures whose green and blue read red. Objects the frame makes (targets,

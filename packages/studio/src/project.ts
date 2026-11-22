@@ -243,7 +243,8 @@ export class Project extends EventEmitter<ProjectEvents> {
     this.closed = true;
     await this.stopWatching?.();
     await this.applying;
-    await this.current?.worker.terminate();
+    // The engine disposes of what it holds on its own thread first (a call that does not finish is cut short).
+    await this.current?.worker.close();
     this.current = null;
     for (const file of this.written.splice(0)) rmSync(file, { force: true });
   }

@@ -110,8 +110,15 @@ try {
   const handle = async (message: Exclude<ToWorker, { type: 'split' } | { type: 'start' }>): Promise<void> => {
     if (message.type === 'finish') {
       log?.flush();
-      post({ type: 'done', artifacts: source.artifacts?.() ?? [] });
-      source.dispose();
+      const artifacts = source.artifacts?.() ?? [];
+      // Released and disposed before `done` is posted: the main thread terminates the worker when it hears it. This
+      // thread's ANGLE contexts would otherwise go at the thread's end, under Windows' loader lock.
+      try {
+        native().webglReleaseThread();
+        source.dispose();
+      } finally {
+        post({ type: 'done', artifacts });
+      }
       return;
     }
     const { scale, convertFormat, sequence, origin, step } = init!;
