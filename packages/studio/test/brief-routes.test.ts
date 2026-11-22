@@ -3,10 +3,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, 
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { findFfmpeg, safeRefName, sniff } from '../src/panels/brief-routes.js';
 import { panelRoutes, type PanelRouteContext } from '../src/panels/routes.js';
 import { cleanup, tempDir } from './helpers.js';
+
+// The contact sheet test runs ffmpeg twice; on a busy machine that passed vitest's 5 s default (1-2 s alone).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 let server: Server;
 let base: string;
