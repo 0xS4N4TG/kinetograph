@@ -10,6 +10,7 @@
 // One file is kept per family, weight and style. A face split by `unicodeRange` into several files (Google Fonts'
 // `latin` and `latin-ext`) keeps the one that covers basic Latin.
 
+import { fileURLToPath } from 'node:url';
 import { fetchFileCached, fetchFileCachedSync, FontDownloadError, type FontDownloadOptions } from './font-files.js';
 import { verifyLocked } from './remote-assets.js';
 import { noteFontProblem, registerFont } from './font-registry.js';
@@ -72,7 +73,8 @@ export class NodeFontFace {
     this.download = download;
     this.remote = /^https?:\/\//i.test(url) ? url : null;
     this.family = family.replace(/^['"]|['"]$/g, '');
-    this.path = this.remote === null ? url : '';
+    // A local source is a path or, as `loadFont` takes it, a `file://` URL.
+    this.path = this.remote === null ? (url.startsWith('file://') ? fileURLToPath(url) : url) : '';
     this.weight = descriptors.weight ?? 'normal';
     this.style = descriptors.style ?? 'normal';
     this.unicodeRange = descriptors.unicodeRange ?? 'U+0-10FFFF';
