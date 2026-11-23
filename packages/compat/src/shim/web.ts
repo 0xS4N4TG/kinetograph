@@ -11,7 +11,7 @@ import { resolveObjectURL } from 'node:buffer';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageData, Path2D, GL, GL2, WebGLContext, createGpu, GPU_GLOBALS, pictureOf, type CanvasPicture } from '@kinetographdev/scene';
-import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
+import { DOCUMENT_URL, resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
 import { pendingMediaLoads, reportMediaIssue } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
@@ -634,6 +634,27 @@ function webglGlobal(version: 1 | 2): typeof WebGLContext {
   return Object.assign(constructor, GL, version === 2 ? GL2 : {});
 }
 
+/**
+ * The page's `location`, shared by `window` and `document` and built from the document's URL, so it agrees with what
+ * a script reads back from `src` and `href`. Navigating is not supported: `assign`, `replace`, `reload` and setting
+ * `href` or any other part of the URL warn and change nothing.
+ */
+const pageLocation = (() => {
+  const url = new URL(DOCUMENT_URL);
+  const refuse = (what: string) => () => reportMediaIssue(`location.${what}: navigating is not supported; the page stays where it is`);
+  const location: Record<string, unknown> = {
+    origin: url.origin,
+    // A DOMStringList: a top-level page has no ancestors.
+    ancestorOrigins: { length: 0, item: () => null, contains: () => false, [Symbol.iterator]: [][Symbol.iterator] },
+    assign: refuse('assign'), replace: refuse('replace'), reload: refuse('reload'),
+    toString: () => url.href,
+  };
+  for (const part of ['href', 'protocol', 'host', 'hostname', 'port', 'pathname', 'search', 'hash'] as const) {
+    Object.defineProperty(location, part, { get: () => url[part], set: refuse(part), enumerable: true });
+  }
+  return location;
+})();
+
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
@@ -676,11 +697,7 @@ export function installDomGlobals(): void {
   define(g, 'requestIdleCallback', (callback: (deadline: object) => void) =>
     (g.setTimeout as typeof setTimeout)(() => callback({ didTimeout: false, timeRemaining: () => 50 }), 1) as unknown as number);
   define(g, 'cancelIdleCallback', (id: number) => (g.clearTimeout as typeof clearTimeout)(id));
-  define(g, 'location', {
-    href: 'http://localhost/', origin: 'http://localhost', protocol: 'http:', host: 'localhost', hostname: 'localhost',
-    port: '', pathname: '/', search: '', hash: '', assign() {}, replace() {}, reload() {},
-    toString() { return 'http://localhost/'; },
-  });
+  define(g, 'location', pageLocation);
   // In memory and empty at every start: Node's own (when it has one) is a file, which would make a frame depend on a previous run.
   define(g, 'localStorage', new LocalStorage(), true);
   define(g, 'sessionStorage', new LocalStorage(), true);
@@ -821,6 +838,7 @@ export function installDomGlobals(): void {
   define(g, 'CSSStyleDeclaration', CSSStyleDeclarationShim);
   define(g, 'Text', DomText);
   installDocumentMembers(doc, define);
+  define(doc, 'location', pageLocation);
   define(doc, 'getElementById', function (this: unknown, id: string) {
     return this instanceof DocumentShim ? this.getElementById(id) : (documentQuery(`#${CSS_ESCAPE(String(id))}`, true)[0] ?? null);
   });
