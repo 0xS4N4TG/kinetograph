@@ -181,6 +181,31 @@ export class ProgressEventShim extends Event {
   }
 }
 
+export interface ErrorEventInit extends EventInit {
+  message?: string;
+  filename?: string;
+  lineno?: number;
+  colno?: number;
+  error?: unknown;
+}
+
+/** What a worker dispatches when its script or a handler throws. Node 22 has no global `ErrorEvent`. */
+export class ErrorEventShim extends Event {
+  readonly message: string;
+  readonly filename: string;
+  readonly lineno: number;
+  readonly colno: number;
+  readonly error: unknown;
+  constructor(type: string, init: ErrorEventInit = {}) {
+    super(type, init);
+    this.message = init.message ?? '';
+    this.filename = init.filename ?? '';
+    this.lineno = init.lineno ?? 0;
+    this.colno = init.colno ?? 0;
+    this.error = init.error;
+  }
+}
+
 export interface KeyboardEventInit extends UIEventInit {
   key?: string;
   code?: string;

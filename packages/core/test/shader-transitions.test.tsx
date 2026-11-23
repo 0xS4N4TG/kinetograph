@@ -63,7 +63,8 @@ function idsIn(layer: LayerJson): string[] {
 /** The value of a uniform of the pass's only draw. */
 function uniform(pass: GlslPass, name: string): number[] {
   const draw = pass.ops!.find((op): op is { op: 'draw' } & GlslDraw => op.op === 'draw')!;
-  return draw.uniforms[name]![0]!.value;
+  // A value is null only for a NaN (GlslUniform); these transitions set none.
+  return draw.uniforms[name]![0]!.value as number[];
 }
 
 describe('a shader presentation', () => {

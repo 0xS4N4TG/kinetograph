@@ -1,9 +1,12 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { WorkerClient } from '../src/worker-client.js';
 import { api, cleanup, start, STUB_ENGINE, tempDir, until, writeProject } from './helpers.js';
+
+// Workers start slowly on a busy machine, as in the other files: a studio started here took 4.4 s of the default 5.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 afterAll(cleanup);
 

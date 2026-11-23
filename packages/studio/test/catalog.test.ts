@@ -85,8 +85,10 @@ describe('the catalog source', () => {
     site.reply = { body: JSON.stringify(feed(paper)), delayMs: 100 };
     const catalog = createCatalog({ url: site.url, cacheFile: cacheIn() });
     expect(catalog.origin()).toBe('bundled');
-    expect(catalog.get().length).toBeGreaterThan(0);
-    expect(catalog.get().every((p) => !p.published)).toBe(true);
+    // The bundled list as the package ships it, not the site's answer (which only names paper).
+    const bundled = parseCatalog(JSON.parse(readFileSync(new URL('../catalog/plugins.json', import.meta.url), 'utf8')));
+    expect(bundled?.length).toBeGreaterThan(1);
+    expect(catalog.get()).toEqual(bundled);
     await catalog.refreshed;
     expect(names(catalog.get())).toEqual(['@kinetographdev/paper']);
   });

@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { types } from 'node:util';
 import { createContext, runInContext, Script } from 'node:vm';
 import { resolveDocumentUrl } from '../environment.js';
+import { ErrorEventShim } from './events.js';
 import { HARDWARE_CONCURRENCY, projectFileOf } from './web.js';
 
 // ---- the queue ----
@@ -479,7 +480,7 @@ export class WorkerShim extends Target {
   /** The worker's script threw, or a handler did: an `error` event on the Worker, and when nobody handles it, an error on the page. */
   private fail(error: unknown): void {
     const message = types.isNativeError(error) ? error.message : String(error);
-    const event = new ErrorEvent('error', { message, error, filename: this.url, cancelable: true });
+    const event = new ErrorEventShim('error', { message, error, filename: this.url, cancelable: true });
     this.dispatchEvent(event);
     if (!event.defaultPrevented && this.slotOf('error') === null) reportUncaught(`${message} (in the worker ${this.url.slice(0, 80)})`);
   }
@@ -529,7 +530,7 @@ export class WorkerShim extends Target {
     // A handler that throws is an `error` event on the worker's own scope, then on the Worker.
     scope.onError = (error) => {
       const message = types.isNativeError(error) ? error.message : String(error);
-      const own = new ErrorEvent('error', { message, error, cancelable: true });
+      const own = new ErrorEventShim('error', { message, error, cancelable: true });
       scope.dispatchEvent(own);
       if (!own.defaultPrevented) this.fail(error);
     };

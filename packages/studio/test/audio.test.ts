@@ -82,15 +82,18 @@ describe('audio routes (stub engine)', () => {
   });
 
   it('a newer timeline request stops the sweep an older one is still making', async () => {
-    const slow = (n: number) => `&props=${encodeURIComponent(JSON.stringify({ _frameMs: 20, n }))}`;
-    const old = api(studio, `/api/timeline?comp=Main${slow(1)}`);
+    const sweep = (frameMs: number, n: number) => `/api/timeline?comp=Main&props=${encodeURIComponent(JSON.stringify({ _frameMs: frameMs, n }))}`;
+    const answered: string[] = [];
+    // The old sweep reads 90 frames at 200 ms (18 s), the fresh one at 20 ms (under 2 s): the old one is answered first
+    // only if the fresh request stopped it.
+    const old = api(studio, sweep(200, 1)).finally(() => answered.push('old'));
     await new Promise((resolve) => setTimeout(resolve, 150));
-    const started = Date.now();
-    const fresh = await api(studio, `/api/timeline?comp=Main${slow(2)}`);
+    const fresh = await api(studio, sweep(20, 2)).finally(() => answered.push('fresh'));
+    await old;
+    expect(answered).toEqual(['old', 'fresh']);
     expect(fresh.status).toBe(200);
     expect((await old).status).toBe(409);
     expect((await old).json.error.code).toBe('SUPERSEDED');
-    expect(Date.now() - started).toBeLessThan(4000);
   });
 });
 

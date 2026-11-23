@@ -164,7 +164,8 @@ describe.skipIf(native === null)('onVideoFrame with a canvas', () => {
       const luma = Math.round(0.2126 * gpu[i]! + 0.7152 * gpu[i + 1]! + 0.0722 * gpu[i + 2]!);
       expect(Math.abs(at(seen, 12).rgba[i]! - luma)).toBeLessThanOrEqual(1);
     }
-  });
+    // The file's only GPU draw opens the device; on CI's software Vulkan (lavapipe) that alone is seconds.
+  }, 30_000);
 
   it('is byte-stable: two runs, and a frame rendered alone, give the same bytes', async () => {
     const first: Seen[] = [];

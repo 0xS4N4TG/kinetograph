@@ -19,7 +19,7 @@ import {
   setInputProps,
   Still,
 } from '../src/compositions.js';
-import { importedStylesheets, setDomAddon } from '@kinetographdev/compat/dom';
+import { importedStylesheets, setDomAddon, type DomAddon } from '@kinetographdev/compat/dom';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism } from '../src/determinism.js';
 import { clearFonts, getFonts, registerFont, trackFontLoad } from '../src/font-registry.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
@@ -1124,7 +1124,7 @@ describe('a WebGL canvas that holds render targets', () => {
 
   const native = (() => {
     try {
-      return createRequire(import.meta.url)('@kinetographdev/native') as { renderDomIsland?: unknown };
+      return createRequire(import.meta.url)('@kinetographdev/native') as Partial<DomAddon>;
     } catch {
       return null;
     }

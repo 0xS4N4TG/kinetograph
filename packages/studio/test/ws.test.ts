@@ -140,12 +140,21 @@ describe('render progress over the socket', () => {
     const { entry } = writeProject('Main');
     const server = await start(entry);
     const client = await Client.connect(server);
+    // When the server sends each progress message. The client's receive times are no measure of the throttle: the
+    // server runs in this process, and a busy event loop reads two messages sent 100 ms apart in one turn.
+    const { WebSocket } = await import('ws');
+    const sent: number[] = [];
+    const realSend = WebSocket.prototype.send;
+    const spy = vi.spyOn(WebSocket.prototype, 'send').mockImplementation(function (this: InstanceType<typeof WebSocket>, data: unknown, ...rest: unknown[]) {
+      if (typeof data === 'string' && data.startsWith('{"type":"render"')) sent.push(Date.now());
+      return (realSend as (...a: unknown[]) => void).call(this, data, ...rest);
+    });
     const posted = await api(server, '/api/renders', { method: 'POST', json: { comp: 'Main', range: '0..60', props: { _renderFrameMs: 20 } } });
     const id = posted.json.id as string;
     const last = (): RenderJob | undefined => (client.messages('render') as { job: RenderJob }[]).filter((m) => m.job.id === id).at(-1)?.job;
     await until(last, (job) => job?.status === 'done', 15000);
+    spy.mockRestore();
 
-    const stamps = client.received.filter((r) => r.kind === 'json' && r.message.type === 'render').map((r) => r.at);
     const jobs = (client.messages('render') as { job: RenderJob }[]).map((m) => m.job);
     expect(jobs[0]!.status).toMatch(/queued|running/);
     expect(jobs.at(-1)).toMatchObject({ status: 'done', framesDone: 60, framesTotal: 60, error: null });
@@ -153,8 +162,12 @@ describe('render progress over the socket', () => {
     const done = jobs.map((j) => j.framesDone);
     expect(done).toEqual([...done].sort((a, b) => a - b));
     expect(jobs.length).toBeGreaterThan(4);
-    // 100 ms between messages (a little less to forgive timer and receive jitter).
-    for (let i = 1; i < stamps.length; i++) expect(stamps[i]! - stamps[i - 1]!, `message ${i}`).toBeGreaterThanOrEqual(80);
+    // 100 ms between messages as the server sends them. Over the whole job, not gap by gap: on a loaded machine the
+    // process can be paused between the throttle reading the clock and this spy reading it (seen: a 35 ms gap after a
+    // 192 ms one), which moves one reading and cannot add up across the job. One interval of slack covers the first
+    // and last readings. Unthrottled, the 60 frames would be about 60 messages in 1.2 s.
+    expect(sent.length).toBe(jobs.length);
+    expect(sent.at(-1)! - sent[0]!).toBeGreaterThanOrEqual((sent.length - 2) * 100);
     client.close();
   });
 
