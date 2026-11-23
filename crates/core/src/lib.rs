@@ -44,6 +44,7 @@ pub mod scene;
 pub mod scene_keys;
 pub mod scene3d;
 pub mod shader;
+pub mod stored_pixels;
 pub mod svg_picture;
 pub mod text;
 pub mod trace;
@@ -57,5 +58,5 @@ pub mod webgpu;
 mod tests;
 
 pub use error::{Error, Result};
-pub use render::{Frame, PendingFrame, Renderer, Timings, render_still, webgpu_device_info};
+pub use render::{Frame, PendingFrame, Renderer, Timings, render_still};
 pub use scene::Scene;

@@ -98,7 +98,12 @@ A `<canvas>` with a `webgl` or `webgl2` context runs on the GPU. What works, wha
 
 ## WebGPU
 
-A canvas's `getContext('webgpu')` records its calls, and the passes it submits are drawn on the engine's own device.
+WebGPU runs on Dawn, Chrome's WebGPU library, by default (`dawn.node` ships in each platform package). `KINETOGRAPH_WEBGPU=builtin` uses the engine's own layer instead. `doctor` shows the provider and backend.
+
+- Dawn needs an adapter: Metal on macOS, Vulkan on Linux (a driver, or with none the SwiftShader in the platform package; the Vulkan loader comes in the package), Direct3D 12 on Windows (WARP when there is no GPU).
+- With no adapter, no `dawn.node` or no Vulkan loader, the built-in layer draws, with one warning.
+
+The rest of this section describes the built-in layer: a canvas's `getContext('webgpu')` records its calls, and the passes it submits are drawn on the engine's own device.
 
 - Works: buffers, WGSL modules, render and compute pipelines and passes, 2D textures in the colour formats that need no optional feature, storage buffers and textures, uploads, copies and multi-pass shaders. `copyExternalImageToTexture` takes images, `ImageBitmap`, canvases, `<video>` and effect layers, and writes the four 8-bit RGBA formats only.
 - Not drawn, reported every frame: query sets, render bundles, indirect draws, depth and stencil, multisampling, texture arrays, 1D and 3D textures, comparison samplers, `viewFormats`, `importExternalTexture` (use `copyExternalImageToTexture`), readback (`mapAsync`, `copyTextureToBuffer`), the canvas's own texture as a source, overridable constants, and depth, compressed and optional-feature formats.
@@ -161,14 +166,13 @@ kinetograph fetch-deps my-video                   # the download alone; --update
 - This covers scripts, modules, data files a script names, remote `<video>` and `<audio>` (500 MB each, `--max-media-mb`) and pictures (50 MB each).
 - A file that isn't cached stops the command, naming the URL and `fetch-deps`. A picture is drawn without and reported.
 - A module or picture URL built at run time is found by running the first frames in the pre-pass. One seen only in an unsampled frame is downloaded on first use and noted; with `--offline` a module is an error naming the specifier. `doctor` gives the `fetch-deps` command for a picture it can't find.
-- A URL a page builds at run time (map tiles, styles) is recorded: `fetch-deps --record --allow-host <hosts>` runs every frame with the network open for those hosts and keeps each `fetch` response in `.kinetograph/net`, and a render answers only from it. A request that wasn't recorded is an error naming the URL and the frame. Secret query parameters (`access_token`, `key`, `token`, `sig`, signed-URL `x-amz-*`, and any `--secret-param`) are left out of the store and the lock, and a value that looks like a credential in any other parameter fails the pass unless it is named with `--keep-param`. Path segments are recorded as they are; one that looks like a credential is warned about.
 - `kinetograph.lock.json` beside the entry stores each file's SHA-256 and size; commit it. A changed file stops the command until `fetch-deps --update`.
 
 ## Not planned
 
 - `IFrame` is not drawn, because a real webpage needs a browser (reported).
 - `Internals`, `FolderContext`, `PathInternals` and `AudioForPreview` are internal to Remotion and not exported.
-- `@remotion/three` is `<ThreeCanvas>` over the project's own `three` and `@react-three/fiber`, drawn through the WebGL stand-in; `useVideoTexture` is not available, and the engine's 3D layer (`Scene3D`) is the alternative. `@remotion/player` is replaced by the studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
+- `@remotion/three` and `@remotion/player` are replaced by the engine's 3D layer and studio. `renderer`, `bundler`, `cli` and `lambda` are replaced by the Kinetograph CLI.
 - `tailwind` and `tailwind-v4` only configure webpack, so do nothing. Tailwind itself works.
 
 ## Can differ by a pixel

@@ -12,6 +12,8 @@ Kinetograph is in beta, so APIs can still change between versions.
 - Video with transparency: ProRes 4444 (`.mov`) and VP9 (`.webm`) keep alpha. Codecs that cannot carry it (H.264, H.265, GIF, hardware encoders) are refused when alpha is asked for (#102).
 - `kinetograph matte` and `@kinetographdev/video-matting` remove a video's background with MODNet or BEN2, with no browser and no Python. Studio has a Remove background dialog. Models download on first use.
 - `kinetograph add hyperframes/<name>` installs a block or component from the HyperFrames registry.
+- Dawn is the default WebGPU provider; `KINETOGRAPH_WEBGPU=builtin` uses the earlier built-in layer. `dawn.node` ships in each platform package (`dawn/`), pinned by checksum, at 5.9 MB (macOS), 7.2 MB (Linux) and 14.3 MB (Windows) compressed; there is no `webgpu` package to install.
+- Dawn with no GPU: Windows uses WARP, Linux uses the SwiftShader that `angle/` carries (`KINETOGRAPH_WEBGPU_BACKEND=swiftshader` forces it); with no adapter or no `dawn.node` the built-in WebGPU draws, with one warning. Linux and Windows packages carry the Vulkan loader for Dawn in `dawn/`, so Dawn needs no `libvulkan1`. `doctor` shows the provider and backend.
 - `--timeout <ms>` on every command that opens a project sets the `delayRender()` timeout; `delayRender(label, { timeoutInMilliseconds })` wins over it (#101).
 - CSS `clip-path: path(evenodd, ...)` and `polygon(evenodd, ...)` cut holes (#106).
 - `image-rendering: pixelated` and `crisp-edges` on `<img>`, CSS backgrounds, border images and SVG `<image>` (#105).
@@ -49,14 +51,15 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Changed
 
+- A WebGPU call that is invalid is reported every frame (an error under `--strict`) even when the page catches it; `popErrorScope` resolves with the error.
+- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
+- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
+- Node's process warnings printed through `console.error` are no longer reported as page errors.
 - Kinetograph is open source under the Apache License 2.0. Versions 0.3.0 and earlier stay under PolyForm Small Business 1.0.0.
 - `doctor` says to use `loadFont` when a font family or a glyph is missing, and that system fonts are not used (#107).
 - A `--json` command keeps the page's logs off stdout.
 - HyperFrames: the plan reports Three.js only for what the WebGL stand-in could not draw.
 - The docs have a new structure (Getting started, Making videos, Studio, Rendering, Agents, Plugins, Migrating, Compare), a Tips for better videos section and Studio panel pages; old URLs redirect.
-- Dependencies are bundled as a browser bundler resolves them (`module` field and `import` condition before `main`), so a package is in the bundle once.
-- A `setTimeout` made while a frame is held open fires when nothing else is moving, so a Suspense reveal does not stall the frame.
-- Node's process warnings printed through `console.error` are no longer reported as page errors.
 - A frame a HyperFrames worker plays through to reach its chunk is not rendered: only the clips, the timelines, `hf-seek` and the videos' `currentTime` are done (film 9.41 → 8.50 s, mg1 3.39 → 3.21 s).
 - A bundle whose inputs have not changed is used again instead of built again, and Node's compile cache (`~/.cache/kinetograph/compile-cache`) serves the CLI and the render workers (compat 0.78 → 0.64 s, mg2 0.86 → 0.71 s).
 - A HyperFrames page's collapsed-root check is answered by the render that draws the frame (its size and overflow come back in the island's output) instead of a layout readback of its own (film 9.98 → 8.90 s, steady JS 11.7 → 9.2 ms a frame).
@@ -83,10 +86,10 @@ Kinetograph is in beta, so APIs can still change between versions.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.
 - XML elements pass `instanceof Element`, and SVG ones `instanceof SVGElement`.
 - Decoded page audio lives in the user's private cache folder and is checked by SHA-256 before use.
+- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - A `delayRender()` that was never cleared times out with its label (`DELAY_RENDER_TIMEOUT`) instead of ending `still`, `render` and `doctor` silently with exit code 13 (#101).
 - HyperFrames: a sub-composition's root is found by the id its file gave it, so its script's `getElementById` and `#id` selectors work and its timeline registers (#109).
 - A relative-URL `Request` resolves against the document.
-- WebGL render targets keep what was drawn into them across frames, so an environment map Three.js prefilters (`PMREMGenerator`) once reflects in every frame, not only in the first.
 - HyperFrames: `template.content` is the DOM shim's own fragment, so `content.getElementById(...)` works (a runtime stand-in `div` had none), as do the fragment's other methods.
 - HyperFrames: `Impact`, which HyperFrames reads from the machine that renders, is set in the bundled Archivo Black (a heavy face) instead of the regular weight of the next family, and the page is told once.
 - A canvas reads `color(srgb ...)` for `fillStyle`, `strokeStyle`, gradient stops and shadows, which is how `getComputedStyle` gives a `color-mix()` (ink-bleed-reveal drew black).

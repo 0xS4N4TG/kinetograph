@@ -112,7 +112,8 @@ try {
       log?.flush();
       const artifacts = source.artifacts?.() ?? [];
       // Released and disposed before `done` is posted: the main thread terminates the worker when it hears it. This
-      // thread's ANGLE contexts would otherwise go at the thread's end, under Windows' loader lock.
+      // thread's ANGLE contexts would otherwise go at the thread's end, under Windows' loader lock, and a worker stopped in
+      // the middle of `dispose` (which destroys the page's WebGPU devices) aborts the process inside the library.
       try {
         native().webglReleaseThread();
         source.dispose();

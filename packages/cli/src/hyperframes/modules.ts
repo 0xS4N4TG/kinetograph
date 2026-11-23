@@ -330,6 +330,8 @@ async function bundle(state: PluginState, format: 'iife' | 'esm'): Promise<strin
     platform: 'browser',
     target: 'es2022',
     logLevel: 'silent',
+    // A browser runs a call marked /* @__PURE__ */ even when nothing uses it; a page that seeds Math.random counts those calls.
+    ignoreAnnotations: true,
     metafile: true,
     plugins: [modulePlugin(state)],
   });

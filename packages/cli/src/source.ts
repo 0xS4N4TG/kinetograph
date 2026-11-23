@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import type { ArtifactRecord, CompositionInfo, FrameRenderer } from '@kinetographdev/core';
 import type { AudioClipJson, LayerName, PageAudioOp, SequenceJson, Unsupported } from '@kinetographdev/scene';
 import { bundleProject, type UnsupportedImport } from './bundle.js';
+import { prepareCliDawn } from './dawn.js';
 import { CliError } from './errors.js';
 import { installDynamicImport, installRemotePictures } from './hyperframes/dynamic.js';
 import { isHyperframesEntry, resolveEntry } from './hyperframes/entry.js';
@@ -175,6 +176,9 @@ async function loadProject(
   const file = bundleFile ?? (await bundleProject(entry, unsupported ? { unsupported } : {})).file;
   // A Remotion project: the remote pictures and videos its bundle names, before the project runs.
   if (prefetch !== null) await prefetchBundleAssets(entry, file, prefetch);
+  // Dawn or the built-in WebGPU is decided, and a SwiftShader the Vulkan loader needs is set, before the workers are made (`onBundle`): they copy the
+  // environment as it is then, and take the decision from it.
+  await prepareCliDawn(prefetch?.progress);
   onBundle?.(file);
   process.setSourceMapsEnabled(true);
   // A HyperFrames page's `import()` of a specifier built at run time is answered by the host.
@@ -186,6 +190,8 @@ async function loadProject(
   const publicDir = publicDirOf(entry);
   process.env.KINETOGRAPH_PUBLIC_DIR = publicDir;
   process.env.KINETOGRAPH_BASE_DIR = dirname(entry);
+  // Dawn (KINETOGRAPH_WEBGPU=dawn) is the addon's platform package's dawn.node: found from here, not from the bundle's folder in the project.
+  // Decided above, before the bundle runs, which installs `navigator.gpu` as it loads.
   let mod: ProjectModule;
   try {
     mod = (await import(pathToFileURL(file).href)) as ProjectModule;

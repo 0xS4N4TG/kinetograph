@@ -2312,17 +2312,6 @@ async fn new_gpu() -> std::result::Result<(wgpu::Instance, wgpu::Device, wgpu::Q
     Err(why)
 }
 
-/// The limits and WebGPU features of the device a render opens, as `navigator.gpu` reports them (`webgpu::device_info`),
-/// as JSON; none when there is no GPU. The device is opened once to read them and dropped.
-pub fn webgpu_device_info() -> Option<String> {
-    static INFO: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    INFO.get_or_init(|| {
-        let (_instance, device, _queue) = pollster::block_on(new_gpu()).ok()?;
-        Some(crate::webgpu::device_info(&device).to_string())
-    })
-    .clone()
-}
-
 /// One adapter as a line of the start-up trace.
 fn adapter_line(info: &wgpu::AdapterInfo) -> String {
     format!(

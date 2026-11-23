@@ -14,7 +14,8 @@ import { CANVAS_SOURCE, CanvasContext2D, CanvasGradient, CanvasPattern, ImageDat
 import { DOCUMENT_URL, resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOriginPath } from '../environment.js';
 import { netFetch } from './net-store.js';
 import { pendingMediaLoads, reportMediaIssue } from './media.js';
-import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
+import { OffscreenCanvasShim, rasterizeCanvas } from './canvas.js';
+import { dawnGlobals, dawnRequested, installDawn } from './webgpu-dawn.js';
 import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { XmlElement } from './xml.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
@@ -443,6 +444,27 @@ export function trackPending<T>(work: Promise<T>): Promise<T> {
   });
 }
 
+let readbacksInFlight = 0;
+
+/** The part of `pendingFetches` that is a GPU readback (`trackReadback`). */
+export function pendingReadbacks(): number {
+  return readbacksInFlight;
+}
+
+/**
+ * Counts `work`, the end of a read of the GPU's results (`mapAsync`, `onSubmittedWorkDone`), as a fetch in flight, so a frame waits for it,
+ * but not as a load: nothing waited for here is a reason to run the animation-frame callbacks again (`pendingReadbacks`), as a browser
+ * runs them once per frame whatever the page awaits, so a page that adds to a rotation in one moves by one step per frame.
+ */
+export function trackReadback<T>(work: Promise<T>): Promise<T> {
+  inFlight++;
+  readbacksInFlight++;
+  return work.finally(() => {
+    inFlight--;
+    readbacksInFlight--;
+  });
+}
+
 function makeFetch(real: typeof fetch): typeof fetch {
   const answer = makeAnswer(real);
   return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -656,6 +678,21 @@ const pageLocation = (() => {
 })();
 
 /** Puts `window`, `document`, `Image`, `matchMedia`, the observers and a project-files-only `fetch` on the global object. */
+/**
+ * Dawn for this thread, or null when it cannot start here (no binary for the platform, one that does not load, no adapter): the built-in WebGPU
+ * layer then draws, said once, for a host that did not decide before it ran (the CLI and Studio do, `prepareCliDawn`). `KINETOGRAPH_WEBGPU=builtin`
+ * is set in this thread's environment, so its canvases take the built-in context too.
+ */
+function installDawnOrBuiltin(): unknown {
+  try {
+    return installDawn({ track: trackPending, trackReadback, rasterize: rasterizeCanvas });
+  } catch (error) {
+    process.env.KINETOGRAPH_WEBGPU = 'builtin';
+    process.stderr.write(`warning: WebGPU through Dawn cannot be used here, so the built-in WebGPU layer draws instead: ${(error as Error).message.replace(/^Dawn: /, '')}\n`);
+    return null;
+  }
+}
+
 export function installDomGlobals(): void {
   const g = globalThis as Record<string, unknown>;
   setImageSizeReader(imageSizeAt);
@@ -712,7 +749,9 @@ export function installDomGlobals(): void {
   define(g, 'WebGLRenderingContext', webglGlobal(1));
   define(g, 'WebGL2RenderingContext', webglGlobal(2));
   // `navigator.gpu` records (packages/scene/src/webgpu.ts); the canvas's 'webgpu' context is made by `getContext`.
-  for (const [name, value] of Object.entries(GPU_GLOBALS)) define(g, name, value);
+  // KINETOGRAPH_WEBGPU=dawn: the page gets Dawn's own objects (webgpu-dawn.ts).
+  const dawn = dawnRequested() ? installDawnOrBuiltin() : null;
+  for (const [name, value] of Object.entries(dawn === null ? GPU_GLOBALS : dawnGlobals())) define(g, name, value);
   const navigator = (g.navigator ??= {}) as Record<string, unknown>;
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: HARDWARE_CONCURRENCY, configurable: true, enumerable: true });
   // A camera, a microphone or a screen is not there to capture: the request is refused at once (a page that waits for the
@@ -731,7 +770,7 @@ export function installDomGlobals(): void {
       enumerable: false,
     });
   }
-  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: createGpu({ rasterize: rasterizeCanvas, info: webgpuDeviceInfo }), configurable: true, enumerable: false });
+  if (!('gpu' in navigator)) Object.defineProperty(navigator, 'gpu', { value: dawn ?? createGpu({ rasterize: rasterizeCanvas }), configurable: true, enumerable: false });
   define(g, 'CanvasGradient', CanvasGradient);
   define(g, 'CanvasPattern', CanvasPattern);
   define(g, 'Path2D', Path2D);

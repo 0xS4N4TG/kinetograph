@@ -637,8 +637,10 @@ draws the island's layers wrongly), see below).
   has `opacity`, a filter, `clip-path`, `mask`, `mix-blend-mode`, `isolation`, `contain: paint`, `backdrop-filter` or
   `overflow: hidden` is flattened (as CSS Transforms 2 does) and drawn as a flat group with its effect.
 - A canvas (2D, WebGL or WebGPU) starts empty each frame; `preserveDrawingBuffer` does not carry a frame into the next.
-  WebGPU on a canvas (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's
-  GPU device; its gaps are in `/docs/compat/#webgpu`. `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
+  WebGPU on a canvas runs on Dawn (Chrome's WebGPU library, `dawn.node` in the platform package) by default; with no adapter or
+  no `dawn.node` the built-in layer draws, with one warning, and `KINETOGRAPH_WEBGPU=builtin` picks it. The built-in layer
+  (buffers, WGSL render and compute pipelines, storage buffers and textures) replays on the engine's GPU device; its gaps are in
+  `/docs/compat/#webgpu`. Dawn brings its own Vulkan loader on Linux (no `libvulkan1`). `<Video datamosh>` is AUTHORING.md §11.8. Libraries and
   HyperFrames: AUTHORING.md §11.10 and §11.11.
 
 ### Paint order
@@ -720,7 +722,7 @@ them, with the context attributes of a case's second line) in Chrome for Testing
 a mean of 1 level (1.5 for the cube render target on Metal), and compares ANGLE's picture with its golden
 (`tests/golden/angle`, from Metal on the M4; SwiftShader is held to Chrome's picture only).
 
-A canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
+With `KINETOGRAPH_WEBGPU=builtin`, a canvas with a WebGPU context (`getContext('webgpu')`, with `navigator.gpu`) is the same again: `packages/scene/src/webgpu.ts`
 records the device (buffers, WGSL modules, bind group layouts, render and compute pipelines, bind groups, command encoders with render
 and compute passes into `getCurrentTexture()` or into a 2D texture, textures, views and samplers, `queue.writeBuffer`, `writeTexture`,
 `copyExternalImageToTexture`, `submit`) and the canvas context writes the `webgpu` part of the
@@ -747,7 +749,7 @@ or Rgba16Float for an `rgba16float` canvas, whose half floats reach the linear c
 and turned into sRGB primaries there (values clipped to 0..1 first, as the standard tone mapping does, and colours outside
 sRGB clipped at the video's encode, the output being SDR). The buffer is flushed first because earlier glsl layers' place
 passes read it. The dom painter reads every module with naga
-(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (query sets, bundles, depth, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
+(`webgpu::check`) and reports a module that is wrong, a texture out of range, and each call the recorder does not draw (stencil, a multisampled texture that is sampled or copied, readback, `extended` tone mapping), as an unsupported `webgpu` item of the canvas, every frame; `--strict` fails on them.
 A module wgpu then refuses is a warning on stderr and a transparent canvas, never a panic.
 
 WebGPU compute. `createComputePipeline` and `createComputePipelineAsync` record a `computePipelines` entry (module, entry point,
@@ -769,9 +771,36 @@ page carries from frame to frame; the frame is then drawn from the replayed hist
 format against the layout's `sampleType` or storage format, one level for a storage texture), layout (storage formats and
 access, stages, counts against the limits) and dispatch (each dimension; at most 4096 dispatches and 2^26 workgroups in a
 frame), and `check_with` reads the workgroup size of each compute entry point with naga; the page side throws for the same.
-`device.limits` and `adapter.limits` are `webgpu::device_info` of the engine's device (the `webgpuDeviceInfo` function of
-the addon opens the GPU once), `float32-filterable` is requested of the adapter so that 32-bit float textures can be
-filtered where the hardware does, and a `requestDevice` for better limits is refused. A texture is made with
+A render pass with no colour attachment is a `render` step with `depthOnly: true` and no `target` (without the flag a pass with no
+target is the canvas's), and a depth texture may be the whole-level source and destination of `copyTextureToTexture`, so a
+shadow map is made by a depth-only pass, copied, and read by a comparison sampler.
+A render pass with several colour attachments is a `render` step whose `target`, `resolve` and `clear` are the first and `more` the
+rest (each a level and layer with its own `clear` and `resolve`), all textures of one size and sample count, as many as
+`maxColorAttachments`; the canvas's texture cannot be one of several. `webgpu::validate` checks the sizes, samples, distinct
+levels and the count, and wgpu refuses a pass over `maxColorAttachmentBytesPerSample` (a warning and a transparent canvas).
+A texture may have array layers (`Texture.layers`, up to `maxTextureArrayLayers`, not multisampled). A view is a `2d` view of one
+layer or a `2d-array` view of a range (`baseLayer`, `layers`, `dimension`), a layout's `viewDimension` says which a binding
+takes, and a pass's target, resolve target and depth attachment, an upload and each corner of a copy name their `layer`. The
+log keys a level and layer (`<texture>:<mip>:<layer>`), so a layer nothing reads is not replayed; writes and copies of several
+layers are recorded one step a layer, and a storage texture binding takes a `2d` view of one layer.
+Query sets (`webgpu-queries.ts`) are accepted and measure nothing: `createQuerySet`, `timestampWrites`, occlusion queries and
+`writeTimestamp` record no step, and `resolveQuerySet` writes zeros into its destination (a `clearBuffer` step), because a
+timestamp is never the clock and a frame is a function of its calls. `timestamp-query` is offered whatever the device has:
+three.js's Inspector sets `trackTimestamp` on the backend directly, so hiding the feature would not make it skip the path.
+An invalid call throws in the page, and every method of the device, queue, encoders, pipelines, texture and buffer, and the canvas's `configure` and `getCurrentTexture`, records the error on the
+device before it throws on (`webgpu-errors.ts`): the frame lists them in `WebGpuContent.errors` (32 different at most), which the
+painter reports as unsupported `webgpu` items (a warning, an error under `--strict`) even when the page caught the exception and
+carried on. `pushErrorScope` and `popErrorScope` keep a stack: the innermost `validation` scope keeps the first error raised
+inside it and `popErrorScope` resolves with it as a `GPUValidationError`, or null. Inside a `validation` scope the page's own call
+does not throw (a browser's does not): a RangeError or Error is kept by the scope and the call returns an invalid object that takes
+any call. A TypeError still throws, as does a call the engine does not draw. Outside a scope the call throws. There is no
+`uncapturederror` event, and `requestDevice` and a `getCurrentTexture` on a canvas that was never configured are not reported
+with the frame (no device holds them; the promise rejects or the call throws, as in a browser).
+`device.limits` and `adapter.limits` are the WebGPU default limits and the adapter's features the fixed list `float32-filterable`
+and `timestamp-query`, on every machine (the device the page sees does not depend on the GPU that renders), and a
+`requestDevice` for better limits or other features is refused. `webgpu::validate_with` checks against `Limits::advertised()`
+too, not against the host's device; the replay warns once for a host limit below the default or a host without
+`float32-filterable` (`webgpu::shortfalls`). A texture is made with
 `STORAGE_BINDING` only when the recording has a compute pipeline, a storage texture layout or a `texture_storage_` module,
 and only the usages its format allows. Atomics whose result depends on the order invocations run in are not made
 deterministic by the engine. HyperFrames' runtime

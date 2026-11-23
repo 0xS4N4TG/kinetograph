@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
-import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames, projectRootOf } from 'kinetograph';
+import { bundlePanel, cliVersion, CliError, findPlugins, pluginToolNames, prepareCliDawn, projectRootOf } from 'kinetograph';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { REAL_ENGINE_FILE } from './worker-client.js';
 import { createCatalog, type CatalogSource } from './catalog.js';
@@ -135,6 +135,9 @@ export async function startStudio(options: StudioOptions): Promise<StudioServer>
   const log = options.log ?? (() => undefined);
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
 
+  // Dawn or the built-in WebGPU is decided here, before the first worker is made: a worker copies this environment (KINETOGRAPH_WEBGPU, and the
+  // Vulkan loader's for SwiftShader) when it starts, and does not decide itself (`prepareCliDawn` returns at once off the main thread).
+  await prepareCliDawn(log);
   const project = new Project({ entry, engine: options.engine ?? REAL_ENGINE_FILE, log });
   const queue = new RenderQueue({ spawn: (cancel) => project.spawn('render', project.bundleFile, cancel) });
   const sockets = new Set<WebSocket>();

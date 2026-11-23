@@ -76,9 +76,9 @@ describe('the recording WebGPU context', () => {
 
   it('says what it does not draw: the call throws and the frame reports it', async () => {
     const { context, device } = await page(0);
-    expect(() => (device as GPUDeviceShim).createQuerySet()).toThrow(WebGpuUnsupportedError);
-    expect(() => device.createRenderBundleEncoder()).toThrow(/^unsupported:/);
-    expect(context.content().webgpu!.notes).toEqual(['query sets', 'render bundles']);
+    expect(() => (device as GPUDeviceShim).importExternalTexture()).toThrow(WebGpuUnsupportedError);
+    expect(() => device.importExternalTexture()).toThrow(/^unsupported:/);
+    expect(context.content().webgpu!.notes).toEqual([expect.stringContaining('importExternalTexture')]);
     expect(context.drawn).toBe(true);
   });
 
@@ -161,5 +161,19 @@ describe('the recording WebGPU context', () => {
       expect(() => mapped.getMappedRange(4, 8)).toThrow(WebGpuUnsupportedError);
       expect(() => mapped.mapAsync()).toThrow(WebGpuUnsupportedError);
     });
+  });
+});
+
+describe('the WebGPU interface globals', () => {
+  it('names the interfaces a page tests with instanceof, so that a page can tell what it holds', async () => {
+    const { GPU_GLOBALS } = await import('../src/index.js');
+    const device = await (await createGpu().requestAdapter()).requestDevice();
+    const g = GPU_GLOBALS as Record<string, new () => unknown>;
+    expect(device).toBeInstanceOf(g.GPUDevice);
+    expect(device.createBuffer({ size: 4, usage: 8 })).toBeInstanceOf(g.GPUBuffer);
+    expect(device.queue).toBeInstanceOf(g.GPUQueue);
+    expect(device.createCommandEncoder()).toBeInstanceOf(g.GPUCommandEncoder);
+    // Render bundles are not drawn, so nothing is one, but the name has to exist for `x instanceof GPURenderBundleEncoder`.
+    expect({}).not.toBeInstanceOf(g.GPURenderBundleEncoder);
   });
 });

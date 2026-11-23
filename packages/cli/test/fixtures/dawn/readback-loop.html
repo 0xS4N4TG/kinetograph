@@ -1,0 +1,27 @@
+<!doctype html><html><head><style>body{margin:0;background:#000}</style></head>
+<body><div id="kg-root" data-composition-id="main" data-width="64" data-height="64" data-duration="10" style="position:relative;width:64px;height:64px;overflow:hidden"><canvas id="c" width="64" height="64"></canvas>
+<script type="module">
+// An animation-frame loop that reads the GPU's results back each frame (as three.js's inspector does with timestamp queries) and
+// adds one to a counter per callback. The red of the picture is 16 for each callback that has run: a browser runs one per frame
+// whatever the page awaits, so frame N is 16 * (N + 1).
+const canvas = document.getElementById('c');
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+const context = canvas.getContext('webgpu');
+context.configure({ device, format: navigator.gpu.getPreferredCanvasFormat(), alphaMode: 'opaque' });
+// A copy big enough that the read does not end within the turn of the event loop that started it.
+const SIZE = 64 << 20;
+const source = device.createBuffer({ size: SIZE, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+const readback = device.createBuffer({ size: SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+let n = 0;
+function frame() {
+  n++;
+  const enc = device.createCommandEncoder();
+  enc.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: (16 * n) / 255, g: 0, b: 0, a: 1 } }] }).end();
+  enc.copyBufferToBuffer(source, 0, readback, 0, SIZE);
+  device.queue.submit([enc.finish()]);
+  requestAnimationFrame(frame);
+  readback.mapAsync(GPUMapMode.READ).then(() => readback.unmap());
+}
+requestAnimationFrame(frame);
+</script></div></body></html>

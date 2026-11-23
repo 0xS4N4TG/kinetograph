@@ -94,16 +94,17 @@ describe.skipIf(!ready)('rendering a HyperFrames project', () => {
     expect(near(seen[45]!, [0, 0, 255])).toBe(true);
   });
 
-  it('draws a WebGPU canvas from the time hf-seek gives it, the same alone, in sequence and across workers, with nothing unsupported', () => {
+  // Both providers, named: KINETOGRAPH_WEBGPU=dawn (the default) and builtin (the hand-written layer).
+  it.each(['dawn', 'builtin'])('draws a WebGPU canvas from the time hf-seek gives it, the same alone, in sequence and across workers, with nothing unsupported (%s)', (provider) => {
     const webgpu = join(here, 'fixtures', 'hf-webgpu');
     const flags = ['--encoder', 'libx264', '--crf', '0', '--pixel-format', 'yuv444p', '--strict'];
-    expect(run(['render', webgpu, '-o', join(dir, 'gpu-seq.mp4'), '--concurrency', '1', '--range', '0..=20', ...flags]).status).toBe(0);
-    expect(run(['render', webgpu, '-o', join(dir, 'gpu-two.mp4'), '--concurrency', '2', '--range', '0..=20', ...flags]).status).toBe(0);
-    expect(run(['render', webgpu, '-o', join(dir, 'gpu-alone.mp4'), '--concurrency', '1', '--range', '20..=20', ...flags]).status).toBe(0);
-    const seq = framemd5('gpu-seq.mp4');
+    expect(run(['render', webgpu, '-o', join(dir, `gpu-seq-${provider}.mp4`), '--concurrency', '1', '--range', '0..=20', ...flags], { KINETOGRAPH_WEBGPU: provider }).status).toBe(0);
+    expect(run(['render', webgpu, '-o', join(dir, `gpu-two-${provider}.mp4`), '--concurrency', '2', '--range', '0..=20', ...flags], { KINETOGRAPH_WEBGPU: provider }).status).toBe(0);
+    expect(run(['render', webgpu, '-o', join(dir, `gpu-alone-${provider}.mp4`), '--concurrency', '1', '--range', '20..=20', ...flags], { KINETOGRAPH_WEBGPU: provider }).status).toBe(0);
+    const seq = framemd5(`gpu-seq-${provider}.mp4`);
     expect(seq).toHaveLength(21);
-    expect(framemd5('gpu-two.mp4')).toEqual(seq);
-    expect(framemd5('gpu-alone.mp4')[0]).toBe(seq[20]);
+    expect(framemd5(`gpu-two-${provider}.mp4`)).toEqual(seq);
+    expect(framemd5(`gpu-alone-${provider}.mp4`)[0]).toBe(seq[20]);
     // The time moves the picture.
     expect(seq[0]).not.toBe(seq[20]);
   });

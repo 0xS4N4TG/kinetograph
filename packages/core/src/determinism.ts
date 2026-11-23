@@ -13,7 +13,7 @@
 // real timer functions are kept here for the shim's own use: the delayRender
 // timeout needs real time to fail, and nothing else may.
 
-import { animationClockMoved, animationsPending, dispatchPageInput, mediaPending, pageInputDue, resetAnimations, resetMedia, setAnimationClock, setMediaClock, tickAnimations, tickMedia } from '@kinetographdev/compat/shim';
+import { animationClockMoved, animationsPending, dispatchPageInput, duringAnimationFrames, mediaPending, pageInputDue, resetAnimations, resetMedia, setAnimationClock, setDawnClock, setMediaClock, tickAnimations, tickMedia } from '@kinetographdev/compat/shim';
 import { setGsapTime } from './gsap-clock.js';
 import { replayPageAudio, resetPageAudio } from './page-audio.js';
 
@@ -71,6 +71,8 @@ interface Timer {
 }
 
 let holdProbe: () => boolean = () => false;
+/** True while a hold timer's callback runs: a timeout it sets follows the frame clock (a page's own polling loop would otherwise fire for ever, in no time). */
+let firingHold = false;
 
 /** Says whether the frame being rendered is held open (a `delayRender` handle, a font or an image still loading). */
 export function setHoldProbe(probe: () => boolean): void {
@@ -218,7 +220,6 @@ function fireTimersUpTo(target: number): void {
  * time: the clock does not move. A frame held on something that waits for a timeout (React's 300 ms throttle of a Suspense
  * reveal) would otherwise wait for ever, since the clock only moves between frames. Returns false when there is none.
  */
-let firingHold = false;
 export function fireHoldTimer(): boolean {
   let best: Timer | null = null;
   for (const timer of timers.values()) {
@@ -297,7 +298,10 @@ export function animationFramesQueued(): boolean {
 export function runAnimationFrames(): void {
   const due = animationQueue;
   animationQueue = [];
-  for (const entry of due) entry.callback(virtualMs);
+  // What a Dawn page's callbacks do is not for a replay of the skipped frames to repeat (webgpu-dawn-carry.ts).
+  duringAnimationFrames(() => {
+    for (const entry of due) entry.callback(virtualMs);
+  });
 }
 
 /**
@@ -344,6 +348,8 @@ export function virtualNow(): number {
 setAnimationClock(virtualNow);
 // Media elements play on the same clock.
 setMediaClock(virtualNow);
+// What a Dawn page's frames are dated by (the carry rules of `webgpu-dawn-carry.ts`): the frame's time, not the page's `performance.now`.
+setDawnClock(virtualNow);
 
 /** The frames per second of the last `setVirtualFrame`. */
 export function virtualFps(): number {

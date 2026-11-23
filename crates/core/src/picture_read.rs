@@ -218,6 +218,7 @@ impl PictureReader {
                 })))
             }
             CanvasSource::Pixels { .. }
+            | CanvasSource::Stored { .. }
             | CanvasSource::Canvas { .. }
             | CanvasSource::Layer { .. }
             | CanvasSource::Ref { .. } => Ok(None),

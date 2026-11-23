@@ -755,7 +755,7 @@ Mapping onto the engine:
     frame to frame, which differs only for an effect whose picture depends on what earlier frames left in it. A
     `webgpu` effect runs on a recording device (`gpuDevice`) and canvas: copy the picture with
     `queue.copyExternalImageToTexture({ source }, ...)` into an `rgba8unorm` texture and sample it. One that makes a call that
-    is not drawn (query sets, depth, readback, ...) is drawn without, with a warning once and an unsupported item, so
+    is not drawn (render bundles, stencil, readback, ...) is drawn without, with a warning once and an unsupported item, so
     `--strict` fails.
   - `<Solid width height color>` is a box of that size and colour; `<CanvasImage src width height fit>` the picture
     fitted into it (an image layer when nothing needs CSS, an `img` with the `object-fit` and crop when it does). With

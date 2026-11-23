@@ -15,8 +15,8 @@ import { CANVAS_SOURCE, VIDEO_FRAME, fontKey, type CanvasContext2D, type CanvasP
 import type { GlRecorder } from './canvas.js';
 import {
   bitmapSide,
-  canvasCommandsOf,
   canvasPictureOf,
+  canvasReadCommandsOf,
   canvasToBlob,
   canvasToDataUrl,
   contextOfHost,
@@ -1556,11 +1556,11 @@ export class DomElement extends DomNodeBase {
   }
   toDataURL(): string {
     refuseGlPicture(this.host);
-    return canvasToDataUrl(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height });
+    return canvasToDataUrl(canvasReadCommandsOf(this.host), { width: this.width, height: this.height });
   }
   toBlob(callback: (blob: Blob | null) => void): void {
     refuseGlPicture(this.host);
-    callback(canvasToBlob(canvasCommandsOf(this.host) ?? [], { width: this.width, height: this.height }));
+    callback(canvasToBlob(canvasReadCommandsOf(this.host), { width: this.width, height: this.height }));
   }
   /**
    * What `queue.copyExternalImageToTexture` reads of a `<video>`: its file and the instant `currentTime` names, so that the

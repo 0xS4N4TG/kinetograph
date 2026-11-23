@@ -75,18 +75,21 @@ describe('createTexture, createView and createSampler', () => {
 
   it('says what is not drawn: formats, dimensions, layers, multisampling', async () => {
     const { device, context } = await setup();
-    expect(() => texture(device, { format: 'depth24plus' })).toThrow(WebGpuUnsupportedError);
+    expect(() => texture(device, { format: 'depth24plus-stencil8' })).toThrow(WebGpuUnsupportedError);
     expect(() => texture(device, { format: 'bc1-rgba-unorm' })).toThrow(/^unsupported: a texture of format bc1-rgba-unorm/);
     expect(() => texture(device, { format: 'rgba32float' })).not.toThrow();
-    expect(() => texture(device, { dimension: '3d' })).toThrow(/3d texture/);
-    expect(() => texture(device, { size: [8, 4, 2] })).toThrow(/array layer/);
+    expect(() => texture(device, { dimension: '1d' })).toThrow(/1d texture/);
+    expect(() => texture(device, { size: [8, 4, 2] })).not.toThrow();
+    expect(() => texture(device, { size: [8, 4, 257] })).toThrow(/257 array layers/);
+    expect(() => texture(device, { size: [8, 4, 0] })).toThrow(/0 array layers/);
+    expect(() => texture(device, { size: [8, 4, 2], sampleCount: 4 })).toThrow(/one array layer/);
     expect(() => texture(device, { sampleCount: 3 })).toThrow(/sampleCount 3/);
     expect(() => texture(device, { sampleCount: 4, mipLevelCount: 2 })).toThrow(/one mip level/);
     expect(() => texture(device, { sampleCount: 4, usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).toThrow(/render attachment/);
     expect(() => texture(device, { viewFormats: ['rgba8unorm-srgb'] })).toThrow(/viewFormats/);
     expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING })).not.toThrow();
     expect(() => texture(device, { usage: GPU_TEXTURE_USAGE.STORAGE_BINDING, format: 'rgba8unorm-srgb' })).toThrow(/STORAGE_BINDING/);
-    expect(context.content().webgpu!.notes).toHaveLength(5);
+    expect(context.content().webgpu!.notes).toHaveLength(4);
   });
 
   it('holds all the levels of all the textures to a cap', async () => {
@@ -114,8 +117,9 @@ describe('createTexture, createView and createSampler', () => {
     expect(() => t.createView({ baseMipLevel: 1, mipLevelCount: 3 })).toThrow(/levels 1..4/);
     expect(() => t.createView({ mipLevelCount: 0 })).toThrow(/not a whole number from 1/);
     expect(() => t.createView({ baseMipLevel: -1 })).toThrow(/not a whole number/);
-    expect(() => t.createView({ arrayLayerCount: 2 })).toThrow(/one layer/);
-    expect(() => t.createView({ dimension: '2d-array' })).toThrow(WebGpuUnsupportedError);
+    expect(() => t.createView({ arrayLayerCount: 2 })).toThrow(/layers 0..2 of a texture with 1/);
+    expect(() => t.createView({ dimension: '2d-array' })).not.toThrow();
+    expect(() => t.createView({ dimension: '1d' })).toThrow(WebGpuUnsupportedError);
     expect(() => t.createView({ format: 'rgba8unorm-srgb' })).toThrow(WebGpuUnsupportedError);
   });
 
@@ -133,7 +137,7 @@ describe('createTexture, createView and createSampler', () => {
     expect(() => device.createSampler({ maxAnisotropy: 17, magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' })).toThrow(/more than 16/);
     expect(() => device.createSampler({ maxAnisotropy: 4 })).toThrow(/linear/);
     expect(() => device.createSampler({ maxAnisotropy: 4, magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' })).not.toThrow();
-    expect(() => device.createSampler({ compare: 'less' })).toThrow(/comparison sampler/);
+    expect(() => device.createSampler({ compare: 'sometimes' } as never)).toThrow(/compare/);
   });
 });
 
@@ -171,7 +175,7 @@ describe('queue.writeTexture', () => {
     expect(write({ mipLevel: -1 }, 4, {}, [1, 1])).toThrow(/not a whole number/);
     expect(write({ origin: [8, 0] }, 4, {}, [1, 1])).toThrow(/outside the 8 x 4/);
     expect(write({ origin: [0, 3] }, 8, {}, [1, 2])).toThrow(/outside/);
-    expect(write({ origin: [0, 0, 1] }, 4, {}, [1, 1])).toThrow(/one layer/);
+    expect(write({ origin: [0, 0, 1] }, 4, {}, [1, 1])).toThrow(/outside the 1 layers/);
     expect(write({ origin: [Number.MAX_SAFE_INTEGER, 0] }, 4, {}, [1, 1])).toThrow(/outside/);
     expect(write({ origin: [1.5, 0] }, 4, {}, [1, 1])).toThrow(/not a whole number/);
     expect(write({ mipLevel: 1 }, 100, {}, [5, 1])).toThrow(/outside the 4 x 2/);
@@ -180,7 +184,7 @@ describe('queue.writeTexture', () => {
     expect(write({}, 11, { bytesPerRow: 8 }, [2, 2])).toThrow(/reads past the 11 bytes/);
     expect(write({}, 15, { offset: 8 }, [2, 1])).toThrow(/reads past the 15 bytes/);
     expect(write({}, 16, { offset: 8, bytesPerRow: 8 }, [2, 1])).not.toThrow();
-    expect(write({}, 4, {}, [1, 1, 2])).toThrow(/one layer/);
+    expect(write({}, 4, {}, [1, 1, 2])).toThrow(/outside the 1 layers/);
     // An empty copy is allowed and writes nothing.
     expect(write({}, 0, {}, [0, 1])).not.toThrow();
     const noCopy = device.createTexture({ size: [2, 2], format: 'rgba8unorm', usage: TEXTURE_BINDING });
@@ -271,7 +275,7 @@ describe('copyBufferToTexture and copyTextureToTexture', () => {
     expect(copy({ mipLevel: 3 }, {}, [1, 1])).toThrow(/mip level 3/);
     expect(copy({ mipLevel: 2 }, {}, [3, 1])).toThrow(/outside the 2 x 1/);
     expect(copy({ origin: [Number.MAX_SAFE_INTEGER, 0] }, {}, [1, 1])).toThrow(/outside/);
-    expect(copy({}, {}, [1, 1], a, a)).toThrow(/one level of one texture/);
+    expect(copy({}, {}, [1, 1], a, a)).toThrow(/share a level and a layer/);
     expect(copy({ mipLevel: 1 }, { mipLevel: 2 }, [1, 1], a, a)).not.toThrow();
     expect(copy({}, {}, [1, 1], a, texture(device, { format: 'bgra8unorm' }))).toThrow(/differ by more than -srgb/);
     expect(copy({}, {}, [1, 1], texture(device, { usage: COPY_DST }), b)).toThrow(/COPY_SRC/);
@@ -557,10 +561,9 @@ describe('render passes into textures and sampling them', () => {
     const layout = (entry: object) => () => device.createBindGroupLayout({ entries: [{ binding: 0, visibility: 2, ...entry }] as never });
     expect(layout({ storageTexture: { format: 'rgba8unorm', viewDimension: '2d-array' } })).toThrow(WebGpuUnsupportedError);
     expect(layout({ externalTexture: {} })).toThrow(WebGpuUnsupportedError);
-    expect(layout({ texture: { viewDimension: '2d-array' } })).toThrow(/view dimension/);
+    expect(layout({ texture: { viewDimension: '1d' } })).toThrow(/view dimension/);
+    expect(layout({ texture: { viewDimension: '2d-array' } })).not.toThrow();
     expect(layout({ texture: { multisampled: true } })).toThrow(/multisampled/);
-    expect(layout({ texture: { sampleType: 'depth' } })).toThrow(/sample type depth/);
-    expect(layout({ sampler: { type: 'comparison' } })).toThrow(/comparison/);
     expect(layout({ texture: {}, sampler: {} })).toThrow(/exactly one/);
     expect(layout({})).toThrow(/exactly one/);
     expect(layout({ texture: { sampleType: 'unfilterable-float' } })).not.toThrow();

@@ -4,9 +4,11 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { resetStylesheets, setDomEnvironment } from '@kinetographdev/compat/dom';
 import { pendingImageLoads, setWebViewport } from '@kinetographdev/compat/shim';
+// The recording WebGPU layer is what these tests describe: Dawn is the default provider, so say which, before the imports install it.
+vi.hoisted(() => { process.env.KINETOGRAPH_WEBGPU = 'builtin'; });
 import { getFonts } from '../src/font-registry.js';
 import { installDeterminism, resetVirtualClock, setVirtualFrame } from '../src/determinism.js';
 import '../src/web-install.js';

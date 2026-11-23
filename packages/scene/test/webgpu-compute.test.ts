@@ -179,14 +179,6 @@ describe('compute pipelines and passes', () => {
     present(device, context, texture);
     expect(computeSteps(context.content().webgpu!)).toHaveLength(0);
   });
-
-  it('says what is not drawn: indirect dispatches, timestamp writes', async () => {
-    const { device } = await setup();
-    const pass = device.createCommandEncoder().beginComputePass();
-    expect(() => pass.dispatchWorkgroupsIndirect()).toThrow(WebGpuUnsupportedError);
-    expect(() => device.createCommandEncoder().beginComputePass({ timestampWrites: {} })).toThrow(/query sets/);
-    expect(() => device.createQuerySet()).toThrow(WebGpuUnsupportedError);
-  });
 });
 
 describe('the checks a compute call gets on the page side', () => {
@@ -345,7 +337,7 @@ describe('storage layouts, textures and bind groups', () => {
     expect(make({ format: 'rgba8unorm-srgb' })).toThrow(/cannot be a storage texture/);
     expect(make({ format: 'bgra8unorm' })).toThrow(/cannot be a storage texture/);
     expect(make({ format: 'r8unorm' })).toThrow(/cannot be a storage texture/);
-    expect(make({ format: 'depth24plus' })).toThrow(/is not one of/);
+    expect(make({ format: 'depth24plus' })).toThrow(/cannot be a storage texture/);
     expect(make({})).toThrow(/is not one of/);
     expect(make({ format: 'rgba8unorm', access: 'sideways' })).toThrow(/access sideways/);
     expect(make({ format: 'rgba8unorm', viewDimension: '2d-array' })).toThrow(WebGpuUnsupportedError);
@@ -376,7 +368,7 @@ describe('storage layouts, textures and bind groups', () => {
     expect(() => storageTexture(device, 'rgba8unorm-srgb')).toThrow(/cannot have GPUTextureUsage.STORAGE_BINDING/);
     expect(() => storageTexture(device, 'r8unorm')).toThrow(/cannot have GPUTextureUsage.STORAGE_BINDING/);
     expect(() => storageTexture(device, 'bgra8unorm')).toThrow(/STORAGE_BINDING/);
-    expect(() => storageTexture(device, 'depth24plus')).toThrow(WebGpuUnsupportedError);
+    expect(() => storageTexture(device, 'depth24plus')).toThrow(/STORAGE_BINDING/);
     // A 4 x 4 rgba32float texture is 16 bytes a texel.
     expect(storageTexture(device, 'rgba32float', { size: [4, 4] })).toMatchObject({ bytes: 256 });
   });
@@ -406,17 +398,15 @@ describe('storage layouts, textures and bind groups', () => {
     expect(bind('sint', storageTexture(device, 'rgba32uint'))).toThrow(/as sint/);
   });
 
-  it('has float32-filterable only when the device has it, and a texture of it may then be read as float', async () => {
-    const gpu = createGpu({ info: () => ({ features: ['float32-filterable', 'timestamp-query', 'shader-f16'], limits: {} }) });
-    const adapter = await gpu.requestAdapter();
-    // Only what the recorder draws is offered, whatever the device has.
-    expect([...adapter.features]).toEqual(['float32-filterable']);
-    const without = await createGpu({ info: () => ({ features: [], limits: {} }) }).requestAdapter();
-    expect([...without.features]).toEqual([]);
+  it('offers the same features on every machine, and a texture of float32-filterable may be read as float on a device that asked for it', async () => {
+    const adapter = await createGpu().requestAdapter();
+    expect([...adapter.features]).toEqual(['float32-filterable', 'timestamp-query']);
+    await expect(adapter.requestDevice({ requiredFeatures: ['shader-f16'] })).rejects.toThrow(/not supported/);
     const device = await adapter.requestDevice({ requiredFeatures: ['float32-filterable'] });
     const layout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: FRAGMENT, texture: {} }] });
     expect(() => device.createBindGroup({ layout, entries: [{ binding: 0, resource: storageTexture(device, 'rgba32float').createView() }] })).not.toThrow();
-    await expect(without.requestDevice({ requiredFeatures: ['float32-filterable'] })).rejects.toThrow(/not supported/);
+    // A device that did not ask for it has no features: the page sees the same on any machine.
+    expect((await adapter.requestDevice()).features.size).toBe(0);
   });
 
   it('checks a buffer binding: its usage, alignment, range and the size the device allows', async () => {
@@ -618,22 +608,27 @@ describe('the log of a frame: what it depends on', () => {
   });
 });
 
-describe('limits from the device', () => {
-  it('reports the limits the engine\'s device has, and the adapter\'s are the same', async () => {
-    const gpu = createGpu({ info: () => ({ features: [], limits: { maxComputeInvocationsPerWorkgroup: 128, maxComputeWorkgroupSizeX: 128, maxStorageTexturesPerShaderStage: 8 } }) });
-    const adapter = await gpu.requestAdapter();
-    expect(adapter.limits.maxComputeInvocationsPerWorkgroup).toBe(128);
-    expect(adapter.limits.maxComputeWorkgroupsPerDimension).toBe(65535);
+describe('the limits are the WebGPU defaults', () => {
+  it('on every machine, the adapter\'s and the device\'s, and the recorder enforces them', async () => {
+    const adapter = await createGpu().requestAdapter();
+    expect(adapter.limits.maxComputeInvocationsPerWorkgroup).toBe(256);
+    expect(adapter.limits.maxUniformBuffersPerShaderStage).toBe(12);
+    expect(adapter.limits.maxVertexBuffers).toBe(8);
     const device = await adapter.requestDevice();
-    expect(device.limits).toMatchObject({ maxComputeInvocationsPerWorkgroup: 128, maxComputeWorkgroupSizeX: 128, maxStorageTexturesPerShaderStage: 8 });
     expect(device.limits).toEqual(adapter.limits);
-    // They are enforced: a pipeline over 128 invocations, a layout of 8 storage textures.
-    const module = device.createShaderModule({ code: '@compute @workgroup_size(16, 16) fn main() {}' });
-    expect(() => device.createComputePipeline({ layout: 'auto', compute: { module } })).toThrow(/256 invocations; the device allows 128/);
-    expect(() => device.createBindGroupLayout({ entries: Array.from({ length: 8 }, (_, binding) => ({ binding, visibility: COMPUTE, storageTexture: { format: 'rgba8unorm' } })) })).not.toThrow();
+    // What a caller says about the machine (a host's own limits and features) changes nothing.
+    const told = await createGpu({ info: () => ({ features: ['shader-f16'], limits: { maxComputeInvocationsPerWorkgroup: 128, maxTextureDimension2D: 16384 } }) } as never).requestAdapter();
+    expect(told.limits).toEqual(adapter.limits);
+    expect([...told.features]).toEqual([...adapter.features]);
+    // A pipeline over 256 invocations, a layout of 5 storage textures.
+    const module = device.createShaderModule({ code: '@compute @workgroup_size(32, 16) fn main() {}' });
+    expect(() => device.createComputePipeline({ layout: 'auto', compute: { module } })).toThrow(/512 invocations; the device allows 256/);
+    const storage = (count: number) => () => device.createBindGroupLayout({ entries: Array.from({ length: count }, (_, binding) => ({ binding, visibility: COMPUTE, storageTexture: { format: 'rgba8unorm' } })) });
+    expect(storage(4)).not.toThrow();
+    expect(storage(5)).toThrow(/5 storage textures in the compute stage; the device allows 4/);
   });
 
-  it('is the WebGPU defaults without an engine device to ask', async () => {
+  it('are these numbers', async () => {
     const { device } = await setup();
     expect(device.limits).toMatchObject({
       maxComputeInvocationsPerWorkgroup: 256,
@@ -649,7 +644,7 @@ describe('limits from the device', () => {
 
   it('refuses a device that asks for more than the engine\'s, and for a limit that is not one', async () => {
     const adapter = await createGpu().requestAdapter();
-    await expect(adapter.requestDevice({ requiredLimits: { maxComputeInvocationsPerWorkgroup: 1024 } })).rejects.toThrow(/better than the engine's device has \(256\)/);
+    await expect(adapter.requestDevice({ requiredLimits: { maxComputeInvocationsPerWorkgroup: 1024 } })).rejects.toThrow(/better than the WebGPU default \(256\)/);
     await expect(adapter.requestDevice({ requiredLimits: { maxStorageTexturesPerShaderStage: 5 } })).rejects.toThrow(/maxStorageTexturesPerShaderStage 5/);
     // A smaller alignment is better; a larger one is not.
     await expect(adapter.requestDevice({ requiredLimits: { minStorageBufferOffsetAlignment: 64 } })).rejects.toThrow(/minStorageBufferOffsetAlignment/);

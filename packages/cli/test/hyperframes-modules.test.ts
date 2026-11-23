@@ -211,6 +211,21 @@ describe('module scripts', () => {
     expect(notes).toMatch(/bare specifier "lib"/);
   });
 
+  it('keeps a module-level call marked as pure, as a browser runs it (a page seeding Math.random counts on the calls it makes)', async () => {
+    writeFileSync(join(dir, 'js', 'counted.js'), `export const make = () => { window.made = (window.made || 0) + 1; return {}; };\nconst unused = /* @__PURE__ */ make();\n`);
+    writeFileSync(
+      index,
+      `<html><body><div data-composition-id="main" data-duration="1"></div><script type="module">import { make } from "./js/counted.js"; window.after = make();</script></body></html>`,
+    );
+    const { plan } = await buildPlan(index);
+    const sandbox: Record<string | symbol, unknown> = {};
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    for (const script of plan.scripts) new vm.Script(script.code, { filename: script.file }).runInContext(sandbox);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sandbox.made).toBe(2);
+  });
+
   it('the cache must still match the lock', async () => {
     await prefetchHyperframes(index, { fetchImpl: fakeFetch });
     useLockFile(null);
