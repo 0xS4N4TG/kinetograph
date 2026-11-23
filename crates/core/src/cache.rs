@@ -557,8 +557,7 @@ mod tests {
             [
                 ("a", false),
                 ("frost", true),
-                // Under the blur's minimum it does nothing now, and may not
-                // at the next frame.
+                // However small, a radius above 0 blurs.
                 ("faint", true),
                 ("deep", true),
                 ("sampled", true),

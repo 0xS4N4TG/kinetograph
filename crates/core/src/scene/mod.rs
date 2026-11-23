@@ -34,6 +34,11 @@ pub struct Scene {
     /// The least margin to render with, in pixels (`Scene::margin`). Without
     /// it the margin is only what the effects reach.
     pub margin: Option<u32>,
+    /// The device scale of a render at a reduced size (`render --scale`): the canvas and the layers are already at the
+    /// scaled size (the layers in a group at this scale), and the lengths of the effects, which are in pixels and not
+    /// in layer units, are multiplied by it. Default 1.
+    #[serde(default = "default_render_scale")]
+    pub render_scale: f64,
     /// Font family name -> font file path.
     #[serde(default)]
     pub fonts: BTreeMap<String, String>,
@@ -72,6 +77,10 @@ pub enum BlendSpace {
     /// The default.
     #[default]
     Srgb,
+}
+
+fn default_render_scale() -> f64 {
+    1.0
 }
 
 fn default_background() -> Color {
@@ -2322,6 +2331,27 @@ mod tests {
             let msg = error(&format!(r#""effects": {effects},"#));
             assert!(msg.contains(want), "{effects}: {msg}");
         }
+    }
+
+    #[test]
+    fn render_scale_must_be_positive() {
+        let with = |scale: &str| {
+            let json = format!(
+                r#"{{"width": 20, "height": 10, "fps": 30, "durationInFrames": 1, "renderScale": {scale}, "layers": []}}"#
+            );
+            Scene::from_json(&json, PathBuf::new())
+        };
+        assert_eq!(with("0.5").unwrap().render_scale, 0.5);
+        for scale in ["0", "-1"] {
+            let msg = with(scale).unwrap_err().to_string();
+            assert!(
+                msg.contains("renderScale must be positive"),
+                "{scale}: {msg}"
+            );
+        }
+        let mut scene = with("1").unwrap();
+        scene.render_scale = f64::INFINITY;
+        assert!(scene.validate().is_err());
     }
 
     #[test]

@@ -764,14 +764,28 @@ pub(crate) fn resolve_effects(effects: &[Effect], clock: Clock) -> Vec<ResolvedE
     out
 }
 
+/// The smallest radius that blurs: invisible even at `--scale 8` (under 0.01 px), so a residue does not pay for a blur.
+const MIN_BLUR_RADIUS: f32 = 1e-3;
+
+/// A blur, backdrop blur, glow or shadow blur radius, 0..=`MAX_BLUR_RADIUS`: any radius from `MIN_BLUR_RADIUS` blurs,
+/// so a render at another scale (`ResolvedEffect::scaled`) blurs exactly when the full render does.
+fn blur_radius(radius: f64) -> f32 {
+    let radius = radius.clamp(0.0, MAX_BLUR_RADIUS) as f32;
+    if radius >= MIN_BLUR_RADIUS {
+        radius
+    } else {
+        0.0
+    }
+}
+
 fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
     let f = clock.t;
     match effect {
         Effect::Blur { radius } => ResolvedEffect::Blur {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
         },
         Effect::BackdropBlur { radius, edge_mode } => ResolvedEffect::BackdropBlur {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
             mirror: *edge_mode == crate::scene::BackdropEdge::Mirror,
         },
         Effect::BackdropFilter { effects } => ResolvedEffect::BackdropColor(
@@ -788,7 +802,7 @@ fn resolve_effect(effect: &Effect, clock: Clock) -> ResolvedEffect {
             color,
             intensity,
         } => ResolvedEffect::Glow(ResolvedGlow {
-            radius: radius.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+            radius: blur_radius(radius.at(f)),
             color: *color,
             intensity: intensity.at(f).clamp(0.0, MAX_GLOW_INTENSITY) as f32,
         }),
@@ -952,7 +966,7 @@ fn resolve_shadow(s: &Shadow, f: f64) -> ResolvedShadow {
     ResolvedShadow {
         x: s.x.at(f) as f32,
         y: s.y.at(f) as f32,
-        blur: s.blur.at(f).clamp(0.0, MAX_BLUR_RADIUS) as f32,
+        blur: blur_radius(s.blur.at(f)),
         spread: s.spread.at(f).clamp(-MAX_SHADOW_SIZE, MAX_SHADOW_SIZE) as f32,
         color: s.color,
     }

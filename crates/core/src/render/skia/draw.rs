@@ -95,6 +95,8 @@ pub struct Translator {
     svg_paths: HashMap<String, Path>,
     svg_path_bytes: usize,
     srgb: bool,
+    /// `Scene::render_scale`.
+    render_scale: f64,
     fx: HashMap<String, Option<skia_safe::RuntimeEffect>>,
     videos: HashMap<String, crate::video::VideoDecoder>,
     video_last: HashMap<String, (i64, Image)>,
@@ -219,6 +221,7 @@ impl Translator {
             svg_paths: HashMap::new(),
             svg_path_bytes: 0,
             srgb: false,
+            render_scale: 1.0,
             fx: HashMap::new(),
             videos: HashMap::new(),
             video_last: HashMap::new(),
@@ -288,6 +291,7 @@ impl Translator {
             self.fonts_key = scene.fonts.clone();
         }
         self.srgb = matches!(scene.blend_space, crate::scene::BlendSpace::Srgb);
+        self.render_scale = scene.render_scale;
     }
 
     /// Draws the scene on `canvas`, whose origin is the margin's corner (`margin` pixels in). `host` draws the fallback
@@ -298,7 +302,9 @@ impl Translator {
         canvas.translate((margin as f32, margin as f32));
         self.host = host;
         self.layer_saves.clear();
-        self.draw_layers(canvas, &scene.layers, 1.0);
+        // The layers' `scale` is the factor between layer units and the canvas, which the effects' pixel lengths are divided
+        // by to be drawn at their own size. The render scale is not part of it: those lengths shrink with the canvas.
+        self.draw_layers(canvas, &scene.layers, 1.0 / self.render_scale.max(1e-6));
         self.host = std::ptr::null_mut();
         canvas.restore();
     }
@@ -931,7 +937,7 @@ impl Translator {
             }
             match e {
                 ResolvedEffect::Blur { radius } => {
-                    if *radius >= 1.0 {
+                    if *radius > 0.0 {
                         let sg = radius / s;
                         filter = image_filters::blur((sg, sg), TileMode::Decal, filter.take(), None);
                     }
@@ -992,7 +998,7 @@ impl Translator {
                         inverted
                     };
                     let moved = image_filters::offset((sh.x / s, sh.y / s), grown, None);
-                    let blurred = if sg >= 0.3 { image_filters::blur((sg, sg), TileMode::Clamp, moved, None) } else { moved };
+                    let blurred = if sg > 0.0 { image_filters::blur((sg, sg), TileMode::Clamp, moved, None) } else { moved };
                     let inside = image_filters::blend(SkBlend::DstIn, blurred, input.clone(), None);
                     filter = image_filters::merge([input, inside], None);
                 }
@@ -1012,7 +1018,7 @@ impl Translator {
                     filter = self.filter_graph(g, input, s, lb);
                 }
                 ResolvedEffect::Glow(g) => {
-                    if g.radius >= 1.0 && g.intensity > 0.0 {
+                    if g.radius > 0.0 && g.intensity > 0.0 {
                         let input = filter.take();
                         let sg = g.radius / s;
                         let halo = image_filters::blur((sg, sg), TileMode::Decal, input.clone(), None);

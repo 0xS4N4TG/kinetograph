@@ -10,7 +10,6 @@ use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use kurbo::{Affine, BezPath, Ellipse, Point, Rect, RoundedRect, Shape};
 use peniko::{Blob, ImageAlphaType, ImageData, ImageFormat};
 
-use crate::blur::MIN_RADIUS;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::bsp;
@@ -1714,14 +1713,28 @@ impl Renderer {
         } else {
             None
         };
+        // `render --scale`: the effects' lengths in canvas pixels shrink with the canvas, as the Skia painter's do. Every
+        // effect the wgpu path draws passes through here.
+        let render_scale = self.scene.render_scale as f32;
+        let scaled: Vec<ResolvedEffect>;
+        let effects = if render_scale == 1.0 {
+            &layer.effects
+        } else {
+            scaled = layer
+                .effects
+                .iter()
+                .map(|e| e.scaled(render_scale))
+                .collect();
+            &scaled
+        };
         // The first effect, if it is a drop shadow with a formula.
-        let box_shadow = BoxShadow::plan(layer, matrix);
+        let box_shadow = BoxShadow::plan(layer, matrix, render_scale);
         let mut src = self.timed(Stage::Composite, |s| {
             s.compositor.apply_effects(
                 src,
                 matrix,
                 layer_box,
-                &layer.effects,
+                effects,
                 backdrop,
                 coverage.as_ref(),
                 box_shadow.as_ref(),
@@ -2215,7 +2228,7 @@ fn needs_box(effects: &[ResolvedEffect]) -> bool {
 fn has_backdrop_blur(effects: &[ResolvedEffect]) -> bool {
     effects
         .iter()
-        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius >= MIN_RADIUS) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
+        .any(|e| matches!(e, ResolvedEffect::BackdropBlur { radius, .. } if *radius > 0.0) || matches!(e, ResolvedEffect::BackdropColor(m) if *m != crate::color::ColorMatrix::IDENTITY))
 }
 
 /// Whether drawing `layer` looks at what is behind it: it blurs the backdrop,
@@ -2458,8 +2471,8 @@ mod tests {
             [
                 ("plain", false),
                 ("frost", true),
-                // Below the blur's minimum radius it does nothing.
-                ("faint", false),
+                // However small, a radius above 0 blurs.
+                ("faint", true),
                 ("outer", true),
                 ("uses", true),
                 ("alone", false)
@@ -2652,5 +2665,25 @@ mod tests {
         );
         assert!(!has_backdrop_blur(&layers[0].effects));
         assert!(uses_backdrop(&layers, &layers[0]));
+    }
+    #[test]
+    fn a_faint_backdrop_blur_needs_the_backdrop() {
+        // A faint radius blurs, at every scale; 0, or a residue under `MIN_BLUR_RADIUS`, does not.
+        let layers = resolve_layers(
+            r##"[{"id": "faint", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0.5}]},
+                 {"id": "none", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0}]},
+                 {"id": "residue", "type": "group", "children": [],
+                  "effects": [{"type": "backdropBlur", "radius": 0.0001}]}]"##,
+        );
+        assert!(uses_backdrop(&layers, &layers[0]));
+        assert!(!uses_backdrop(&layers, &layers[1]));
+        assert!(!uses_backdrop(&layers, &layers[2]));
+        let radius = |i: usize| match layers[i].effects[..] {
+            [ResolvedEffect::BackdropBlur { radius, .. }] => radius,
+            _ => unreachable!(),
+        };
+        assert_eq!((radius(0), radius(2)), (0.5, 0.0));
     }
 }

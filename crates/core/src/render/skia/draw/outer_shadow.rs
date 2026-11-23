@@ -30,7 +30,7 @@ impl Translator {
             return false;
         };
         // As `effect_filter` decides whether to blur.
-        if *radius < 1.0 || self.skip.iter().any(|k| k == "blur") {
+        if *radius <= 0.0 || self.skip.iter().any(|k| k == "blur") {
             return false;
         }
         if comp.blend != SkBlend::SrcOver || layer.mask.is_some() || layer.matte.is_some() {

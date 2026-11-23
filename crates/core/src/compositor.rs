@@ -98,7 +98,7 @@ use glam::DMat3;
 use kurbo::{Affine, Rect};
 use wgpu::{self, util::DeviceExt};
 
-use crate::blur::{self, Blur};
+use crate::blur::Blur;
 use crate::bounds::{self, PixelRect};
 use crate::box_shadow::BoxShadow;
 use crate::bsp::Cut;
@@ -1374,11 +1374,11 @@ impl Compositor {
     ) -> Tex {
         for (i, effect) in effects.iter().enumerate() {
             match *effect {
-                ResolvedEffect::Blur { radius } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::Blur { radius } if radius > 0.0 => {
                     src = self.blur_layer(src, radius);
                 }
                 ResolvedEffect::Blur { .. } => {}
-                ResolvedEffect::BackdropBlur { radius, mirror } if radius >= blur::MIN_RADIUS => {
+                ResolvedEffect::BackdropBlur { radius, mirror } if radius > 0.0 => {
                     if let Some(backdrop) = backdrop {
                         src = self.backdrop_blur(src, radius, backdrop, coverage, mirror);
                     }
@@ -1565,7 +1565,7 @@ impl Compositor {
     /// Draws a halo under `src`: a blurred copy of it, tinted if asked. `src`
     /// goes back to the pool; the result is a new texture.
     fn glow(&mut self, src: Tex, glow: &ResolvedGlow) -> Tex {
-        if glow.radius < blur::MIN_RADIUS || glow.intensity <= 0.0 || src.bounds.is_empty() {
+        if glow.radius <= 0.0 || glow.intensity <= 0.0 || src.bounds.is_empty() {
             return src;
         }
         let size = (self.width, self.height);
@@ -2329,9 +2329,7 @@ impl Compositor {
     /// Whether the inset shadow `shadow` has no blur and no spread, which
     /// lets one pass draw it from the layer itself (`shadow`).
     pub fn is_sharp_inset(&self, shadow: &ResolvedShadow) -> bool {
-        self.fusion
-            && shadow.spread == 0.0
-            && (shadow.blur.is_nan() || shadow.blur < blur::MIN_RADIUS)
+        self.fusion && shadow.spread == 0.0 && !(shadow.blur > 0.0)
     }
 
     /// Adds a drop shadow under `src`, or an inset shadow over it. `src`
@@ -3955,7 +3953,7 @@ fn shadow_plan(
     wanted: PixelRect,
 ) -> ShadowPlan {
     let whole = PixelRect::whole(size.0, size.1);
-    let blurred = blur >= blur::MIN_RADIUS;
+    let blurred = blur > 0.0;
     // How many pixels either side a spread pass reads along its axis.
     let reach = spread.abs().ceil() as i32;
     let needed = match (invert, blurred) {
@@ -4766,7 +4764,7 @@ mod tests {
                 }
             }
         }
-        if blur >= blur::MIN_RADIUS {
+        if blur > 0.0 {
             let (input, output) = plan
                 .and_then(|p| p.blur)
                 .unwrap_or((PixelRect::EMPTY, PixelRect::EMPTY));
