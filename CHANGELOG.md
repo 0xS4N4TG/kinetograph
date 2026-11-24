@@ -78,6 +78,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- A `setTimeout` made while a frame is held open waits while a message (`postMessage`, a `MessageChannel` port) is still being delivered, so a page that presents from a posted task is not cut short by its own watchdog timeout.
 - A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
 - A `<video>` the page plays itself is not re-seeked by the clip loop.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.

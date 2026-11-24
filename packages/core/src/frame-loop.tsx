@@ -10,7 +10,7 @@
 //      attach what each sub-frame changes in them.
 
 import type { ReactNode } from 'react';
-import { glDependsOnHistory, glHoldsTargets, loadsSettled, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures, takeMediaIssues } from '@kinetographdev/compat/shim';
+import { glDependsOnHistory, glHoldsTargets, loadsSettled, messagesInFlight, pendingFetches, pendingImageLoads, resetCanvasStates, setNetFrame, snapshotGlStates, takeGlReports, takeLoadFailures, takeMediaIssues } from '@kinetographdev/compat/shim';
 import { setDefaultStylesheet } from '@kinetographdev/compat/dom';
 import { createSceneRoot, finishIslands, TimelineContext, type LayerNames, type RenderedTree, type SceneRoot, type VideoConfig } from '@kinetographdev/react';
 import {
@@ -82,10 +82,15 @@ let seenLoads = 0;
 async function runAfterLoads(): Promise<void> {
   for (let quiet = 0; quiet < 2; ) {
     await tick();
-    quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+    quiet = nothingMoving() ? quiet + 1 : 0;
     if (quiet >= 2 && fireHoldTimer()) quiet = 0;
   }
   seenLoads = loadsSettled();
+}
+
+/** No fetch, image or font is loading and no message is on its way, so a hold timer is the only thing left to move. */
+function nothingMoving(): boolean {
+  return pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 && !messagesInFlight();
 }
 
 /**
@@ -94,8 +99,10 @@ async function runAfterLoads(): Promise<void> {
  * The clock only moves between frames, so a handle whose release waits on a timeout (React holds a revealed Suspense
  * boundary back for 300 ms with `setTimeout`) would wait for ever. The rule: a `setTimeout` made while the frame is held
  * open (`heldOpen`) is a hold timer. When the frame is still held and nothing else is moving (no fetch, image or font is
- * loading, for two turns of the event loop), the earliest hold timer fires at once, in (due time, creation order), without
- * the clock moving. Timeouts made while the frame is not held, and every interval, follow the frame clock as before.
+ * loading and no message is on its way, for two turns of the event loop), the earliest hold timer fires at once, in (due
+ * time, creation order), without the clock moving. Timeouts made while the frame is not held, and every interval, follow
+ * the frame clock as before. A message counts as moving: a page that presents from a posted task (a scheduler's
+ * MessageChannel) is still working, and its watchdog timeout is not yet due.
  */
 async function whenReleased(animationFrames = false): Promise<void> {
   let quiet = 0;
@@ -119,7 +126,7 @@ async function whenReleased(animationFrames = false): Promise<void> {
       }
       await Promise.race([idle, tick()]);
       if (released) break;
-      quiet = pendingFetches() === 0 && pendingImageLoads() === 0 && pendingFontLoads() === 0 ? quiet + 1 : 0;
+      quiet = nothingMoving() ? quiet + 1 : 0;
       if (quiet >= 2 && fireHoldTimer()) quiet = 0;
     }
     await idle;

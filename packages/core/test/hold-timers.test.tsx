@@ -8,6 +8,8 @@ import { continueRender, delayRender, resetRenderState } from '../src/assets.js'
 import { Composition, registerRoot, resetCompositions } from '../src/compositions.js';
 import { installDeterminism, resetVirtualClock, uninstallDeterminism, virtualNow } from '../src/determinism.js';
 import { createFrameRenderer } from '../src/frame-loop.js';
+// The page's globals: the MessageChannel that delivers on the shim's queue, and the hold its messages open.
+import '../src/web-install.js';
 
 beforeEach(() => {
   resetCompositions();
@@ -105,5 +107,36 @@ describe('a timeout set while the frame is held open', () => {
     await createFrameRenderer('T').renderFrame(0);
     expect(log).toEqual(['raf', 'hold:300']);
     expect(virtualNow()).toBe(0);
+  });
+
+  it('does not fire a hold timer while a posted message is still on its way', async () => {
+    // A frame presented from a MessageChannel task (a scheduler that posts its present, as a host renderer's does) that
+    // takes several turns, with a watchdog timeout set while the frame is held: the messages are moving, so the watchdog is
+    // not due; in a browser it would fire 10 s later, long after the present.
+    function Presented() {
+      useState(() => {
+        const handle = delayRender('presenting from a message');
+        setTimeout(() => {
+          log.push('watchdog:10000');
+          continueRender(handle);
+        }, 10000);
+        const channel = new MessageChannel();
+        let hops = 0;
+        channel.port1.addEventListener('message', () => {
+          if (++hops < 5) {
+            channel.port2.postMessage(hops);
+            return;
+          }
+          log.push('presented');
+          continueRender(handle);
+        });
+        channel.port1.start();
+        channel.port2.postMessage(0);
+      });
+      return <Rect id="r" width={4} height={4} fill="#fff" />;
+    }
+    root(<Presented />);
+    await createFrameRenderer('T').renderFrame(0);
+    expect(log).toEqual(['presented']);
   });
 });
