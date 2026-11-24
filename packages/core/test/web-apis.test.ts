@@ -411,12 +411,15 @@ describe('documents a sanitizer needs (DOMPurify finds its document through them
     expect(el.attributes.getNamedItem('xlink:href').value).toBe('#z');
   });
 
-  it('gives childNodes once per element, and tells form and template elements by tag', () => {
+  it('gives childNodes once per element, and tells form, template and iframe elements by tag', () => {
     const form = g.document.createElement('form');
     expect(form.childNodes).toBe(form.childNodes);
     expect(form instanceof g.HTMLFormElement).toBe(true);
     expect(form instanceof g.HTMLTemplateElement).toBe(false);
     expect(g.document.createElement('template') instanceof g.HTMLTemplateElement).toBe(true);
+    // react-dom tests the focused element against HTMLIFrameElement on every commit.
+    expect(g.document.createElement('iframe') instanceof g.HTMLIFrameElement).toBe(true);
+    expect(form instanceof g.HTMLIFrameElement).toBe(false);
   });
 
   it('moves a fragment’s children into the node it is inserted into', () => {

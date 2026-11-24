@@ -78,6 +78,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- `window.HTMLIFrameElement` exists, and `<iframe>` elements pass `instanceof` it, so a page that renders with `react-dom` no longer throws on its first commit.
 - A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
 - A `<video>` the page plays itself is not re-seeked by the clip loop.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.

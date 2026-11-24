@@ -585,7 +585,7 @@ export class XMLSerializerShim {
   }
 }
 
-/** `instanceof HTMLTemplateElement` and `HTMLFormElement` hold for an element of that tag. */
+/** `instanceof HTMLTemplateElement`, `HTMLFormElement` and `HTMLIFrameElement` hold for an element of that tag. */
 const tagClass = (tag: string): typeof DomElement =>
   class extends DomElement {
     static [Symbol.hasInstance](value: unknown): boolean {
@@ -594,6 +594,8 @@ const tagClass = (tag: string): typeof DomElement =>
   };
 export const HTMLTemplateElementShim = tagClass('template');
 export const HTMLFormElementShim = tagClass('form');
+// react-dom tests the focused element against it on every commit.
+export const HTMLIFrameElementShim = tagClass('iframe');
 
 let currentScript: DomElement | null = null;
 

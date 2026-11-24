@@ -284,8 +284,8 @@ these on the global object where they are missing:
 - `document`: `createElement` (a detached node, never drawn), `createElement('canvas')` (a canvas outside the tree with
   a recording 2D context, and a recording WebGL context for `getContext('webgl')`, AUTHORING.md §6.5 and §6.7),
   `body`/`documentElement` with the composition's size, queries over the host tree, `fonts` (the `FontFace` shim);
-- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `HTMLCanvasElement`, `OffscreenCanvas`, `Path2D`,
-  `ImageData`, `DOMRect`, the three observers.
+- `Element`, `HTMLElement`, `SVGElement`, `HTMLImageElement`, `HTMLCanvasElement`, `HTMLIFrameElement` (for
+  `instanceof` only: an iframe is not drawn), `OffscreenCanvas`, `Path2D`, `ImageData`, `DOMRect`, the three observers.
 - `crypto.getRandomValues` and `randomUUID` draw from the seeded `Math.random` generator.
 
 Time: `Date`, `performance.now`, timers and `requestAnimationFrame` were already driven by the frame

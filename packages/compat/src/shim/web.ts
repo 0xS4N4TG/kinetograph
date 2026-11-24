@@ -15,7 +15,7 @@ import { resolveDocumentUrl, resolveProjectFile, resolveCachedRemoteFile, sameOr
 import { netFetch } from './net-store.js';
 import { pendingMediaLoads, reportMediaIssue } from './media.js';
 import { OffscreenCanvasShim, rasterizeCanvas, webgpuDeviceInfo } from './canvas.js';
-import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
+import { DOMParserShim, DocumentShim, HTMLFormElementShim, HTMLIFrameElementShim, HTMLTemplateElementShim, NodeFilterShim, NodeIteratorShim, TreeWalkerShim, XMLSerializerShim, installDocumentMembers } from './document.js';
 import { XmlElement } from './xml.js';
 import { AttrShim, NamedNodeMapShim } from './attributes.js';
 import { DomElement, DomFragment, DomNodeBase, DomText, domElementFor, domTextFor, isDomElementShim, selectorContextOf, setImageLoader, setImagePictureReader, setImageSizeReader, setProjectFileResolver } from './element.js';
@@ -736,6 +736,7 @@ export function installDomGlobals(): void {
   define(g, 'DocumentFragment', DomFragment);
   define(g, 'HTMLTemplateElement', HTMLTemplateElementShim);
   define(g, 'HTMLFormElement', HTMLFormElementShim);
+  define(g, 'HTMLIFrameElement', HTMLIFrameElementShim);
   define(g, 'NamedNodeMap', NamedNodeMapShim);
   define(g, 'Attr', AttrShim);
   define(g, 'NodeFilter', NodeFilterShim);
