@@ -421,6 +421,22 @@ describe('documents a sanitizer needs (DOMPurify finds its document through them
     expect(g.document.createElement('template') instanceof g.HTMLTemplateElement).toBe(true);
   });
 
+  it("has the tree links on Node, so a getter taken from Node.prototype reads any node's", () => {
+    // Svelte's runtime takes these getters from Node.prototype once and calls them on every node.
+    const link = (name: string) => Object.getOwnPropertyDescriptor(g.Node.prototype, name)?.get;
+    const list = g.document.createElement('ul');
+    const item = g.document.createElement('li');
+    const text = g.document.createTextNode('x');
+    list.appendChild(item);
+    list.appendChild(text);
+    expect(link('firstChild')?.call(list)).toBe(item);
+    expect(link('lastChild')?.call(list)).toBe(text);
+    expect(link('nextSibling')?.call(item)).toBe(text);
+    expect(link('previousSibling')?.call(text)).toBe(item);
+    expect(link('firstChild')?.call(text)).toBeNull();
+    expect(link('nextSibling')?.call(text)).toBeNull();
+  });
+
   it('moves a fragment’s children into the node it is inserted into', () => {
     const fragment = g.document.createDocumentFragment();
     expect(fragment.nodeType).toBe(11);
