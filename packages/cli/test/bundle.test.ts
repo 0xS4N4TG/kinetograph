@@ -65,13 +65,13 @@ describe('resolveSpecifier', () => {
     expect(resolveSpecifier('@kinetographdev/video-matting')).toEqual({ kind: 'path', target: '@kinetographdev/video-matting' });
     expect(resolveSpecifier('@kinetographdev/native')).toBeNull();
     expect(resolveSpecifier('./local')).toBeNull();
-    expect(resolveSpecifier('react-dom')).toBeNull();
   });
 
   it('re-resolves React from the CLI so a project has one React', () => {
     expect(resolveSpecifier('react')).toEqual({ kind: 'path', target: 'react' });
     expect(resolveSpecifier('react/jsx-runtime')).toEqual({ kind: 'path', target: 'react/jsx-runtime' });
     expect(resolveSpecifier('react-reconciler')).toEqual({ kind: 'path', target: 'react-reconciler' });
+    expect(resolveSpecifier('react-dom/client')).toEqual({ kind: 'path', target: 'react-dom/client' });
   });
 
   it('humanises module names', () => {
@@ -490,6 +490,7 @@ describe('the React of a host project', () => {
     const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> };
     expect(manifest.dependencies.react).toMatch(/^\^?19\./);
     expect(manifest.dependencies['react-reconciler']).toBeDefined();
+    expect(manifest.dependencies['react-dom']).toBe(manifest.dependencies.react);
   });
 
   function projectWithReact(version: string | null): string {
@@ -506,6 +507,19 @@ describe('the React of a host project', () => {
     expect(projectReactError(projectWithReact('18.3.1'))).toMatch(/React 18\.3\.1.*needs React 19/);
     expect(projectReactError(projectWithReact('19.3.1'))).toBeNull();
     expect(projectReactError(projectWithReact(null))).toBeNull();
+  });
+
+  // React refuses a react-dom of another version ("Incompatible React versions"), so the bundle takes react-dom from the
+  // CLI as it takes react: a host whose react-dom is 19.3.0 beside the CLI's react 19.3.1 failed every page rendered with it.
+  it("takes react-dom from the CLI too, never the project's", async () => {
+    const dir = projectWithReact('19.3.0');
+    mkdirSync(join(dir, 'node_modules', 'react-dom'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'react-dom', 'package.json'), JSON.stringify({ name: 'react-dom', version: '19.3.0', exports: { './client': './client.js' } }));
+    writeFileSync(join(dir, 'node_modules', 'react-dom', 'client.js'), "export const createRoot = () => 'the project react-dom';\n");
+    writeFileSync(join(dir, 'package.json'), '{"type":"module"}');
+    writeFileSync(join(dir, 'index.tsx'), "import { createRoot } from 'react-dom/client';\n(globalThis as { root?: unknown }).root = createRoot;\n");
+    const { file } = await bundleProject(join(dir, 'index.tsx'));
+    expect(readFileSync(file, 'utf8')).not.toContain('the project react-dom');
   });
 
   it('fails the bundle of a React project whose React is too old', async () => {
