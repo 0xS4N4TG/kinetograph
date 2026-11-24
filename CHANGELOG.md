@@ -78,6 +78,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- `firstChild`, `lastChild`, `nextSibling` and `previousSibling` are on `Node.prototype`, so a getter taken from it (as Svelte's runtime does) reads elements and text nodes alike.
 - A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
 - A `<video>` the page plays itself is not re-seeked by the clip loop.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.
