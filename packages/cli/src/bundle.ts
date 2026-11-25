@@ -90,8 +90,8 @@ export function resolveSpecifier(specifier: string): Resolution | null {
   }
   if (/^@kinetographdev\/(core|react|scene|audio|compat|video-matting)(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   // React too: a project with its own copy of React would otherwise bundle two, and the core's hooks would run against
-  // a different React from the project's components.
-  if (/^react(-reconciler)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
+  // a different React from the project's components. react-dom with it: React refuses a react-dom of another version.
+  if (/^react(-reconciler|-dom)?(\/.*)?$/.test(specifier)) return { kind: 'path', target: specifier };
   return null;
 }
 
@@ -154,7 +154,7 @@ function aliasPlugin(unsupported?: UnsupportedImport[]): Plugin {
   return {
     name: 'kinetograph-aliases',
     setup(b) {
-      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat|video-matting)($|\/)|react(-reconciler)?($|\/))/ }, async (args) => {
+      b.onResolve({ filter: /^(remotion($|\/)|@remotion\/|@shopify\/react-native-skia($|\/)|react-native-reanimated$|@kinetographdev\/(core|react|scene|audio|compat|video-matting)($|\/)|react(-reconciler|-dom)?($|\/))/ }, async (args) => {
         if (args.pluginData?.kinetograph) return undefined;
         if (/^react(\/|$)/.test(args.path) && args.importer && !args.importer.includes(`${sep}node_modules${sep}`)) {
           const text = projectReactError(args.resolveDir);

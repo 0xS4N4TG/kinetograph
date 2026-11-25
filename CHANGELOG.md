@@ -81,6 +81,7 @@ Kinetograph is in beta, so APIs can still change between versions.
 
 ### Fixed
 
+- The bundle takes `react-dom` from the CLI, as it takes `react`, so a project whose own `react-dom` is another patch version no longer fails with "Incompatible React versions".
 - A page's timeout that re-arms itself from its own callback no longer keeps a held frame firing for ever.
 - A `<video>` the page plays itself is not re-seeked by the clip loop.
 - `element.attributes` answers named properties, as a `NamedNodeMap` does.
